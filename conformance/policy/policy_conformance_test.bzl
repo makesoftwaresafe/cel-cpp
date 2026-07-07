@@ -18,26 +18,25 @@ This module contains build rules for generating policy conformance test targets.
 
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
 
-def cel_policy_conformance_test(name, test_files, example, skip_tests = [], **kwargs):
+def cel_policy_conformance_test(name, test_files, skip_tests = [], **kwargs):
     """Generates a policy conformance test target.
 
     Args:
         name: Name of the test target.
         test_files: List of targets or files representing the test data.
-        example: A specific example file from test_files used for runfiles resolution.
         skip_tests: List of test cases to skip.
-        testdata_dir: Path to testdata directory under runfiles.
         **kwargs: Additional arguments passed to the underlying cc_test.
     """
     args = ["--gunit_fail_if_no_test_linked"]
-    args.append("--testdata_example='$(rlocationpath {})'".format(example))
+    paths = ["$(rlocationpath {})".format(f) for f in test_files]
+    args.append("--test_bundles=\"{}\"".format(",".join(paths)))
 
     if skip_tests:
         args.append("--skip_tests=" + ",".join(skip_tests))
 
     cc_test(
         name = name,
-        data = test_files + [example],
+        data = test_files,
         deps = [
             "//conformance/policy:policy_conformance_test_lib",
         ],

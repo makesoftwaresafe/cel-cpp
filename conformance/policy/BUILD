@@ -64,15 +64,39 @@ cc_library(
     alwayslink = True,
 )
 
+_ALL_TESTS = [
+    "@cel_policy//conformance:k8s",
+    "@cel_policy//conformance:limits",
+    "@cel_policy//conformance:nested_rule",
+    "@cel_policy//conformance:nested_rule2",
+    "@cel_policy//conformance:nested_rule3",
+    "@cel_policy//conformance:nested_rule4",
+    "@cel_policy//conformance:nested_rule5",
+    "@cel_policy//conformance:nested_rule6",
+    "@cel_policy//conformance:nested_rule7",
+    "@cel_policy//conformance:nested_rules_variable_shadowing",
+    "@cel_policy//conformance:pb",
+    "@cel_policy//conformance:required_labels",
+    "@cel_policy//conformance:restricted_destinations",
+    "@cel_policy//conformance:unconditional_rules",
+    "@cel_policy//conformance:unnest",
+    "@cel_policy//conformance:variable_type_propagation",
+    "@cel_policy//conformance:compile_error_compose_conflicting_output",
+    "@cel_policy//conformance:compile_error_compose_conflicting_subrule",
+    "@cel_policy//conformance:compile_error_unreachable",
+    "@cel_policy//conformance:compile_error_duplicate_variable",
+    "@cel_policy//conformance:compile_error_import",
+    "@cel_policy//conformance:compile_error_incompatible_outputs",
+    "@cel_policy//conformance:compile_error_syntax",
+    "@cel_policy//conformance:compile_error_undeclared_reference",
+]
+
 cel_policy_conformance_test(
     name = "policy_conformance_test",
-    example = "@cel_policy//conformance:testdata/nested_rule/policy.yaml",
     skip_tests = [
         # TODO(b/506179116): Fix these.
         # Need to add k8s custom yaml parser and mock runtime.
         "k8s",
     ],
-    test_files = [
-        "@cel_policy//conformance:testdata",
-    ],
+    test_files = _ALL_TESTS,
 )

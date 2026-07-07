@@ -12,13 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <cstddef>
 #include <iostream>
 #include <memory>
 #include <string>
 #include <utility>
 #include <vector>
-// NOLINTNEXTLINE(build/c++17) for OSS compatibility
-#include <filesystem>
 
 #include "cel/expr/eval.pb.h"
 #include "absl/flags/flag.h"
@@ -28,8 +27,8 @@
 #include "absl/status/statusor.h"
 #include "absl/strings/match.h"
 #include "absl/strings/str_cat.h"
-#include "absl/strings/str_replace.h"
 #include "absl/strings/string_view.h"
+#include "absl/strings/strip.h"
 #include "common/ast.h"
 #include "common/internal/value_conversion.h"
 #include "common/source.h"
@@ -61,12 +60,9 @@
 #include "google/protobuf/descriptor.h"
 #include "google/protobuf/dynamic_message.h"
 #include "google/protobuf/message.h"
-#include "google/protobuf/text_format.h"
 
-// Use a specific file to handle bazel runfiles resolution correctly. We find
-// parent directory named 'testdata' to use as the root of the test cases.
-ABSL_FLAG(std::string, testdata_example, "",
-          "Path to a specific example file.");
+ABSL_FLAG(std::vector<std::string>, test_bundles, {},
+          "Space or comma separated list of test bundle runfiles paths.");
 ABSL_FLAG(std::vector<std::string>, skip_tests, {},
           "Comma-separated list of tests to skip.");
 
@@ -77,6 +73,63 @@ using ::absl_testing::IsOk;
 using ::cel::expr::conformance::test::TestSuite;
 using ::cel::internal::GetSharedTestingDescriptorPool;
 using ::testing::HasSubstr;
+
+struct BundleSections {
+  absl::string_view config_content;
+  absl::string_view policy_content;
+  absl::string_view tests_content;
+};
+
+absl::string_view TrimDoc(absl::string_view doc) {
+  absl::ConsumeSuffix(&doc, "\n");
+  absl::ConsumeSuffix(&doc, "\r");
+  return doc;
+}
+
+absl::StatusOr<BundleSections> ParseYamlBundle(
+    absl::string_view bundle_content) {
+  BundleSections sections;
+  std::vector<absl::string_view> docs;
+  absl::string_view remaining = bundle_content;
+
+  size_t next_line = remaining.find('\n');
+  while (next_line != absl::string_view::npos) {
+    if (absl::StartsWith(remaining.substr(next_line), "\n---\r\n")) {
+      docs.push_back(TrimDoc(remaining.substr(0, next_line)));
+      remaining = remaining.substr(next_line + 5);
+      next_line = remaining.find('\n');
+      continue;
+    }
+
+    if (absl::StartsWith(remaining.substr(next_line), "\n---\n")) {
+      docs.push_back(TrimDoc(remaining.substr(0, next_line)));
+      remaining = remaining.substr(next_line + 4);
+      next_line = remaining.find('\n');
+      continue;
+    }
+
+    next_line = remaining.find('\n', next_line + 1);
+  }
+
+  if (remaining.empty()) {
+    return absl::InvalidArgumentError("Empty document in yaml bundle");
+  }
+  docs.push_back(remaining);
+
+  if (docs.size() == 3) {
+    sections.config_content = docs[0];
+    sections.policy_content = docs[1];
+    sections.tests_content = docs[2];
+  } else if (docs.size() == 2) {
+    sections.policy_content = docs[0];
+    sections.tests_content = docs[1];
+  } else {
+    return absl::InvalidArgumentError(
+        absl::StrCat("Invalid number of sections: ", docs.size()));
+  }
+
+  return sections;
+}
 
 // Implementations for extension functions referenced in conformance tests.
 cel::Value LocationCode(const cel::StringValue& ip,
@@ -447,9 +500,8 @@ class CelPolicyTest : public testing::Test {
   bool skip_;
 };
 
-
 absl::Status RegisterTestSuite(
-    const std::filesystem::path& dir_path, const std::string& suite_name,
+    absl::string_view suite_name, const BundleSections& sections,
     const std::shared_ptr<InputEvaluator>& input_evaluator,
     const std::shared_ptr<const google::protobuf::DescriptorPool>& pool,
     const std::shared_ptr<google::protobuf::MessageFactory>& message_factory,
@@ -463,28 +515,15 @@ absl::Status RegisterTestSuite(
     }
   }
 
-  std::filesystem::path policy_path = dir_path / "policy.yaml";
-  std::filesystem::path tests_path = dir_path / "tests.yaml";
-  bool is_yaml = true;
-  if (!std::filesystem::exists(tests_path)) {
-    tests_path = dir_path / "tests.textproto";
-    is_yaml = false;
-  }
-  std::filesystem::path config_path = dir_path / "config.yaml";
-
-  if (!std::filesystem::exists(policy_path) ||
-      !std::filesystem::exists(tests_path)) {
-    // Not a valid test suite, assume it's a directory we don't care about.
+  if (sections.policy_content.empty() || sections.tests_content.empty()) {
     return absl::OkStatus();
   }
 
   // Parse Environment Config
   cel::Config config;
-  if (std::filesystem::exists(config_path)) {
-    std::string config_content;
-    CEL_RETURN_IF_ERROR(
-        cel::internal::GetFileContents(config_path.string(), &config_content));
-    CEL_ASSIGN_OR_RETURN(config, cel::EnvConfigFromYaml(config_content));
+  if (!sections.config_content.empty()) {
+    CEL_ASSIGN_OR_RETURN(
+        config, cel::EnvConfigFromYaml(std::string(sections.config_content)));
   }
 
   // Enable default extensions (optional, bindings) in the config
@@ -537,11 +576,8 @@ absl::Status RegisterTestSuite(
   CEL_ASSIGN_OR_RETURN(auto runtime, std::move(runtime_builder).Build());
 
   // Parse Policy
-  std::string policy_content;
-  CEL_RETURN_IF_ERROR(
-      cel::internal::GetFileContents(policy_path.string(), &policy_content));
   CEL_ASSIGN_OR_RETURN(auto source,
-                       cel::NewSource(policy_content, "policy.yaml"));
+                       cel::NewSource(sections.policy_content, "policy.yaml"));
   auto policy_source = std::make_shared<CelPolicySource>(std::move(source));
   CEL_ASSIGN_OR_RETURN(CelPolicyParseResult parse_result,
                        cel::ParseYamlCelPolicy(policy_source));
@@ -556,25 +592,16 @@ absl::Status RegisterTestSuite(
   CEL_ASSIGN_OR_RETURN(CelPolicyValidationResult compile_result,
                        CompilePolicy(*compiler, *policy));
 
-  std::string tests_content;
-  CEL_RETURN_IF_ERROR(
-      cel::internal::GetFileContents(tests_path.string(), &tests_content));
   TestSuite test_suite;
-  if (is_yaml) {
-    CEL_ASSIGN_OR_RETURN(test_suite,
-                         cel::test::ParsePolicyTestSuiteYaml(tests_content));
-  } else {
-    if (!google::protobuf::TextFormat::ParseFromString(tests_content, &test_suite)) {
-      return absl::InvalidArgumentError(
-          absl::StrCat("Failed to parse text proto in ", tests_path.string()));
-    }
-  }
+  CEL_ASSIGN_OR_RETURN(
+      test_suite, cel::test::ParsePolicyTestSuiteYaml(sections.tests_content));
 
+  std::string suite_name_str(suite_name);
   auto runner = std::make_shared<PolicyTestSuiteRunner>(
-      suite_name, std::move(compiler), std::move(runtime),
+      suite_name_str, std::move(compiler), std::move(runtime),
       std::move(policy_source), std::move(compile_result), pool,
       message_factory, input_evaluator, config.GetContextType(),
-      /*expect_compile_fail=*/absl::StrContains(suite_name, "compile_errors"));
+      /*expect_compile_fail=*/absl::StrContains(suite_name, "compile_error"));
 
   for (const auto& section : test_suite.sections()) {
     std::string section_name = section.name();
@@ -586,7 +613,7 @@ absl::Status RegisterTestSuite(
       bool skip = !ShouldRunTest(full_test_name, skip_tests);
 
       testing::RegisterTest(
-          suite_name.c_str(),
+          suite_name_str.c_str(),
           absl::StrCat(section_name, "/", test_name).c_str(), nullptr,
           test_name.c_str(), __FILE__, __LINE__,
           [runner, test, full_test_name, skip]() -> CelPolicyTest* {
@@ -598,14 +625,11 @@ absl::Status RegisterTestSuite(
 }
 
 void RegisterAllTests() {
-  // cel::google3-end
-  std::string testdata_example_flag = absl::GetFlag(FLAGS_testdata_example);
+  std::vector<std::string> bundle_paths = absl::GetFlag(FLAGS_test_bundles);
   std::vector<std::string> skip_tests = absl::GetFlag(FLAGS_skip_tests);
 
-  std::string abs_testdata_example =
-      cel::internal::ResolveRunfilesPath(testdata_example_flag);
-  ABSL_CHECK(!abs_testdata_example.empty())
-      << "Could not find testdata directory: " << testdata_example_flag;
+  ABSL_CHECK(!bundle_paths.empty())
+      << "No test bundles specified in --test_bundles flag.";
 
   std::shared_ptr<const google::protobuf::DescriptorPool> pool =
       GetSharedTestingDescriptorPool();
@@ -616,35 +640,30 @@ void RegisterAllTests() {
   ABSL_CHECK_OK(evaluator_or.status()) << "Failed to create input evaluator";
   std::shared_ptr<InputEvaluator> evaluator = std::move(evaluator_or.value());
 
-  std::filesystem::path testdata_path(abs_testdata_example);
-  ABSL_CHECK(std::filesystem::exists(testdata_path))
-      << "Testdata path does not exist: " << testdata_path;
-  // walk up to find 'testdata' parent. A work around to portably
-  // get the expected directory from bazel.
-  while (!absl::EndsWith(testdata_path.string(), "testdata")) {
-    testdata_path = testdata_path.parent_path();
-    ABSL_CHECK(testdata_path.string().size() > sizeof("testdata"))
-        << "could not resolve testdata directory";
-  }
+  for (const std::string& bundle_path : bundle_paths) {
+    std::string abs_path = cel::internal::ResolveRunfilesPath(bundle_path);
+    ABSL_CHECK(!abs_path.empty())
+        << "Could not resolve runfile path for test bundle: " << bundle_path;
 
-  for (const auto& entry :
-       std::filesystem::recursive_directory_iterator(testdata_path)) {
-    if (!entry.is_directory()) {
-      continue;
-    }
-    std::filesystem::path dir_path = entry.path();
-    // Check if this directory has policy.yaml and tests.yaml (or
-    // tests.textproto)
-    if (std::filesystem::exists(dir_path / "policy.yaml") &&
-        (std::filesystem::exists(dir_path / "tests.yaml") ||
-         std::filesystem::exists(dir_path / "tests.textproto"))) {
-      std::string suite_name = absl::StrReplaceAll(
-          std::filesystem::relative(dir_path, testdata_path).string(),
-          {{"\\", "/"}});
+    std::string bundle_content;
+    ABSL_CHECK_OK(cel::internal::GetFileContents(abs_path, &bundle_content))
+        << "Failed to read bundle file: " << abs_path;
 
-      ABSL_CHECK_OK(RegisterTestSuite(dir_path, suite_name, evaluator, pool,
-                                      message_factory, skip_tests));
+    auto sections_or = ParseYamlBundle(bundle_content);
+    ABSL_CHECK_OK(sections_or.status())
+        << "Failed to parse bundle file: " << abs_path;
+
+    absl::string_view filename = bundle_path;
+    size_t last_slash = filename.find_last_of("/\\");
+    if (last_slash != absl::string_view::npos) {
+      filename = filename.substr(last_slash + 1);
     }
+    absl::string_view suite_view = filename;
+    absl::ConsumeSuffix(&suite_view, "_bundle.yaml");
+    std::string suite_name = std::string(suite_view);
+
+    ABSL_CHECK_OK(RegisterTestSuite(suite_name, sections_or.value(), evaluator,
+                                    pool, message_factory, skip_tests));
   }
 }
 
