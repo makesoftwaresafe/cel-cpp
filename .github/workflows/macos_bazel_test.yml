@@ -24,4 +24,4 @@ jobs:
         # TODO(b/506179116): <filesystem> is not supported on all target versions in xcode, so not
         # running policy conformance.
         run: |
-          bazelisk test --copt=-Wno-deprecated-declarations --copt=-Wno-nullability-completeness conformance:all
+          bazelisk test --copt=-Wno-deprecated-declarations --copt=-Wno-nullability-completeness conformance:all conformance/policy:all
