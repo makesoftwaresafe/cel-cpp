@@ -2193,10 +2193,10 @@ void BinaryCondVisitor::PostVisitArg(int arg_num, const cel::Expr* expr) {
       std::unique_ptr<JumpStepBase> jump_step;
       switch (cond_) {
         case BinaryCond::kAnd:
-          jump_step = CreateCondJumpStep(false, true, {}, expr->id());
+          jump_step = CreateCondJumpStep(false, {}, expr->id());
           break;
         case BinaryCond::kOr:
-          jump_step = CreateCondJumpStep(true, true, {}, expr->id());
+          jump_step = CreateCondJumpStep(true, {}, expr->id());
           break;
         default:
           ABSL_UNREACHABLE();
@@ -2321,7 +2321,7 @@ void TernaryCondVisitor::PostVisitArg(int arg_num, const cel::Expr* expr) {
     // Value is to be removed from the stack.
     ProgramStepIndex cond_jump_pos = visitor_->GetCurrentIndex();
     auto* jump_to_second =
-        visitor_->AddStep(CreateCondJumpStep(false, false, {}, expr->id()));
+        visitor_->AddStep(CreateTernaryCondJumpStep({}, expr->id()));
     if (jump_to_second) {
       jump_to_second_ =
           Jump(cond_jump_pos, static_cast<JumpStepBase*>(jump_to_second));
