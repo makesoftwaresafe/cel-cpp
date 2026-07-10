@@ -2172,21 +2172,27 @@ void LogicalCondVisitor::PostVisitArg(int arg_num, const cel::Expr* expr) {
     return;
   }
   const int last_arg_index = expr->call_expr().args().size() - 1;
-  if (arg_num > 0) {
+  const size_t num_args = expr->call_expr().args().size();
+  if (arg_num == last_arg_index) {
     if (is_or_) {
-      visitor_->AddStep(CreateOrStep(expr->id()));
+      visitor_->AddStep(CreateOrStep(num_args, expr->id()));
     } else {
-      visitor_->AddStep(CreateAndStep(expr->id()));
+      visitor_->AddStep(CreateAndStep(num_args, expr->id()));
     }
     if (short_circuiting_ && !jump_steps_.empty()) {
-      visitor_->SetProgressStatusIfError(
-          jump_steps_.back().set_target(visitor_->GetCurrentIndex()));
+      for (auto& jump : jump_steps_) {
+        visitor_->SetProgressStatusIfError(
+            jump.set_target(visitor_->GetCurrentIndex()));
+      }
     }
   }
   if (short_circuiting_ && arg_num < last_arg_index) {
     std::unique_ptr<JumpStepBase> jump_step =
-        is_or_ ? CreateCondJumpStep(true, {}, expr->id())
-               : CreateCondJumpStep(false, {}, expr->id());
+        is_or_
+            ? CreateCondJumpStep(true, {}, /*expected_stack_size=*/arg_num + 1,
+                                 expr->id())
+            : CreateCondJumpStep(false, {}, /*expected_stack_size=*/arg_num + 1,
+                                 expr->id());
     ProgramStepIndex index = visitor_->GetCurrentIndex();
     if (JumpStepBase* jump_step_ptr = visitor_->AddStep(std::move(jump_step));
         jump_step_ptr) {

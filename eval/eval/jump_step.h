@@ -53,7 +53,8 @@ std::unique_ptr<JumpStepBase> CreateJumpStep(absl::optional<int> jump_offset,
 // It is compared to jump_condition, and if matched, jump is performed.
 // The boolean value is left on top of the stack.
 std::unique_ptr<JumpStepBase> CreateCondJumpStep(
-    bool jump_condition, absl::optional<int> jump_offset, int64_t expr_id);
+    bool jump_condition, absl::optional<int> jump_offset,
+    size_t expected_stack_size, int64_t expr_id);
 
 // Factory method for Ternary Conditional Jump step.
 // Requires a boolean condition value on top of the stack.

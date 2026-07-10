@@ -143,9 +143,10 @@ class BoolCheckJumpStep : public JumpStepBase {
 
 // Factory method for Conditional Jump step.
 std::unique_ptr<JumpStepBase> CreateCondJumpStep(
-    bool jump_condition, absl::optional<int> jump_offset, int64_t expr_id) {
-  return std::make_unique<CondJumpStep>(jump_condition, jump_offset, 1,
-                                        expr_id);
+    bool jump_condition, absl::optional<int> jump_offset,
+    size_t expected_stack_size, int64_t expr_id) {
+  return std::make_unique<CondJumpStep>(jump_condition, jump_offset,
+                                        expected_stack_size, expr_id);
 }
 
 // Factory method for Ternary Conditional Jump step.
