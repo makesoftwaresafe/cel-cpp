@@ -40,7 +40,6 @@
 #include "env/env_std_extensions.h"
 #include "env/env_yaml.h"
 #include "env/runtime_std_extensions.h"
-#include "extensions/protobuf/bind_proto_to_activation.h"
 #include "extensions/protobuf/enum_adapter.h"
 #include "internal/runfiles.h"
 #include "internal/status_macros.h"
@@ -53,6 +52,7 @@
 #include "policy/test_util.h"
 #include "policy/yaml_policy_parser.h"
 #include "runtime/activation.h"
+#include "runtime/bind_proto_to_activation.h"
 #include "runtime/function_adapter.h"
 #include "runtime/runtime.h"
 #include "cel/expr/conformance/test/suite.pb.h"
@@ -384,9 +384,8 @@ absl::Status PopulateActivation(
         "Failed to resolve context message for test case");
   }
 
-  return cel::extensions::BindProtoToActivation(
-      *context_message,
-      cel::extensions::BindProtoUnsetFieldBehavior::kBindDefaultValue,
+  return cel::BindProtoToActivation(
+      *context_message, cel::BindProtoUnsetFieldBehavior::kBindDefaultValue,
       descriptor_pool, message_factory, arena, &activation);
 }
 

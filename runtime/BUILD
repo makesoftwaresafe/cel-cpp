@@ -111,6 +111,42 @@ cc_test(
 )
 
 cc_library(
+    name = "bind_proto_to_activation",
+    srcs = ["bind_proto_to_activation.cc"],
+    hdrs = ["bind_proto_to_activation.h"],
+    deps = [
+        ":activation",
+        "//common:casting",
+        "//common:value",
+        "//internal:status_macros",
+        "@com_google_absl//absl/base:nullability",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings",
+        "@com_google_protobuf//:protobuf",
+    ],
+)
+
+cc_test(
+    name = "bind_proto_to_activation_test",
+    srcs = ["bind_proto_to_activation_test.cc"],
+    deps = [
+        ":activation",
+        ":bind_proto_to_activation",
+        "//common:casting",
+        "//common:value",
+        "//common:value_testing",
+        "//internal:testing",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_matchers",
+        "@com_google_absl//absl/types:optional",
+        "@com_google_cel_spec//proto/cel/expr/conformance/proto2:test_all_types_cc_proto",
+        "@com_google_protobuf//:protobuf",
+        "@com_google_protobuf//:wrappers_cc_proto",
+    ],
+)
+
+cc_library(
     name = "register_function_helper",
     hdrs = ["register_function_helper.h"],
     deps =

@@ -165,11 +165,12 @@ cc_library(
     srcs = ["bind_proto_to_activation.cc"],
     hdrs = ["bind_proto_to_activation.h"],
     deps = [
-        ":value",
         "//common:casting",
         "//common:value",
         "//internal:status_macros",
         "//runtime:activation",
+        "//runtime:bind_proto_to_activation",
+        "@com_google_absl//absl/base:core_headers",
         "@com_google_absl//absl/base:nullability",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
