@@ -116,10 +116,10 @@ cc_library(
     hdrs = ["bind_proto_to_activation.h"],
     deps = [
         ":activation",
-        "//common:casting",
         "//common:value",
         "//internal:status_macros",
         "@com_google_absl//absl/base:nullability",
+        "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings",

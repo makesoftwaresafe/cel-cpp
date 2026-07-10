@@ -25,6 +25,7 @@ using BindProtoUnsetFieldBehavior ABSL_DEPRECATED(
     ::cel::BindProtoUnsetFieldBehavior;
 
 using ::cel::BindProtoToActivation;
+using ::cel::BindProtoViewToActivation;
 
 namespace protobuf_internal {
 

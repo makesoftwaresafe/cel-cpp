@@ -240,5 +240,39 @@ TEST_F(BindProtoToActivationTest, BindProtoToActivationMapComplex) {
               IsOkAndHolds(Optional(IsMapValueOfSize(2))));
 }
 
+TEST_F(BindProtoToActivationTest, BindProtoViewToActivation) {
+  TestAllTypes test_all_types;
+  test_all_types.set_single_int64(123);
+  Activation activation;
+
+  ASSERT_THAT(
+      BindProtoViewToActivation(test_all_types, descriptor_pool(),
+                                message_factory(), arena(), &activation),
+      IsOk());
+
+  EXPECT_THAT(activation.FindVariable("single_int64", descriptor_pool(),
+                                      message_factory(), arena()),
+              IsOkAndHolds(Optional(IntValueIs(123))));
+}
+
+TEST_F(BindProtoToActivationTest, BindProtoViewToActivationDefault) {
+  TestAllTypes test_all_types;
+  test_all_types.set_single_int64(123);
+  Activation activation;
+
+  ASSERT_THAT(
+      BindProtoViewToActivation(
+          test_all_types, BindProtoUnsetFieldBehavior::kBindDefaultValue,
+          descriptor_pool(), message_factory(), arena(), &activation),
+      IsOk());
+
+  EXPECT_THAT(activation.FindVariable("single_int32", descriptor_pool(),
+                                      message_factory(), arena()),
+              IsOkAndHolds(Optional(IntValueIs(-32))));
+  EXPECT_THAT(activation.FindVariable("single_sint32", descriptor_pool(),
+                                      message_factory(), arena()),
+              IsOkAndHolds(Optional(IntValueIs(0))));
+}
+
 }  // namespace
 }  // namespace cel

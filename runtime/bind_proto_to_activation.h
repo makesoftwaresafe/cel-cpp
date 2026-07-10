@@ -18,9 +18,9 @@
 #include <type_traits>
 
 #include "absl/base/nullability.h"
+#include "absl/log/absl_check.h"
 #include "absl/status/status.h"
 #include "absl/strings/str_cat.h"
-#include "common/casting.h"
 #include "common/value.h"
 #include "runtime/activation.h"
 #include "google/protobuf/arena.h"
@@ -48,6 +48,43 @@ absl::Status BindProtoToActivation(
     const google::protobuf::DescriptorPool* absl_nonnull descriptor_pool,
     google::protobuf::MessageFactory* absl_nonnull message_factory,
     google::protobuf::Arena* absl_nonnull arena, Activation* absl_nonnull activation);
+
+template <bool kBorrow, typename T>
+absl::Status BindProtoToActivationImpl(
+    const T& context, BindProtoUnsetFieldBehavior unset_field_behavior,
+    const google::protobuf::DescriptorPool* absl_nonnull descriptor_pool,
+    google::protobuf::MessageFactory* absl_nonnull message_factory,
+    google::protobuf::Arena* absl_nonnull arena, Activation* absl_nonnull activation) {
+  static_assert(std::is_base_of_v<google::protobuf::Message, T>);
+
+  Value parent;
+  if constexpr (kBorrow) {
+    parent = Value::WrapMessageUnsafe(&context, descriptor_pool,
+                                      message_factory, arena);
+  } else {
+    parent =
+        Value::FromMessage(context, descriptor_pool, message_factory, arena);
+  }
+
+  if (!parent.IsStruct()) {
+    return absl::InvalidArgumentError(
+        absl::StrCat("context is a well-known type: ", context.GetTypeName()));
+  }
+  StructValue struct_value = parent.GetStruct();
+
+  const google::protobuf::Descriptor* descriptor = context.GetDescriptor();
+  ABSL_DCHECK(descriptor != nullptr);
+  if (descriptor == nullptr) {
+    // Generally not possible, but don't crash in case of a misbehaving
+    // implementation in normal builds.
+    return absl::InvalidArgumentError(
+        absl::StrCat("context missing descriptor: ", context.GetTypeName()));
+  }
+
+  return BindProtoToActivation(*descriptor, struct_value, unset_field_behavior,
+                               descriptor_pool, message_factory, arena,
+                               activation);
+}
 
 }  // namespace runtime_internal
 
@@ -89,26 +126,9 @@ absl::Status BindProtoToActivation(
     const google::protobuf::DescriptorPool* absl_nonnull descriptor_pool,
     google::protobuf::MessageFactory* absl_nonnull message_factory,
     google::protobuf::Arena* absl_nonnull arena, Activation* absl_nonnull activation) {
-  static_assert(std::is_base_of_v<google::protobuf::Message, T>);
-  Value parent =
-      Value::FromMessage(context, descriptor_pool, message_factory, arena);
-
-  if (!InstanceOf<StructValue>(parent)) {
-    return absl::InvalidArgumentError(
-        absl::StrCat("context is a well-known type: ", context.GetTypeName()));
-  }
-  const StructValue& struct_value = Cast<StructValue>(parent);
-
-  const google::protobuf::Descriptor* descriptor = context.GetDescriptor();
-
-  if (descriptor == nullptr) {
-    return absl::InvalidArgumentError(
-        absl::StrCat("context missing descriptor: ", context.GetTypeName()));
-  }
-
-  return runtime_internal::BindProtoToActivation(
-      *descriptor, struct_value, unset_field_behavior, descriptor_pool,
-      message_factory, arena, activation);
+  return runtime_internal::BindProtoToActivationImpl<false>(
+      context, unset_field_behavior, descriptor_pool, message_factory, arena,
+      activation);
 }
 
 template <typename T>
@@ -120,6 +140,33 @@ absl::Status BindProtoToActivation(
   return BindProtoToActivation(context, BindProtoUnsetFieldBehavior::kSkip,
                                descriptor_pool, message_factory, arena,
                                activation);
+}
+
+// Like `BindProtoToActivation`, but uses `Value::WrapMessageUnsafe` to borrow
+// from `context` rather than copying fields to `arena`.
+//
+// Requires the caller to keep the context message valid as long as the
+// activation or any derived value.
+template <typename T>
+absl::Status BindProtoViewToActivation(
+    const T& context, BindProtoUnsetFieldBehavior unset_field_behavior,
+    const google::protobuf::DescriptorPool* absl_nonnull descriptor_pool,
+    google::protobuf::MessageFactory* absl_nonnull message_factory,
+    google::protobuf::Arena* absl_nonnull arena, Activation* absl_nonnull activation) {
+  return runtime_internal::BindProtoToActivationImpl<true>(
+      context, unset_field_behavior, descriptor_pool, message_factory, arena,
+      activation);
+}
+
+template <typename T>
+absl::Status BindProtoViewToActivation(
+    const T& context,
+    const google::protobuf::DescriptorPool* absl_nonnull descriptor_pool,
+    google::protobuf::MessageFactory* absl_nonnull message_factory,
+    google::protobuf::Arena* absl_nonnull arena, Activation* absl_nonnull activation) {
+  return BindProtoViewToActivation(context, BindProtoUnsetFieldBehavior::kSkip,
+                                   descriptor_pool, message_factory, arena,
+                                   activation);
 }
 
 }  // namespace cel
