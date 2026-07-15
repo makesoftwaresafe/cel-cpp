@@ -23,6 +23,7 @@
 #include "absl/strings/string_view.h"
 #include "checker/validation_result.h"
 #include "codelab/network_functions.h"
+#include "common/ast.h"
 #include "common/decl.h"
 #include "common/minimal_descriptor_pool.h"
 #include "common/type.h"
@@ -30,6 +31,7 @@
 #include "compiler/compiler.h"
 #include "compiler/compiler_factory.h"
 #include "compiler/standard_library.h"
+#include "internal/status_macros.h"
 #include "runtime/activation.h"
 #include "runtime/runtime.h"
 #include "runtime/runtime_builder.h"
@@ -95,8 +97,9 @@ absl::StatusOr<bool> CompileAndEvaluateExercise10(absl::string_view expression,
     return absl::InvalidArgumentError(checked->FormatError());
   }
 
+  CEL_ASSIGN_OR_RETURN(std::unique_ptr<cel::Ast> ast, checked->ReleaseAst());
   absl::StatusOr<std::unique_ptr<cel::Program>> program =
-      (*runtime)->CreateProgram(checked->ReleaseAst().value());
+      (*runtime)->CreateProgram(std::move(ast));
 
   if (!program.ok()) {
     return std::move(program).status();
