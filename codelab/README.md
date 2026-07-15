@@ -31,6 +31,12 @@ Buffers as the input into CEL, they may be harder to understand. Consider
 working through one of these tutorials, first. See the devsite for
 [Protocol Buffers](https://protobuf.dev).
 
+If you're not familiar with Bazel, Bazel is an open-source build and test tool
+that supports multi-language projects and manages dependencies. This codelab and
+`cel-cpp` are built using Bazel. To learn more about building C++ projects with
+Bazel, see the official [Bazel C++ Tutorial](https://bazel.build/tutorials/cpp)
+and the [Bazel Documentation](https://bazel.build/docs).
+
 Notes on portability: Protocol Buffers are not required to use CEL generally,
 but the C++ implementation has a hard dependency on the library and some APIs
 reference protobuf types directly. Automated builds test against gcc10 and
@@ -66,6 +72,62 @@ Make sure everything is working by building the codelab:
 
 ```
 bazel build //codelab:all
+```
+
+## Setting up a Bazel Project with cel-cpp
+
+If you want to integrate `cel-cpp` into your own standalone C++ project using
+[Bazel](https://bazel.build/docs), you can manage it as an external dependency
+with [Bzlmod](https://bazel.build/external/overview#bzlmod).
+
+### MODULE.bazel
+
+In your project's root `MODULE.bazel` file, declare a dependency on `cel-cpp`
+from the
+[Bazel Central Registry (BCR)](https://registry.bazel.build/modules/cel-cpp):
+
+```python
+bazel_dep(name = "cel-cpp", version = "<version>")
+```
+
+Alternatively, if you want to depend directly on a specific commit from the
+GitHub repository, you can use `git_override`:
+
+```python
+bazel_dep(name = "cel-cpp", version = "0.0.0")
+git_override(
+    module_name = "cel-cpp",
+    remote = "https://github.com/google/cel-cpp.git",
+    commit = "<commit_hash>",
+)
+```
+
+### BUILD
+
+In your project's `BUILD` (or `BUILD.bazel`) file, reference `cel-cpp` targets
+using `@cel-cpp//...`. For example, to compile a C++ binary that compiles and
+evaluates CEL expressions using the modern `Compiler` and `Runtime` APIs shown
+in this codelab:
+
+```python
+cc_binary(
+    name = "my_cel_app",
+    srcs = ["main.cc"],
+    deps = [
+        "@cel-cpp//checker:validation_result",
+        "@cel-cpp//common:ast",
+        "@cel-cpp//common:minimal_descriptor_pool",
+        "@cel-cpp//common:value",
+        "@cel-cpp//compiler",
+        "@cel-cpp//compiler:compiler_factory",
+        "@cel-cpp//compiler:standard_library",
+        "@cel-cpp//runtime",
+        "@cel-cpp//runtime:activation",
+        "@cel-cpp//runtime:runtime_builder",
+        "@cel-cpp//runtime:runtime_options",
+        "@cel-cpp//runtime:standard_runtime_builder_factory",
+    ],
+)
 ```
 
 ## Hello, World
