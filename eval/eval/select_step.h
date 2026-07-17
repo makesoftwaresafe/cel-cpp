@@ -5,7 +5,6 @@
 #include <memory>
 
 #include "absl/status/statusor.h"
-#include "common/expr.h"
 #include "common/value.h"
 #include "eval/eval/direct_expression_step.h"
 #include "eval/eval/evaluator_core.h"
@@ -20,7 +19,7 @@ std::unique_ptr<DirectExpressionStep> CreateDirectSelectStep(
 
 // Factory method for Select - based Execution step
 absl::StatusOr<std::unique_ptr<ExpressionStep>> CreateSelectStep(
-    const cel::SelectExpr& select_expr, int64_t expr_id,
+    cel::StringValue field, bool test_only, int64_t expr_id,
     bool enable_wrapper_type_null_unboxing, bool enable_optional_types = false);
 
 }  // namespace google::api::expr::runtime

@@ -976,6 +976,7 @@ class FlatExprVisitor : public cel::AstVisitor {
       return;
     }
 
+    StringValue field = cel::StringValue(select_expr.field());
     if (auto depth = RecursionEligible(); depth.has_value()) {
       auto deps = ExtractRecursiveDependencies();
       if (deps.size() != 1) {
@@ -983,7 +984,6 @@ class FlatExprVisitor : public cel::AstVisitor {
             "unexpected number of dependencies for select operation."));
         return;
       }
-      StringValue field = cel::StringValue(select_expr.field());
 
       SetRecursiveStep(
           CreateDirectSelectStep(std::move(deps[0]), std::move(field),
@@ -994,9 +994,9 @@ class FlatExprVisitor : public cel::AstVisitor {
       return;
     }
 
-    AddStep(CreateSelectStep(select_expr, expr.id(),
-                             options_.enable_empty_wrapper_null_unboxing,
-                             enable_optional_types_));
+    AddStep(CreateSelectStep(
+        std::move(field), select_expr.test_only(), expr.id(),
+        options_.enable_empty_wrapper_null_unboxing, enable_optional_types_));
   }
 
   // Call node handler group.

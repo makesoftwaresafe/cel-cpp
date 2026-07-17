@@ -133,8 +133,8 @@ class SelectStepTest : public testing::Test {
     CEL_ASSIGN_OR_RETURN(auto step0, CreateIdentStep(ident.name(), expr0.id()));
     CEL_ASSIGN_OR_RETURN(
         auto step1,
-        CreateSelectStep(select, expr.id(),
-                         options.enable_wrapper_type_null_unboxing));
+        CreateSelectStep(cel::StringValue(select.field()), select.test_only(),
+                         expr.id(), options.enable_wrapper_type_null_unboxing));
 
     path.push_back(std::move(step0));
     path.push_back(std::move(step1));
@@ -330,11 +330,13 @@ TEST_F(SelectStepTest, MapPresenseIsErrorTest) {
   ASSERT_OK_AND_ASSIGN(auto step0, CreateIdentStep(ident.name(), expr0.id()));
   ASSERT_OK_AND_ASSIGN(
       auto step1,
-      CreateSelectStep(select_map, expr1.id(),
+      CreateSelectStep(cel::StringValue(select_map.field()),
+                       select_map.test_only(), expr1.id(),
                        /*enable_wrapper_type_null_unboxing=*/false));
   ASSERT_OK_AND_ASSIGN(
       auto step2,
-      CreateSelectStep(select, select_expr.id(),
+      CreateSelectStep(cel::StringValue(select.field()), select.test_only(),
+                       select_expr.id(),
                        /*enable_wrapper_type_null_unboxing=*/false));
 
   ExecutionPath path;
@@ -836,7 +838,8 @@ TEST_P(SelectStepConformanceTest, CelErrorAsArgument) {
   ASSERT_OK_AND_ASSIGN(auto step0, CreateIdentStep(ident.name(), expr0.id()));
   ASSERT_OK_AND_ASSIGN(
       auto step1,
-      CreateSelectStep(select, dummy_expr.id(),
+      CreateSelectStep(cel::StringValue(select.field()), select.test_only(),
+                       dummy_expr.id(),
                        /*enable_wrapper_type_null_unboxing=*/false));
 
   path.push_back(std::move(step0));
@@ -877,7 +880,8 @@ TEST_F(SelectStepTest, DisableMissingAttributeOK) {
   ASSERT_OK_AND_ASSIGN(auto step0, CreateIdentStep(ident.name(), expr0.id()));
   ASSERT_OK_AND_ASSIGN(
       auto step1,
-      CreateSelectStep(select, dummy_expr.id(),
+      CreateSelectStep(cel::StringValue(select.field()), select.test_only(),
+                       dummy_expr.id(),
                        /*enable_wrapper_type_null_unboxing=*/false));
 
   path.push_back(std::move(step0));
@@ -919,7 +923,8 @@ TEST_F(SelectStepTest, UnrecoverableUnknownValueProducesError) {
   ASSERT_OK_AND_ASSIGN(auto step0, CreateIdentStep(ident.name(), expr0.id()));
   ASSERT_OK_AND_ASSIGN(
       auto step1,
-      CreateSelectStep(select, dummy_expr.id(),
+      CreateSelectStep(cel::StringValue(select.field()), select.test_only(),
+                       dummy_expr.id(),
                        /*enable_wrapper_type_null_unboxing=*/false));
 
   path.push_back(std::move(step0));
@@ -965,9 +970,9 @@ TEST_F(SelectStepTest, UnknownPatternResolvesToUnknown) {
   auto& ident = expr0.mutable_ident_expr();
   ident.set_name("message");
   auto step0_status = CreateIdentStep(ident.name(), expr0.id());
-  auto step1_status =
-      CreateSelectStep(select, dummy_expr.id(),
-                       /*enable_wrapper_type_null_unboxing=*/false);
+  auto step1_status = CreateSelectStep(
+      cel::StringValue(select.field()), select.test_only(), dummy_expr.id(),
+      /*enable_wrapper_type_null_unboxing=*/false);
 
   ASSERT_THAT(step0_status, IsOk());
   ASSERT_THAT(step1_status, IsOk());
