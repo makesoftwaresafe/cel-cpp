@@ -85,8 +85,8 @@ absl::Status DirectShadowableValueStep::Evaluate(
 
 absl::StatusOr<std::unique_ptr<ExpressionStep>> CreateShadowableValueStep(
     absl::string_view name, cel::Value value, int64_t expr_id) {
-  return absl::make_unique<ShadowableValueStep>(std::string(name),
-                                                std::move(value), expr_id);
+  return std::make_unique<ShadowableValueStep>(std::string(name),
+                                               std::move(value), expr_id);
 }
 
 std::unique_ptr<DirectExpressionStep> CreateDirectShadowableValueStep(
