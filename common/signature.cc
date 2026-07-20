@@ -634,7 +634,7 @@ absl::StatusOr<TypeSpec> ParseTypeSpec(std::string_view signature) {
 absl::StatusOr<Type> ParseType(std::string_view signature, google::protobuf::Arena* arena,
                                const google::protobuf::DescriptorPool& pool) {
   CEL_ASSIGN_OR_RETURN(auto type_spec, ParseTypeSpec(signature));
-  return cel::ConvertTypeSpecToType(type_spec, arena, pool);
+  return cel::ConvertTypeSpecToType(type_spec, pool, arena);
 }
 
 }  // namespace cel

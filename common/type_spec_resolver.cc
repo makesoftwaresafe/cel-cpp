@@ -33,8 +33,8 @@
 namespace cel {
 
 absl::StatusOr<Type> ConvertTypeSpecToType(const TypeSpec& type_spec,
-                                           google::protobuf::Arena* arena,
-                                           const google::protobuf::DescriptorPool& pool) {
+                                           const google::protobuf::DescriptorPool& pool,
+                                           google::protobuf::Arena* arena) {
   if (type_spec.has_null()) return Type(NullType{});
   if (type_spec.has_dyn()) return Type(DynType{});
 
@@ -94,7 +94,7 @@ absl::StatusOr<Type> ConvertTypeSpecToType(const TypeSpec& type_spec,
     if (type_spec.list_type().elem_type().is_specified()) {
       CEL_ASSIGN_OR_RETURN(
           elem_type, ConvertTypeSpecToType(type_spec.list_type().elem_type(),
-                                           arena, pool));
+                                           pool, arena));
     }
     return Type(ListType(arena, elem_type));
   }
@@ -104,14 +104,14 @@ absl::StatusOr<Type> ConvertTypeSpecToType(const TypeSpec& type_spec,
     if (type_spec.map_type().key_type().is_specified()) {
       CEL_ASSIGN_OR_RETURN(
           key_type,
-          ConvertTypeSpecToType(type_spec.map_type().key_type(), arena, pool));
+          ConvertTypeSpecToType(type_spec.map_type().key_type(), pool, arena));
     }
 
     Type value_type;
     if (type_spec.map_type().value_type().is_specified()) {
       CEL_ASSIGN_OR_RETURN(
           value_type, ConvertTypeSpecToType(type_spec.map_type().value_type(),
-                                            arena, pool));
+                                            pool, arena));
     }
     return Type(MapType(arena, key_type, value_type));
   }
@@ -122,13 +122,13 @@ absl::StatusOr<Type> ConvertTypeSpecToType(const TypeSpec& type_spec,
     if (func_spec.result_type().is_specified()) {
       CEL_ASSIGN_OR_RETURN(
           result_type,
-          ConvertTypeSpecToType(func_spec.result_type(), arena, pool));
+          ConvertTypeSpecToType(func_spec.result_type(), pool, arena));
     }
     std::vector<Type> arg_types;
     arg_types.reserve(func_spec.arg_types().size());
     for (const auto& arg_spec : func_spec.arg_types()) {
       CEL_ASSIGN_OR_RETURN(auto arg_type,
-                           ConvertTypeSpecToType(arg_spec, arena, pool));
+                           ConvertTypeSpecToType(arg_spec, pool, arena));
       arg_types.push_back(std::move(arg_type));
     }
     return Type(FunctionType(arena, result_type, arg_types));
@@ -178,7 +178,7 @@ absl::StatusOr<Type> ConvertTypeSpecToType(const TypeSpec& type_spec,
     std::vector<Type> params;
     for (const auto& param_spec : type_spec.abstract_type().parameter_types()) {
       CEL_ASSIGN_OR_RETURN(auto param,
-                           ConvertTypeSpecToType(param_spec, arena, pool));
+                           ConvertTypeSpecToType(param_spec, pool, arena));
       params.push_back(std::move(param));
     }
     auto* allocated_name = google::protobuf::Arena::Create<std::string>(arena, name);
@@ -187,7 +187,7 @@ absl::StatusOr<Type> ConvertTypeSpecToType(const TypeSpec& type_spec,
 
   if (type_spec.has_type()) {
     CEL_ASSIGN_OR_RETURN(auto contained_type,
-                         ConvertTypeSpecToType(type_spec.type(), arena, pool));
+                         ConvertTypeSpecToType(type_spec.type(), pool, arena));
     return Type(TypeType(arena, contained_type));
   }
 

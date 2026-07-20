@@ -85,7 +85,7 @@ TEST_P(TypeSignatureTest, TypeSignature) {
     EXPECT_THAT(signature, IsOkAndHolds(param.expected_signature));
 
     absl::StatusOr<Type> type = ConvertTypeSpecToType(
-        param.type, GetTestArena(), *GetTestingDescriptorPool());
+        param.type, *GetTestingDescriptorPool(), GetTestArena());
     ASSERT_THAT(type, ::absl_testing::IsOk());
     EXPECT_THAT(MakeTypeSignature(*type),
                 IsOkAndHolds(param.expected_signature));
@@ -285,9 +285,10 @@ TEST_P(TypeSignatureTest, ParseTypeCheck) {
     auto parsed = ParseType(param.expected_signature, GetTestArena(),
                             *GetTestingDescriptorPool());
     ASSERT_THAT(parsed, ::absl_testing::IsOk());
-    ASSERT_OK_AND_ASSIGN(auto expected_type,
-                         ConvertTypeSpecToType(param.type, GetTestArena(),
-                                               *GetTestingDescriptorPool()));
+    ASSERT_OK_AND_ASSIGN(
+        auto expected_type,
+        ConvertTypeSpecToType(param.type, *GetTestingDescriptorPool(),
+                              GetTestArena()));
     VerifyTypesEqual(*parsed, expected_type);
   }
 }

@@ -29,8 +29,8 @@ namespace cel {
 // properties of the type when used in CEL. Returns a status with code
 // `InvalidArgument` if the input cannot be resolved to a type.
 absl::StatusOr<Type> ConvertTypeSpecToType(const TypeSpec& type_spec,
-                                           google::protobuf::Arena* arena,
-                                           const google::protobuf::DescriptorPool& pool);
+                                           const google::protobuf::DescriptorPool& pool,
+                                           google::protobuf::Arena* arena);
 
 // Resolves a `cel::Type` to a `cel::TypeSpec`.
 absl::StatusOr<TypeSpec> ConvertTypeToTypeSpec(const Type& type);
