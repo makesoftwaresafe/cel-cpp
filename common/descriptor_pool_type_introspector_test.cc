@@ -12,19 +12,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "checker/internal/descriptor_pool_type_introspector.h"
+#include "common/descriptor_pool_type_introspector.h"
 
+#include <optional>
 #include <vector>
 
 #include "absl/status/status_matchers.h"
 #include "absl/status/statusor.h"
-#include "absl/types/optional.h"
 #include "common/type.h"
 #include "common/type_introspector.h"
 #include "internal/testing.h"
 #include "internal/testing_descriptor_pool.h"
 
-namespace cel::checker_internal {
+namespace cel {
 namespace {
 
 using ::absl_testing::IsOkAndHolds;
@@ -172,4 +172,4 @@ TEST(DescriptorPoolTypeIntrospectorTest, ListFieldsForStructTypeNotFound) {
 }
 
 }  // namespace
-}  // namespace cel::checker_internal
+}  // namespace cel

@@ -12,9 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "checker/internal/descriptor_pool_type_introspector.h"
+#include "common/descriptor_pool_type_introspector.h"
 
 #include <memory>
+#include <optional>
 #include <utility>
 #include <vector>
 
@@ -24,13 +25,12 @@
 #include "absl/status/statusor.h"
 #include "absl/strings/string_view.h"
 #include "absl/synchronization/mutex.h"
-#include "absl/types/optional.h"
 #include "absl/types/span.h"
 #include "common/type.h"
 #include "common/type_introspector.h"
 #include "google/protobuf/descriptor.h"
 
-namespace cel::checker_internal {
+namespace cel {
 namespace {
 
 // Standard implementation for field lookups.
@@ -242,4 +242,4 @@ DescriptorPoolTypeIntrospector::CreateFieldTable(
   return result;
 }
 
-}  // namespace cel::checker_internal
+}  // namespace cel

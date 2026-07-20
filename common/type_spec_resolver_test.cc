@@ -25,6 +25,7 @@
 #include "absl/status/status_matchers.h"
 #include "common/ast.h"
 #include "common/type.h"
+#include "common/type_introspector.h"
 #include "common/type_kind.h"
 #include "internal/testing.h"
 #include "internal/testing_descriptor_pool.h"
@@ -271,6 +272,62 @@ TEST(TypeSpecResolverTest, EnumTypeWithParamsError) {
       ConvertTypeSpecToType(spec, *GetTestingDescriptorPool(), GetTestArena());
   EXPECT_THAT(t, StatusIs(absl::StatusCode::kInvalidArgument,
                           HasSubstr("cannot have type parameters")));
+}
+
+TEST(TypeSpecResolverTest, WellKnownMessageTypeFiltering) {
+  TypeSpec message_spec(MessageTypeSpec("google.protobuf.Timestamp"));
+  ASSERT_OK_AND_ASSIGN(
+      auto message_type,
+      ConvertTypeSpecToType(message_spec, *GetTestingDescriptorPool(),
+                            GetTestArena()));
+  EXPECT_TRUE(message_type.IsTimestamp());
+
+  TypeSpec abstract_spec(
+      AbstractType("google.protobuf.Duration", /*params=*/{}));
+  ASSERT_OK_AND_ASSIGN(
+      auto abstract_type,
+      ConvertTypeSpecToType(abstract_spec, *GetTestingDescriptorPool(),
+                            GetTestArena()));
+  EXPECT_TRUE(abstract_type.IsDuration());
+
+  std::vector<TypeSpec> params;
+  params.push_back(TypeSpec(PrimitiveType::kInt64));
+  TypeSpec abstract_with_params(
+      AbstractType("google.protobuf.Timestamp", std::move(params)));
+  EXPECT_THAT(
+      ConvertTypeSpecToType(abstract_with_params, *GetTestingDescriptorPool(),
+                            GetTestArena()),
+      StatusIs(absl::StatusCode::kInvalidArgument,
+               HasSubstr("cannot have type parameters")));
+}
+
+TEST(TypeSpecResolverTest, WellKnownTypeIntrospector) {
+  WellKnownTypeIntrospector introspector;
+
+  TypeSpec message_spec(MessageTypeSpec("google.protobuf.Timestamp"));
+  ASSERT_OK_AND_ASSIGN(
+      auto message_type,
+      ConvertTypeSpecToType(message_spec, introspector, GetTestArena()));
+  EXPECT_TRUE(message_type.IsTimestamp());
+
+  TypeSpec abstract_spec(
+      AbstractType("google.protobuf.Duration", /*params=*/{}));
+  ASSERT_OK_AND_ASSIGN(
+      auto abstract_type,
+      ConvertTypeSpecToType(abstract_spec, introspector, GetTestArena()));
+  EXPECT_TRUE(abstract_type.IsDuration());
+
+  TypeSpec primitive_spec(PrimitiveType::kInt64);
+  ASSERT_OK_AND_ASSIGN(
+      auto primitive_type,
+      ConvertTypeSpecToType(primitive_spec, introspector, GetTestArena()));
+  EXPECT_TRUE(primitive_type.IsInt());
+
+  TypeSpec custom_spec(MessageTypeSpec("custom.UnknownMessage"));
+  EXPECT_THAT(
+      ConvertTypeSpecToType(custom_spec, introspector, GetTestArena()),
+      StatusIs(absl::StatusCode::kInvalidArgument,
+               HasSubstr("Message type 'custom.UnknownMessage' not found")));
 }
 
 TEST(TypeSpecResolverTest, UnknownTypeSpecKindError) {

@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef THIRD_PARTY_CEL_CPP_CHECKER_INTERNAL_DESCRIPTOR_POOL_TYPE_INTROSPECTOR_H_
-#define THIRD_PARTY_CEL_CPP_CHECKER_INTERNAL_DESCRIPTOR_POOL_TYPE_INTROSPECTOR_H_
+#ifndef THIRD_PARTY_CEL_CPP_COMMON_DESCRIPTOR_POOL_TYPE_INTROSPECTOR_H_
+#define THIRD_PARTY_CEL_CPP_COMMON_DESCRIPTOR_POOL_TYPE_INTROSPECTOR_H_
 
 #include <memory>
 #include <vector>
@@ -30,14 +30,15 @@
 #include "common/type_introspector.h"
 #include "google/protobuf/descriptor.h"
 
-namespace cel::checker_internal {
+namespace cel {
 
 // Implementation of `TypeIntrospector` that uses a `google::protobuf::DescriptorPool`.
 //
 // This is used by the type checker to resolve protobuf types and their fields
 // and apply any options like using JSON names.
 //
-// Neither copyable nor movable. Should be managed by a TypeCheckEnv.
+// Neither copyable nor movable. Should be managed by a TypeCheckEnv or a
+// runtime Environment.
 class DescriptorPoolTypeIntrospector : public TypeIntrospector {
  public:
   struct Field {
@@ -100,6 +101,6 @@ class DescriptorPoolTypeIntrospector : public TypeIntrospector {
   const google::protobuf::DescriptorPool* absl_nonnull descriptor_pool_;
 };
 
-}  // namespace cel::checker_internal
+}  // namespace cel
 
-#endif  // THIRD_PARTY_CEL_CPP_CHECKER_INTERNAL_DESCRIPTOR_POOL_TYPE_INTROSPECTOR_H_
+#endif  // THIRD_PARTY_CEL_CPP_COMMON_DESCRIPTOR_POOL_TYPE_INTROSPECTOR_H_

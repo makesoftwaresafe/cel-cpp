@@ -23,18 +23,36 @@
 #include "absl/status/statusor.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/string_view.h"
+#include "absl/types/optional.h"
 #include "common/ast.h"
+#include "common/descriptor_pool_type_introspector.h"
 #include "common/type.h"
+#include "common/type_introspector.h"
 #include "common/type_kind.h"
 #include "internal/status_macros.h"
 #include "google/protobuf/arena.h"
 #include "google/protobuf/descriptor.h"
 
 namespace cel {
+namespace {
 
-absl::StatusOr<Type> ConvertTypeSpecToType(const TypeSpec& type_spec,
-                                           const google::protobuf::DescriptorPool& pool,
-                                           google::protobuf::Arena* arena) {
+absl::StatusOr<absl::optional<Type>> ResolveNamedType(
+    absl::string_view name, const TypeIntrospector& type_introspector) {
+  absl::optional<Type> type = FindWellKnownType(name);
+  if (type.has_value()) {
+    return type;
+  }
+  return type_introspector.FindType(name);
+}
+
+bool TypeAcceptsParameters(const Type& type) {
+  return type.IsOpaque() || type.IsType() || type.IsList() || type.IsMap();
+}
+}  // namespace
+
+absl::StatusOr<Type> ConvertTypeSpecToType(
+    const TypeSpec& type_spec, const TypeIntrospector& type_introspector,
+    google::protobuf::Arena* arena) {
   if (type_spec.has_null()) return Type(NullType{});
   if (type_spec.has_dyn()) return Type(DynType{});
 
@@ -94,7 +112,7 @@ absl::StatusOr<Type> ConvertTypeSpecToType(const TypeSpec& type_spec,
     if (type_spec.list_type().elem_type().is_specified()) {
       CEL_ASSIGN_OR_RETURN(
           elem_type, ConvertTypeSpecToType(type_spec.list_type().elem_type(),
-                                           pool, arena));
+                                           type_introspector, arena));
     }
     return Type(ListType(arena, elem_type));
   }
@@ -103,15 +121,15 @@ absl::StatusOr<Type> ConvertTypeSpecToType(const TypeSpec& type_spec,
     Type key_type;
     if (type_spec.map_type().key_type().is_specified()) {
       CEL_ASSIGN_OR_RETURN(
-          key_type,
-          ConvertTypeSpecToType(type_spec.map_type().key_type(), pool, arena));
+          key_type, ConvertTypeSpecToType(type_spec.map_type().key_type(),
+                                          type_introspector, arena));
     }
 
     Type value_type;
     if (type_spec.map_type().value_type().is_specified()) {
       CEL_ASSIGN_OR_RETURN(
           value_type, ConvertTypeSpecToType(type_spec.map_type().value_type(),
-                                            pool, arena));
+                                            type_introspector, arena));
     }
     return Type(MapType(arena, key_type, value_type));
   }
@@ -120,15 +138,16 @@ absl::StatusOr<Type> ConvertTypeSpecToType(const TypeSpec& type_spec,
     const auto& func_spec = type_spec.function();
     Type result_type;
     if (func_spec.result_type().is_specified()) {
-      CEL_ASSIGN_OR_RETURN(
-          result_type,
-          ConvertTypeSpecToType(func_spec.result_type(), pool, arena));
+      CEL_ASSIGN_OR_RETURN(result_type,
+                           ConvertTypeSpecToType(func_spec.result_type(),
+                                                 type_introspector, arena));
     }
     std::vector<Type> arg_types;
     arg_types.reserve(func_spec.arg_types().size());
     for (const auto& arg_spec : func_spec.arg_types()) {
-      CEL_ASSIGN_OR_RETURN(auto arg_type,
-                           ConvertTypeSpecToType(arg_spec, pool, arena));
+      CEL_ASSIGN_OR_RETURN(
+          auto arg_type,
+          ConvertTypeSpecToType(arg_spec, type_introspector, arena));
       arg_types.push_back(std::move(arg_type));
     }
     return Type(FunctionType(arena, result_type, arg_types));
@@ -142,43 +161,36 @@ absl::StatusOr<Type> ConvertTypeSpecToType(const TypeSpec& type_spec,
 
   if (type_spec.has_message_type()) {
     const std::string& name = type_spec.message_type().type();
-    const google::protobuf::Descriptor* descriptor = pool.FindMessageTypeByName(name);
-    if (descriptor == nullptr) {
+    CEL_ASSIGN_OR_RETURN(absl::optional<Type> type,
+                         ResolveNamedType(name, type_introspector));
+    if (!type.has_value()) {
       return absl::InvalidArgumentError(absl::StrCat(
           "Message type '", name, "' not found in descriptor pool"));
     }
-    return Type::Message(descriptor);
+    return *type;
   }
 
   if (type_spec.has_abstract_type()) {
     const std::string& name = type_spec.abstract_type().name();
 
-    // Check if it's a message type in the pool
-    const google::protobuf::Descriptor* descriptor = pool.FindMessageTypeByName(name);
-    if (descriptor != nullptr) {
-      if (!type_spec.abstract_type().parameter_types().empty()) {
-        return absl::InvalidArgumentError(absl::StrCat(
-            "Message type '", name, "' cannot have type parameters"));
-      }
-      return Type::Message(descriptor);
-    }
-
-    // Check if it's an enum type in the pool
-    const google::protobuf::EnumDescriptor* enum_descriptor =
-        pool.FindEnumTypeByName(name);
-    if (enum_descriptor != nullptr) {
-      if (!type_spec.abstract_type().parameter_types().empty()) {
+    CEL_ASSIGN_OR_RETURN(absl::optional<Type> type,
+                         ResolveNamedType(name, type_introspector));
+    if (type.has_value()) {
+      if (!TypeAcceptsParameters(*type) &&
+          !type_spec.abstract_type().parameter_types().empty()) {
         return absl::InvalidArgumentError(
-            absl::StrCat("Enum type '", name, "' cannot have type parameters"));
+            absl::StrCat("Type '", name, "' cannot have type parameters"));
       }
-      return Type::Enum(enum_descriptor);
+      return *type;
     }
 
     // Otherwise fallback to OpaqueType
     std::vector<Type> params;
+    params.reserve(type_spec.abstract_type().parameter_types().size());
     for (const auto& param_spec : type_spec.abstract_type().parameter_types()) {
-      CEL_ASSIGN_OR_RETURN(auto param,
-                           ConvertTypeSpecToType(param_spec, pool, arena));
+      CEL_ASSIGN_OR_RETURN(
+          auto param,
+          ConvertTypeSpecToType(param_spec, type_introspector, arena));
       params.push_back(std::move(param));
     }
     auto* allocated_name = google::protobuf::Arena::Create<std::string>(arena, name);
@@ -186,8 +198,9 @@ absl::StatusOr<Type> ConvertTypeSpecToType(const TypeSpec& type_spec,
   }
 
   if (type_spec.has_type()) {
-    CEL_ASSIGN_OR_RETURN(auto contained_type,
-                         ConvertTypeSpecToType(type_spec.type(), pool, arena));
+    CEL_ASSIGN_OR_RETURN(
+        auto contained_type,
+        ConvertTypeSpecToType(type_spec.type(), type_introspector, arena));
     return Type(TypeType(arena, contained_type));
   }
 
@@ -196,6 +209,16 @@ absl::StatusOr<Type> ConvertTypeSpecToType(const TypeSpec& type_spec,
   }
 
   return absl::InvalidArgumentError("Unknown TypeSpec kind");
+}
+
+absl::StatusOr<Type> ConvertTypeSpecToType(const TypeSpec& type_spec,
+                                           const google::protobuf::DescriptorPool& pool,
+                                           google::protobuf::Arena* arena) {
+  // In this configuration we will only ever reference objects backed by the
+  // given DescriptorPool or global constants so it is safe for `introspector`
+  // to go out of scope, but this is not sound for arbitrary TypeIntrospectors.
+  DescriptorPoolTypeIntrospector introspector(&pool);
+  return ConvertTypeSpecToType(type_spec, introspector, arena);
 }
 
 absl::StatusOr<TypeSpec> ConvertTypeToTypeSpec(const Type& type) {

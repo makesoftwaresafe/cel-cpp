@@ -52,12 +52,14 @@ cc_library(
     hdrs = ["type_spec_resolver.h"],
     deps = [
         ":ast",
+        ":descriptor_pool_type_introspector",
         ":type",
         ":type_kind",
         "//internal:status_macros",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/types:optional",
         "@com_google_protobuf//:protobuf",
     ],
 )
@@ -76,6 +78,39 @@ cc_test(
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:status_matchers",
         "@com_google_protobuf//:protobuf",
+    ],
+)
+
+cc_library(
+    name = "descriptor_pool_type_introspector",
+    srcs = ["descriptor_pool_type_introspector.cc"],
+    hdrs = ["descriptor_pool_type_introspector.h"],
+    deps = [
+        ":type",
+        "@com_google_absl//absl/base:core_headers",
+        "@com_google_absl//absl/base:nullability",
+        "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/log:absl_check",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/synchronization",
+        "@com_google_absl//absl/types:optional",
+        "@com_google_absl//absl/types:span",
+        "@com_google_protobuf//:protobuf",
+    ],
+)
+
+cc_test(
+    name = "descriptor_pool_type_introspector_test",
+    srcs = ["descriptor_pool_type_introspector_test.cc"],
+    deps = [
+        ":descriptor_pool_type_introspector",
+        ":type",
+        "//internal:testing",
+        "//internal:testing_descriptor_pool",
+        "@com_google_absl//absl/status:status_matchers",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/types:optional",
     ],
 )
 

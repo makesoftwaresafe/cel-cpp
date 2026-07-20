@@ -65,12 +65,12 @@ cc_library(
     srcs = ["type_check_env.cc"],
     hdrs = ["type_check_env.h"],
     deps = [
-        ":descriptor_pool_type_introspector",
         ":proto_type_mask",
         ":proto_type_mask_registry",
         "//common:constant",
         "//common:container",
         "//common:decl",
+        "//common:descriptor_pool_type_introspector",
         "//common:type",
         "//internal:status_macros",
         "@com_google_absl//absl/base:core_headers",
@@ -272,39 +272,6 @@ cc_test(
         "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/types:optional",
         "@com_google_protobuf//:protobuf",
-    ],
-)
-
-cc_library(
-    name = "descriptor_pool_type_introspector",
-    srcs = ["descriptor_pool_type_introspector.cc"],
-    hdrs = ["descriptor_pool_type_introspector.h"],
-    deps = [
-        "//common:type",
-        "@com_google_absl//absl/base:core_headers",
-        "@com_google_absl//absl/base:nullability",
-        "@com_google_absl//absl/container:flat_hash_map",
-        "@com_google_absl//absl/log:absl_check",
-        "@com_google_absl//absl/status:statusor",
-        "@com_google_absl//absl/strings:string_view",
-        "@com_google_absl//absl/synchronization",
-        "@com_google_absl//absl/types:optional",
-        "@com_google_absl//absl/types:span",
-        "@com_google_protobuf//:protobuf",
-    ],
-)
-
-cc_test(
-    name = "descriptor_pool_type_introspector_test",
-    srcs = ["descriptor_pool_type_introspector_test.cc"],
-    deps = [
-        ":descriptor_pool_type_introspector",
-        "//common:type",
-        "//internal:testing",
-        "//internal:testing_descriptor_pool",
-        "@com_google_absl//absl/status:status_matchers",
-        "@com_google_absl//absl/status:statusor",
-        "@com_google_absl//absl/types:optional",
     ],
 )
 
