@@ -16,6 +16,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <utility>
 
 #include "absl/base/nullability.h"
@@ -35,6 +36,7 @@
 #include "extensions/protobuf/memory_manager.h"
 #include "internal/status_macros.h"
 #include "google/protobuf/arena.h"
+#include "google/protobuf/descriptor.h"
 #include "google/protobuf/message.h"
 
 namespace google::api::expr::runtime {
@@ -197,22 +199,34 @@ LegacyTypeProvider::FindStructTypeFieldByNameImpl(
       result.has_value()) {
     return result;
   }
-  if (auto type_info = ProvideLegacyTypeInfo(type); type_info.has_value()) {
-    if (auto field_desc = (*type_info)->FindFieldByName(name);
-        field_desc.has_value()) {
-      return cel::common_internal::BasicStructTypeField(
-          field_desc->name, field_desc->number, cel::DynType{});
-    } else {
-      const auto* mutation_apis =
-          (*type_info)->GetMutationApis(MessageWrapper());
-      if (mutation_apis == nullptr || !mutation_apis->DefinesField(name)) {
-        return std::nullopt;
-      }
-      return cel::common_internal::BasicStructTypeField(name, 0,
-                                                        cel::DynType{});
+  absl::optional<const LegacyTypeInfoApis*> type_info =
+      ProvideLegacyTypeInfo(type);
+  if (!type_info.has_value()) {
+    return std::nullopt;
+  }
+  if (const auto* descriptor = (*type_info)->GetDescriptor(MessageWrapper());
+      descriptor != nullptr) {
+    // If it's a normal proto, just use the descriptor to find the field.
+    // Allows us to get the same optimizations as the modern value in most
+    // cases.
+    const google::protobuf::FieldDescriptor* field = descriptor->FindFieldByName(name);
+    if (field != nullptr) {
+      return cel::StructTypeField(cel::MessageTypeField(field));
     }
   }
-  return std::nullopt;
+
+  if (auto field_desc = (*type_info)->FindFieldByName(name);
+      field_desc.has_value()) {
+    return cel::common_internal::BasicStructTypeField(
+        field_desc->name, field_desc->number, cel::DynType{});
+  }
+
+  const auto* mutation_apis = (*type_info)->GetMutationApis(MessageWrapper());
+  if (mutation_apis == nullptr || !mutation_apis->DefinesField(name)) {
+    return std::nullopt;
+  }
+
+  return cel::common_internal::BasicStructTypeField(name, 0, cel::DynType{});
 }
 
 }  // namespace google::api::expr::runtime

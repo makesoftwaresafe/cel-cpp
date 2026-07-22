@@ -44,8 +44,7 @@ FindStructTypeFieldByNameDirectly(
   if (descriptor == nullptr) {
     return std::nullopt;
   }
-  const google::protobuf::FieldDescriptor* absl_nullable field =
-      descriptor->FindFieldByName(name);
+  const google::protobuf::FieldDescriptor* field = descriptor->FindFieldByName(name);
   if (field != nullptr) {
     return StructTypeField(MessageTypeField(field));
   }

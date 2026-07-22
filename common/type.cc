@@ -606,6 +606,11 @@ absl::optional<MessageTypeField> StructTypeField::AsMessage() const {
   return std::nullopt;
 }
 
+MessageTypeField StructTypeField::GetMessage() const {
+  ABSL_DCHECK(IsMessage());
+  return absl::get<MessageTypeField>(variant_);
+}
+
 StructTypeField::operator MessageTypeField() const {
   ABSL_DCHECK(IsMessage());
   return absl::get<MessageTypeField>(variant_);

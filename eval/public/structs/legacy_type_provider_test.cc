@@ -17,12 +17,16 @@
 #include <optional>
 #include <string>
 
+#include "absl/status/status_matchers.h"
 #include "absl/strings/string_view.h"
+#include "common/type.h"
 #include "eval/public/structs/legacy_type_info_apis.h"
 #include "internal/testing.h"
 
 namespace google::api::expr::runtime {
 namespace {
+
+using ::absl_testing::IsOk;
 
 class LegacyTypeProviderTestEmpty : public LegacyTypeProvider {
  public:
@@ -45,6 +49,13 @@ class LegacyTypeInfoApisEmpty : public LegacyTypeInfoApis {
   const LegacyTypeAccessApis* GetAccessApis(
       const MessageWrapper& wrapped_message) const override {
     return nullptr;
+  }
+  absl::optional<FieldDescription> FindFieldByName(
+      absl::string_view name) const override {
+    if (name == "field1") {
+      return FieldDescription{1, "field1"};
+    }
+    return absl::nullopt;
   }
 
  private:
@@ -87,6 +98,23 @@ TEST(LegacyTypeProviderTest, NonEmptyTypeProviderProvidesSomeTypes) {
   EXPECT_TRUE(provider.ProvideLegacyTypeInfo("test").has_value());
   EXPECT_EQ(provider.ProvideLegacyType("other"), std::nullopt);
   EXPECT_EQ(provider.ProvideLegacyTypeInfo("other"), std::nullopt);
+}
+
+TEST(LegacyTypeProviderTest, FindStructTypeFieldByName) {
+  LegacyTypeInfoApisEmpty test_type_info;
+  LegacyTypeProviderTestImpl provider(&test_type_info);
+
+  ASSERT_OK_AND_ASSIGN(absl::optional<cel::StructTypeField> field,
+                       provider.FindStructTypeFieldByName("test", "field1"));
+  ASSERT_TRUE(field.has_value());
+  EXPECT_EQ(field->name(), "field1");
+  EXPECT_EQ(field->number(), 1);
+  EXPECT_EQ(field->GetType(), cel::DynType());
+
+  ASSERT_OK_AND_ASSIGN(
+      absl::optional<cel::StructTypeField> not_found_field,
+      provider.FindStructTypeFieldByName("test", "unknown_field"));
+  EXPECT_FALSE(not_found_field.has_value());
 }
 
 }  // namespace

@@ -61,6 +61,11 @@ class LegacyTypeInfoApis {
   virtual absl::string_view GetTypename(
       const MessageWrapper& wrapped_message) const = 0;
 
+  // Return a pointer to the descriptor for the wrapped message's type.
+  //
+  // Should only be defined for messages with standard behavior (i.e. normal
+  // duck-typed behavior of resolving fields by associated descriptor is
+  // correct).
   virtual const google::protobuf::Descriptor* absl_nullable GetDescriptor(
       const MessageWrapper& wrapped_message [[maybe_unused]]) const {
     return nullptr;

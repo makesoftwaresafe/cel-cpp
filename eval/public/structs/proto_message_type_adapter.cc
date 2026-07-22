@@ -142,28 +142,6 @@ absl::StatusOr<bool> HasFieldImpl(const google::protobuf::Message* message,
   return CelFieldIsPresent(message, field_desc, reflection);
 }
 
-absl::StatusOr<CelValue> CreateCelValueFromField(
-    const google::protobuf::Message* message, const google::protobuf::FieldDescriptor* field_desc,
-    ProtoWrapperTypeOptions unboxing_option, google::protobuf::Arena* arena) {
-  if (field_desc->is_map()) {
-    auto* map = google::protobuf::Arena::Create<internal::FieldBackedMapImpl>(
-        arena, message, field_desc, &MessageCelValueFactory, arena);
-
-    return CelValue::CreateMap(map);
-  }
-  if (field_desc->is_repeated()) {
-    auto* list = google::protobuf::Arena::Create<internal::FieldBackedListImpl>(
-        arena, message, field_desc, &MessageCelValueFactory, arena);
-    return CelValue::CreateList(list);
-  }
-
-  CEL_ASSIGN_OR_RETURN(
-      CelValue result,
-      internal::CreateValueFromSingleField(message, field_desc, unboxing_option,
-                                           &MessageCelValueFactory, arena));
-  return result;
-}
-
 // Shared implementation for GetField.
 // Handles list or map specific behavior before calling reflection helpers.
 absl::StatusOr<CelValue> GetFieldImpl(const google::protobuf::Message* message,
@@ -440,6 +418,28 @@ CelValue MessageCelValueFactory(const google::protobuf::Message* message) {
 }
 
 }  // namespace
+
+absl::StatusOr<CelValue> CreateCelValueFromField(
+    const google::protobuf::Message* message, const google::protobuf::FieldDescriptor* field_desc,
+    ProtoWrapperTypeOptions unboxing_option, google::protobuf::Arena* arena) {
+  if (field_desc->is_map()) {
+    auto* map = google::protobuf::Arena::Create<internal::FieldBackedMapImpl>(
+        arena, message, field_desc, &MessageCelValueFactory, arena);
+
+    return CelValue::CreateMap(map);
+  }
+  if (field_desc->is_repeated()) {
+    auto* list = google::protobuf::Arena::Create<internal::FieldBackedListImpl>(
+        arena, message, field_desc, &MessageCelValueFactory, arena);
+    return CelValue::CreateList(list);
+  }
+
+  CEL_ASSIGN_OR_RETURN(
+      CelValue result,
+      internal::CreateValueFromSingleField(message, field_desc, unboxing_option,
+                                           &MessageCelValueFactory, arena));
+  return result;
+}
 
 std::string ProtoMessageTypeAdapter::DebugString(
     const MessageWrapper& wrapped_message) const {

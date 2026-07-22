@@ -20,7 +20,9 @@
 #include "google/protobuf/descriptor.pb.h"
 #include "absl/status/status.h"
 #include "base/attribute.h"
+#include "common/legacy_value.h"
 #include "common/value.h"
+#include "common/value_testing.h"
 #include "eval/public/cel_value.h"
 #include "eval/public/containers/container_backed_list_impl.h"
 #include "eval/public/containers/container_backed_map_impl.h"
@@ -41,6 +43,7 @@
 namespace google::api::expr::runtime {
 namespace {
 
+using ::absl_testing::IsOk;
 using ::absl_testing::IsOkAndHolds;
 using ::absl_testing::StatusIs;
 using ::cel::ProtoWrapperTypeOptions;
@@ -1405,6 +1408,58 @@ TEST(ProtoMesssageTypeAdapter, QualifyMapIndexLeafWrongType) {
                                  test::IsCelError(StatusIs(
                                      absl::StatusCode::kInvalidArgument,
                                      HasSubstr("Invalid map key type"))))));
+}
+
+TEST(ProtoMesssageTypeAdapter, InteropUnwrappingNotGeneric) {
+  google::protobuf::Arena arena;
+  ProtoMessageTypeAdapter adapter(
+      google::protobuf::DescriptorPool::generated_pool()->FindMessageTypeByName(
+          "google.api.expr.runtime.TestMessage"),
+      google::protobuf::MessageFactory::generated_factory());
+
+  TestMessage message;
+  message.set_string_value("hello");
+  auto legacy_value = CelValue::CreateMessageWrapper(
+      CelValue::MessageWrapper(&message, &adapter));
+  cel::Value modern_value;
+  ASSERT_THAT(cel::ModernValue(&arena, legacy_value, modern_value), IsOk());
+  auto unwrapped = cel::interop_internal::GetLegacyMessage(modern_value);
+
+  // Can't unwrap a non-generic MessageWrapper -- we test by identity to
+  // be sure we're not dropping a custom adapter.
+  ASSERT_EQ(unwrapped, nullptr);
+}
+
+TEST(ProtoMesssageTypeAdapter, InteropUnwrappingGeneric) {
+  google::protobuf::Arena arena;
+
+  TestMessage message;
+  message.set_string_value("hello");
+  auto legacy_value = CelValue::CreateMessageWrapper(
+      CelValue::MessageWrapper(&message, &GetGenericProtoTypeInfoInstance()));
+  cel::Value modern_value;
+  ASSERT_THAT(cel::ModernValue(&arena, legacy_value, modern_value), IsOk());
+  auto unwrapped = cel::interop_internal::GetLegacyMessage(modern_value);
+
+  ASSERT_EQ(unwrapped, &message);
+}
+
+TEST(ProtoMesssageTypeAdapter, InteropFieldAccess) {
+  google::protobuf::Arena arena;
+
+  TestMessage message;
+  message.set_string_value("hello");
+
+  const google::protobuf::FieldDescriptor* field =
+      message.GetDescriptor()->FindFieldByName("string_value");
+  ASSERT_NE(field, nullptr);
+  cel::Value field_value;
+  ASSERT_THAT(cel::interop_internal::WrapLegacyMessageField(
+                  &message, field, ProtoWrapperTypeOptions::kUnsetNull, &arena,
+                  &field_value),
+              IsOk());
+
+  EXPECT_THAT(field_value, cel::test::StringValueIs("hello"));
 }
 
 }  // namespace
