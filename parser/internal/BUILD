@@ -21,6 +21,23 @@ package(default_visibility = ["//visibility:public"])
 licenses(["notice"])
 
 cc_library(
+    name = "ast_factory_interface",
+    hdrs = ["ast_factory_interface.h"],
+)
+
+cc_library(
+    name = "ast_factory",
+    hdrs = ["ast_factory.h"],
+    deps = [
+        ":ast_factory_interface",
+        "//common:constant",
+        "//common:expr",
+        "//common:expr_factory",
+        "@com_google_absl//absl/strings:string_view",
+    ],
+)
+
+cc_library(
     name = "options",
     hdrs = ["options.h"],
 )
@@ -43,6 +60,17 @@ cc_library(
         "@com_google_absl//absl/functional:function_ref",
         "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:string_view",
+    ],
+)
+
+cc_test(
+    name = "ast_factory_test",
+    srcs = ["ast_factory_test.cc"],
+    deps = [
+        ":ast_factory",
+        "//common:expr",
+        "//internal:testing",
         "@com_google_absl//absl/strings:string_view",
     ],
 )

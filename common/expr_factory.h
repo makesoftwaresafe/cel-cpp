@@ -38,6 +38,11 @@ namespace tools {
 class ProtoToPredicateBuilder;
 }
 
+namespace parser_internal {
+template <typename ExprNode>
+class AstFactoryInterface;
+}
+
 class ExprFactory {
  protected:
   // `IsExprLike` determines whether `T` is some `Expr`. Currently that means
@@ -385,6 +390,7 @@ class ExprFactory {
   friend class ParserMacroExprFactory;
   friend class OptimizerExprFactory;
   friend class tools::ProtoToPredicateBuilder;
+  friend class parser_internal::AstFactoryInterface<Expr>;
 
   ExprFactory() : accu_var_(kAccumulatorVariableName) {}
 
