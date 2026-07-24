@@ -14,6 +14,7 @@
 
 #include "parser/internal/pratt_parser.h"
 
+#include <algorithm>
 #include <cstdint>
 #include <memory>
 #include <string>
@@ -21,6 +22,7 @@
 #include <utility>
 #include <vector>
 
+#include "absl/algorithm/container.h"
 #include "absl/base/nullability.h"
 #include "absl/cleanup/cleanup.h"
 #include "absl/container/flat_hash_map.h"
@@ -158,21 +160,34 @@ template class PrattParserWorker<cel::Expr>;
 absl::StatusOr<std::unique_ptr<cel::Ast>> PrattParserImpl::ParseImpl(
     const cel::Source& source,
     std::vector<cel::ParseIssue>* absl_nullable parse_issues) const {
-  if (source.content().size() > options_.expression_size_codepoint_limit) {
+  return PrattParseImpl(source, macro_registry_, options_, parse_issues);
+}
+
+absl::StatusOr<std::unique_ptr<cel::Ast>> PrattParseImpl(
+    const cel::Source& source, const cel::MacroRegistry& registry,
+    const ParserOptions& options, std::vector<cel::ParseIssue>* parse_issues) {
+  if (source.content().size() > options.expression_size_codepoint_limit) {
     return absl::InvalidArgumentError(absl::StrFormat(
-        "expression size exceeds codepoint limit: %zu > %d",
-        source.content().size(), options_.expression_size_codepoint_limit));
+        "expression size exceeds codepoint limit. input size: %zu, limit: %d",
+        source.content().size(), options.expression_size_codepoint_limit));
   }
   std::vector<cel::ParseIssue> issues;
-  AstFactory factory(&macro_registry_);
-  PrattParserWorker<cel::Expr> worker(source, options_, &issues, factory);
+  AstFactory factory(&registry);
+  PrattParserWorker<cel::Expr> worker(source, options, &issues, factory);
   Expr expr = worker.Parse();
   if (worker.is_recursion_limit_exceeded()) {
     return absl::CancelledError(
         absl::StrFormat("Expression recursion limit exceeded. limit: %d",
-                        options_.max_recursion_depth));
+                        options.max_recursion_depth));
   }
   if (worker.has_errors()) {
+    absl::c_stable_sort(
+        issues, [](const cel::ParseIssue& lhs, const cel::ParseIssue& rhs) {
+          if (lhs.location().line != rhs.location().line) {
+            return lhs.location().line < rhs.location().line;
+          }
+          return lhs.location().column < rhs.location().column;
+        });
     std::string err_msg = FormatIssues(source, issues);
     if (parse_issues != nullptr) {
       parse_issues->swap(issues);

@@ -16,7 +16,7 @@
 
 #include <cstdint>
 #include <string>
-#include <thread>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -56,8 +56,16 @@ using ::testing::Not;
 struct TestInfo {
   TestInfo(const std::string& I, const std::string& P,
            const std::string& E = "", const std::string& L = "",
-           const std::string& R = "", const std::string& M = "")
-      : I(I), P(P), E(E), L(L), R(R), M(M) {}
+           const std::string& R = "", const std::string& M = "",
+           const std::string& P_PRATT = "", const std::string& E_PRATT = "")
+      : I(I),
+        P(P),
+        E(E),
+        L(L),
+        R(R),
+        M(M),
+        P_PRATT(P_PRATT),
+        E_PRATT(E_PRATT) {}
 
   // I contains the input expression to be parsed.
   std::string I;
@@ -77,6 +85,12 @@ struct TestInfo {
 
   // M contains the expected macro call output of hte expression tree.
   std::string M;
+
+  // P_PRATT contains alternative adorned AST string when using pratt parser.
+  std::string P_PRATT;
+
+  // E_PRATT contains alternative error output when using pratt parser.
+  std::string E_PRATT;
 };
 
 std::vector<TestInfo> test_cases = {
@@ -130,6 +144,12 @@ std::vector<TestInfo> test_cases = {
      "{\n"
      "  foo^#3:Expr.Ident#:5^#4:int64#^#2:Expr.CreateStruct.Entry#,\n"
      "  bar^#6:Expr.Ident#:\"xyz\"^#7:string#^#5:Expr.CreateStruct.Entry#\n"
+     "}^#1:Expr.CreateStruct#",
+     "", "", "", "",
+     // PRATT PARSER AST
+     "{\n"
+     "  foo^#2:Expr.Ident#:5^#4:int64#^#3:Expr.CreateStruct.Entry#,\n"
+     "  bar^#5:Expr.Ident#:\"xyz\"^#7:string#^#6:Expr.CreateStruct.Entry#\n"
      "}^#1:Expr.CreateStruct#"},
     {"a > 5 && a < 10",
      "_&&_(\n"
@@ -160,6 +180,11 @@ std::vector<TestInfo> test_cases = {
      "NUM_FLOAT, "
      "NUM_INT, "
      "NUM_UINT, STRING, BYTES, IDENTIFIER}\n | {\n"
+     " | .^",
+     "", "", "", "",
+     // PRATT PARSER ERROR MESSAGE
+     "ERROR: <input>:1:2: expected '}'\n"
+     " | {\n"
      " | .^"},
 
     // test cases from Go
@@ -353,6 +378,12 @@ std::vector<TestInfo> test_cases = {
      "{\n"
      "  a^#3:Expr.Ident#:b^#4:Expr.Ident#^#2:Expr.CreateStruct.Entry#,\n"
      "  c^#6:Expr.Ident#:d^#7:Expr.Ident#^#5:Expr.CreateStruct.Entry#\n"
+     "}^#1:Expr.CreateStruct#",
+     "", "", "", "",
+     // PRATT PARSER AST
+     "{\n"
+     "  a^#2:Expr.Ident#:b^#4:Expr.Ident#^#3:Expr.CreateStruct.Entry#,\n"
+     "  c^#5:Expr.Ident#:d^#7:Expr.Ident#^#6:Expr.CreateStruct.Entry#\n"
      "}^#1:Expr.CreateStruct#"},
     {"[]", "[]^#1:Expr.CreateList#"},
     {"[a]",
@@ -417,14 +448,27 @@ std::vector<TestInfo> test_cases = {
      " | ....^\n"
      "ERROR: <input>:1:7: Syntax error: extraneous input 'b' expecting <EOF>\n"
      " | *@a | b\n"
-     " | ......^"},
+     " | ......^",
+     "", "", "", "",
+     // PRATT PARSER ERROR MESSAGE
+     "ERROR: <input>:1:1: unexpected token\n"
+     " | *@a | b\n"
+     " | ^\n"
+     "ERROR: <input>:1:2: unexpected character\n"
+     " | *@a | b\n"
+     " | .^"},
     {"a | b", "",
      "ERROR: <input>:1:3: Syntax error: token recognition error at: '| '\n"
      " | a | b\n"
      " | ..^\n"
      "ERROR: <input>:1:5: Syntax error: extraneous input 'b' expecting <EOF>\n"
      " | a | b\n"
-     " | ....^"},
+     " | ....^",
+     "", "", "", "",
+     // PRATT PARSER ERROR MESSAGE
+     "ERROR: <input>:1:3: unexpected single '|', expected '||'\n"
+     " | a | b\n"
+     " | ..^"},
     {"?", "",
      "ERROR: <input>:1:1: Syntax error: mismatched input '?' expecting "
      "{'[', '{', '(', '.', '-', '!', 'true', 'false', 'null', NUM_FLOAT, "
@@ -432,13 +476,23 @@ std::vector<TestInfo> test_cases = {
      "ERROR: <input>:1:2: Syntax error: mismatched input '<EOF>' expecting "
      "{'[', '{', '(', '.', '-', '!', 'true', 'false', 'null', NUM_FLOAT, "
      "NUM_INT, NUM_UINT, STRING, BYTES, IDENTIFIER}\n | ?\n | .^\n"
-     "ERROR: <input>:4294967295:0: <<nil>> parsetree"},
+     "ERROR: <input>:4294967295:0: <<nil>> parsetree",
+     "", "", "", "",
+     // PRATT PARSER ERROR MESSAGE
+     "ERROR: <input>:1:1: unexpected token\n"
+     " | ?\n"
+     " | ^"},
     {"t{>C}", "",
      "ERROR: <input>:1:3: Syntax error: extraneous input '>' expecting {'}', "
      "',', '\\u003F', IDENTIFIER, ESC_IDENTIFIER}\n | t{>C}\n | ..^\nERROR: "
      "<input>:1:5: "
      "Syntax error: "
-     "mismatched input '}' expecting ':'\n | t{>C}\n | ....^"},
+     "mismatched input '}' expecting ':'\n | t{>C}\n | ....^",
+     "", "", "", "",
+     // PRATT PARSER ERROR MESSAGE
+     "ERROR: <input>:1:3: expected struct field name\n"
+     " | t{>C}\n"
+     " | ..^"},
 
     // Macro tests
     {"has(m.f)", "m^#2:Expr.Ident#.f~test-only~^#4:Expr.Select#", "",
@@ -584,6 +638,12 @@ std::vector<TestInfo> test_cases = {
      "{\n"
      "  1^#3:int64#:2u^#4:uint64#^#2:Expr.CreateStruct.Entry#,\n"
      "  2^#6:int64#:3u^#7:uint64#^#5:Expr.CreateStruct.Entry#\n"
+     "}^#1:Expr.CreateStruct#",
+     "", "", "", "",
+     // PRATT PARSER AST
+     "{\n"
+     "  1^#2:int64#:2u^#4:uint64#^#3:Expr.CreateStruct.Entry#,\n"
+     "  2^#5:int64#:3u^#7:uint64#^#6:Expr.CreateStruct.Entry#\n"
      "}^#1:Expr.CreateStruct#"},
     {"TestAllTypes{single_int32: 1, single_int64: 2}",
      "TestAllTypes{\n"
@@ -592,6 +652,11 @@ std::vector<TestInfo> test_cases = {
      "}^#1:Expr.CreateStruct#"},
     {"TestAllTypes(){single_int32: 1, single_int64: 2}", "",
      "ERROR: <input>:1:15: Syntax error: mismatched input '{' expecting <EOF>\n"
+     " | TestAllTypes(){single_int32: 1, single_int64: 2}\n"
+     " | ..............^",
+     "", "", "", "",
+     // PRATT PARSER ERROR MESSAGE
+     "ERROR: <input>:1:15: unexpected token after expression\n"
      " | TestAllTypes(){single_int32: 1, single_int64: 2}\n"
      " | ..............^"},
     {"size(x) == x.size()",
@@ -610,11 +675,21 @@ std::vector<TestInfo> test_cases = {
      "'{', '(', '.', '-', '!', 'true', 'false', 'null', NUM_FLOAT, NUM_INT, "
      "NUM_UINT, STRING, BYTES, IDENTIFIER}\n"
      " | 1 + $\n"
-     " | .....^"},
+     " | .....^",
+     "", "", "", "",
+     // PRATT PARSER ERROR MESSAGE
+     "ERROR: <input>:1:5: unexpected character\n"
+     " | 1 + $\n"
+     " | ....^"},
     {"1 + 2\n"
      "3 +",
      "",
      "ERROR: <input>:2:1: Syntax error: mismatched input '3' expecting <EOF>\n"
+     " | 3 +\n"
+     " | ^",
+     "", "", "", "",
+     // PRATT PARSER ERROR MESSAGE
+     "ERROR: <input>:2:1: unexpected token after expression\n"
      " | 3 +\n"
      " | ^"},
     {"\"\\\"\"", "\"\\\"\"^#1:string#"},
@@ -634,24 +709,50 @@ std::vector<TestInfo> test_cases = {
     {"[].all(.x, x)", "",
      "ERROR: <input>:1:9: all() variable name must be a simple identifier\n"
      " | [].all(.x, x)\n"
-     " | ........^"},
+     " | ........^",
+     "", "", "", "",
+     // PRATT PARSER ERROR MESSAGE
+     "ERROR: <input>:1:8: all() variable name must be a simple identifier\n"
+     " | [].all(.x, x)\n"
+     " | .......^"},
     {"[].exists(.x, x)", "",
      "ERROR: <input>:1:12: exists() variable name must be a simple identifier\n"
      " | [].exists(.x, x)\n"
-     " | ...........^"},
+     " | ...........^",
+     "", "", "", "",
+     // PRATT PARSER ERROR MESSAGE
+     "ERROR: <input>:1:11: exists() variable name must be a simple identifier\n"
+     " | [].exists(.x, x)\n"
+     " | ..........^"},
     {"[].exists_one(.x, x)", "",
      "ERROR: <input>:1:16: exists_one() variable name must be a simple "
      "identifier\n"
      " | [].exists_one(.x, x)\n"
-     " | ...............^"},
+     " | ...............^",
+     "", "", "", "",
+     // PRATT PARSER ERROR MESSAGE
+     "ERROR: <input>:1:15: exists_one() variable name must be a simple "
+     "identifier\n"
+     " | [].exists_one(.x, x)\n"
+     " | ..............^"},
     {"[].map(.x, x, x)", "",
      "ERROR: <input>:1:9: map() variable name must be a simple identifier\n"
      " | [].map(.x, x, x)\n"
-     " | ........^"},
+     " | ........^",
+     "", "", "", "",
+     // PRATT PARSER ERROR MESSAGE
+     "ERROR: <input>:1:8: map() variable name must be a simple identifier\n"
+     " | [].map(.x, x, x)\n"
+     " | .......^"},
     {"[].filter(.x, x)", "",
      "ERROR: <input>:1:12: filter() variable name must be a simple identifier\n"
      " | [].filter(.x, x)\n"
-     " | ...........^"},
+     " | ...........^",
+     "", "", "", "",
+     // PRATT PARSER ERROR MESSAGE
+     "ERROR: <input>:1:11: filter() variable name must be a simple identifier\n"
+     " | [].filter(.x, x)\n"
+     " | ..........^"},
     {"x[\"a\"].single_int32 == 23",
      "_==_(\n"
      "  _[_](\n"
@@ -707,6 +808,15 @@ std::vector<TestInfo> test_cases = {
     {"---a",
      "-_(\n"
      "  a^#2:Expr.Ident#\n"
+     ")^#1:Expr.Call#",
+     "", "", "", "",
+     // PRATT PARSER AST
+     "-_(\n"
+     "  -_(\n"
+     "    -_(\n"
+     "      a^#4:Expr.Ident#\n"
+     "    )^#3:Expr.Call#\n"
+     "  )^#2:Expr.Call#\n"
      ")^#1:Expr.Call#"},
     {"1 + +", "",
      "ERROR: <input>:1:5: Syntax error: mismatched input '+' expecting {'[', "
@@ -721,7 +831,12 @@ std::vector<TestInfo> test_cases = {
      "'{', '(', '.', '-', '!', 'true', 'false', 'null', NUM_FLOAT, NUM_INT, "
      "NUM_UINT, STRING, BYTES, IDENTIFIER}\n"
      " | 1 + +\n"
-     " | .....^"},
+     " | .....^",
+     "", "", "", "",
+     // PRATT PARSER ERROR MESSAGE
+     "ERROR: <input>:1:5: unexpected token\n"
+     " | 1 + +\n"
+     " | ....^"},
     {"\"abc\" + \"def\"",
      "_+_(\n"
      "  \"abc\"^#1:string#,\n"
@@ -730,6 +845,11 @@ std::vector<TestInfo> test_cases = {
     {"{\"a\": 1}.\"a\"", "",
      "ERROR: <input>:1:10: Syntax error: no viable alternative at input "
      "'.\"a\"'\n"
+     " | {\"a\": 1}.\"a\"\n"
+     " | .........^",
+     "", "", "", "",
+     // PRATT PARSER ERROR MESSAGE
+     "ERROR: <input>:1:10: expected identifier after '.'\n"
      " | {\"a\": 1}.\"a\"\n"
      " | .........^"},
     {"\"\\xC3\\XBF\"", "\"Ã¿\"^#1:string#"},
@@ -750,7 +870,13 @@ std::vector<TestInfo> test_cases = {
      "'{', '(', '.', '-', '!', 'true', 'false', 'null', NUM_FLOAT, NUM_INT, "
      "NUM_UINT, STRING, BYTES, IDENTIFIER}\n"
      " | \"\\xFh\"\n"
-     " | ......^"},
+     " | ......^",
+     "", "", "", "",
+     // PRATT PARSER ERROR MESSAGE
+     "ERROR: <input>:1:1: Invalid string literal: Illegal escape sequence: Hex "
+     "escape must be followed by 2 hex digits but saw: \\xFh\n"
+     " | \"\\xFh\"\n"
+     " | ^"},
     {"\"\\a\\b\\f\\n\\r\\t\\v\\'\\\"\\\\\\? Illegal escape \\>\"", "",
      "ERROR: <input>:1:1: Syntax error: token recognition error at: "
      "'\"\\a\\b\\f\\n\\r\\t\\v\\'\\\"\\\\\\? Illegal escape \\>'\n"
@@ -764,7 +890,13 @@ std::vector<TestInfo> test_cases = {
      " '{', '(', '.', '-', '!', 'true', 'false', 'null', NUM_FLOAT, NUM_INT, "
      "NUM_UINT, STRING, BYTES, IDENTIFIER}\n"
      " | \"\\a\\b\\f\\n\\r\\t\\v\\'\\\"\\\\\\? Illegal escape \\>\"\n"
-     " | ..........................................^"},
+     " | ..........................................^",
+     "", "", "", "",
+     // PRATT PARSER ERROR MESSAGE
+     "ERROR: <input>:1:1: Invalid string literal: Illegal escape sequence: "
+     "\\>\n"
+     " | \"\\a\\b\\f\\n\\r\\t\\v\\'\\\"\\\\\\? Illegal escape \\>\"\n"
+     " | ^"},
     {"'😁' in ['😁', '😑', '😦']",
      "@in(\n"
      "  \"😁\"^#1:string#,\n"
@@ -814,7 +946,15 @@ std::vector<TestInfo> test_cases = {
      " | .........＾\n"
      "ERROR: <input>:2:11: Syntax error: no viable alternative at input '.'\n"
      " |    && in.😁\n"
-     " | .........．^"},
+     " | .........．^",
+     "", "", "", "",
+     // PRATT PARSER ERROR MESSAGE
+     "ERROR: <input>:2:7: unexpected token\n"
+     " |    && in.😁\n"
+     " | ......^\n"
+     "ERROR: <input>:2:10: unexpected character\n"
+     " |    && in.😁\n"
+     " | .........＾"},
     {"as", "",
      "ERROR: <input>:1:1: reserved identifier: as\n"
      " | as\n"
@@ -862,7 +1002,12 @@ std::vector<TestInfo> test_cases = {
      "'{', '(', '.', '-', '!', 'true', 'false', 'null', NUM_FLOAT, NUM_INT, "
      "NUM_UINT, STRING, BYTES, IDENTIFIER}\n"
      " | in\n"
-     " | ..^"},
+     " | ..^",
+     "", "", "", "",
+     // PRATT PARSER ERROR MESSAGE
+     "ERROR: <input>:1:1: unexpected token\n"
+     " | in\n"
+     " | ^"},
     {"let", "",
      "ERROR: <input>:1:1: reserved identifier: let\n"
      " | let\n"
@@ -907,6 +1052,17 @@ std::vector<TestInfo> test_cases = {
      " | ...................^\n"
      "ERROR: <input>:1:26: reserved identifier: var\n"
      " | [1, 2, 3].map(var, var * var)\n"
+     " | .........................^",
+     "", "", "", "",
+     // PRATT PARSER ERROR MESSAGE
+     "ERROR: <input>:1:15: reserved identifier: var\n"
+     " | [1, 2, 3].map(var, var * var)\n"
+     " | ..............^\n"
+     "ERROR: <input>:1:20: reserved identifier: var\n"
+     " | [1, 2, 3].map(var, var * var)\n"
+     " | ...................^\n"
+     "ERROR: <input>:1:26: reserved identifier: var\n"
+     " | [1, 2, 3].map(var, var * var)\n"
      " | .........................^"},
     {"[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[["
      "[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[["
@@ -929,14 +1085,17 @@ std::vector<TestInfo> test_cases = {
         "",
         "",
     },
-    {
-        "[\n\t\r[\n\t\r[\n\t\r]\n\t\r]\n\t\r",
-        "",  // parse output not validated as it is too large.
-        "ERROR: <input>:6:3: Syntax error: mismatched input '<EOF>' expecting "
-        "{']', ','}\n"
-        " |  \r\n"
-        " | ..^",
-    },
+    {"[\n\t\r[\n\t\r[\n\t\r]\n\t\r]\n\t\r", "",
+     // parse output not validated as it is too large.
+     "ERROR: <input>:6:3: Syntax error: mismatched input '<EOF>' expecting "
+     "{']', ','}\n"
+     " |  \r\n"
+     " | ..^",
+     "", "", "", "",
+     // PRATT PARSER ERROR MESSAGE
+     "ERROR: <input>:6:3: expected ']'\n"
+     " |  \r\n"
+     " | ..^"},
 
     // Identifier quoting syntax tests.
     {"a.`b`", "a^#1:Expr.Ident#.b^#2:Expr.Select#"},
@@ -977,27 +1136,47 @@ std::vector<TestInfo> test_cases = {
      " | ..^\n"
      "ERROR: <input>:1:7: Syntax error: token recognition error at: '`'\n"
      " | a.`b c`\n"
-     " | ......^"},
+     " | ......^",
+     "", "", "", "",
+     // PRATT PARSER ERROR MESSAGE
+     "ERROR: <input>:1:3: unexpected quoted identifier\n"
+     " | a.`b c`\n"
+     " | ..^"},
     {"a.`@foo`", "",
      "ERROR: <input>:1:3: Syntax error: token recognition error at: '`@'\n"
      " | a.`@foo`\n"
      " | ..^\n"
      "ERROR: <input>:1:8: Syntax error: token recognition error at: '`'\n"
      " | a.`@foo`\n"
-     " | .......^"},
+     " | .......^",
+     "", "", "", "",
+     // PRATT PARSER ERROR MESSAGE
+     "ERROR: <input>:1:3: unexpected quoted identifier\n"
+     " | a.`@foo`\n"
+     " | ..^"},
     {"a.`$foo`", "",
      "ERROR: <input>:1:3: Syntax error: token recognition error at: '`$'\n"
      " | a.`$foo`\n"
      " | ..^\n"
      "ERROR: <input>:1:8: Syntax error: token recognition error at: '`'\n"
      " | a.`$foo`\n"
-     " | .......^"},
+     " | .......^",
+     "", "", "", "",
+     // PRATT PARSER ERROR MESSAGE
+     "ERROR: <input>:1:3: unexpected quoted identifier\n"
+     " | a.`$foo`\n"
+     " | ..^"},
     {"`a.b`", "",
      "ERROR: <input>:1:1: Syntax error: mismatched input '`a.b`' expecting "
      "{'[', '{', "
      "'(', '.', '-', '!', 'true', 'false', 'null', NUM_FLOAT, NUM_INT, "
      "NUM_UINT, STRING, "
      "BYTES, IDENTIFIER}\n"
+     " | `a.b`\n"
+     " | ^",
+     "", "", "", "",
+     // PRATT PARSER ERROR MESSAGE
+     "ERROR: <input>:1:1: unexpected quoted identifier\n"
      " | `a.b`\n"
      " | ^"},
     {"`a.b`()", "",
@@ -1010,11 +1189,21 @@ std::vector<TestInfo> test_cases = {
      "'{', '(', '.', '-', '!', 'true', 'false', 'null', NUM_FLOAT, NUM"
      "_INT, NUM_UINT, STRING, BYTES, IDENTIFIER}\n"
      " | `a.b`()\n"
-     " | ......^"},
+     " | ......^",
+     "", "", "", "",
+     // PRATT PARSER ERROR MESSAGE
+     "ERROR: <input>:1:1: unexpected quoted identifier\n"
+     " | `a.b`()\n"
+     " | ^"},
     {"foo.`a.b`()", "",
      "ERROR: <input>:1:10: Syntax error: mismatched input '(' expecting <EOF>\n"
      " | foo.`a.b`()\n"
-     " | .........^"},
+     " | .........^",
+     "", "", "", "",
+     // PRATT PARSER ERROR MESSAGE
+     "ERROR: <input>:1:5: unexpected quoted identifier\n"
+     " | foo.`a.b`()\n"
+     " | ....^"},
 
     // Macro calls tests
     {"x.filter(y, y.filter(z, z > 0))",
@@ -1290,7 +1479,12 @@ std::vector<TestInfo> test_cases = {
     {"{?'key': value}",
      "{\n  "
      "?\"key\"^#3:string#:value^#4:Expr.Ident#^#2:Expr.CreateStruct.Entry#\n}^#"
-     "1:Expr.CreateStruct#"},
+     "1:Expr.CreateStruct#",
+     "", "", "", "",
+     // PRATT PARSER AST
+     "{\n"
+     "  ?\"key\"^#2:string#:value^#4:Expr.Ident#^#3:Expr.CreateStruct.Entry#\n"
+     "}^#1:Expr.CreateStruct#"},
     {"[?a, ?b]",
      "[\n  ?a^#2:Expr.Ident#,\n  ?b^#3:Expr.Ident#\n]^#1:Expr.CreateList#"},
     {"[?a[?b]]",
@@ -1489,46 +1683,59 @@ std::string ConvertMacroCallsToString(
   return result.substr(0, result.size() - 3);
 }
 
-class ExpressionTest : public testing::TestWithParam<TestInfo> {};
+class ExpressionTest
+    : public testing::TestWithParam<std::tuple<TestInfo, bool>> {
+ protected:
+  ExpressionTest() { options_.enable_pratt_parser = std::get<1>(GetParam()); }
+
+  ParserOptions options_;
+};
 
 TEST_P(ExpressionTest, Parse) {
-  const TestInfo& test_info = GetParam();
-  ParserOptions options;
+  const TestInfo& test_info = std::get<0>(GetParam());
   if (!test_info.M.empty()) {
-    options.add_macro_calls = true;
+    options_.add_macro_calls = true;
   }
-  options.enable_optional_syntax = true;
-  options.enable_quoted_identifiers = true;
+  options_.enable_optional_syntax = true;
+  options_.enable_quoted_identifiers = true;
 
   std::vector<Macro> macros = Macro::AllMacros();
   macros.push_back(cel::OptMapMacro());
   macros.push_back(cel::OptFlatMapMacro());
-  auto result = EnrichedParse(test_info.I, macros, "<input>", options);
+  auto result = EnrichedParse(test_info.I, macros, "<input>", options_);
   if (test_info.E.empty()) {
     ASSERT_THAT(result, IsOk());
   } else {
     EXPECT_THAT(result, Not(IsOk()));
-    EXPECT_EQ(test_info.E, result.status().message());
+    if (options_.enable_pratt_parser && !test_info.E_PRATT.empty()) {
+      EXPECT_EQ(test_info.E_PRATT, result.status().message());
+    } else {
+      EXPECT_EQ(test_info.E, result.status().message());
+    }
   }
 
   if (!test_info.P.empty()) {
     KindAndIdAdorner kind_and_id_adorner;
     ExprPrinter w(kind_and_id_adorner);
     std::string adorned_string = w.PrintProto(result->parsed_expr().expr());
-    EXPECT_EQ(test_info.P, adorned_string)
-        << result->parsed_expr().ShortDebugString();
+    if (options_.enable_pratt_parser && !test_info.P_PRATT.empty()) {
+      EXPECT_EQ(test_info.P_PRATT, adorned_string)
+          << result->parsed_expr().ShortDebugString();
+    } else {
+      EXPECT_EQ(test_info.P, adorned_string)
+          << result->parsed_expr().ShortDebugString();
+    }
   }
 
-  if (!test_info.L.empty()) {
+  if (!options_.enable_pratt_parser && !test_info.L.empty()) {
     LocationAdorner location_adorner(result->parsed_expr().source_info());
     ExprPrinter w(location_adorner);
     std::string adorned_string = w.PrintProto(result->parsed_expr().expr());
     EXPECT_EQ(test_info.L, adorned_string)
         << result->parsed_expr().ShortDebugString();
-    ;
   }
 
-  if (!test_info.R.empty()) {
+  if (!options_.enable_pratt_parser && !test_info.R.empty()) {
     EXPECT_EQ(test_info.R, ConvertEnrichedSourceInfoToString(
                                result->enriched_source_info()));
   }
@@ -1537,7 +1744,6 @@ TEST_P(ExpressionTest, Parse) {
     EXPECT_EQ(test_info.M, ConvertMacroCallsToString(
                                result.value().parsed_expr().source_info()))
         << result->parsed_expr().ShortDebugString();
-    ;
   }
 }
 
@@ -1564,7 +1770,14 @@ TEST(ExpressionTest, CompositeExpressionOffsets) {
   EXPECT_EQ(msg_offsets.at(1), std::make_pair(0, 8));
 }
 
-TEST(ExpressionTest, TsanOom) {
+class ExpressionImplTest : public testing::TestWithParam<bool> {
+ protected:
+  ExpressionImplTest() { options_.enable_pratt_parser = GetParam(); }
+
+  ParserOptions options_;
+};
+
+TEST_P(ExpressionImplTest, TsanOom) {
   Parse(
       "[[a([[???[a[[??[a([[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[["
       "[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[["
@@ -1580,7 +1793,8 @@ TEST(ExpressionTest, TsanOom) {
       "[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[["
       "[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[["
       "[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[???["
-      "a([[????")
+      "a([[????",
+      "", options_)
       .IgnoreError();
 }
 
@@ -1595,18 +1809,16 @@ TEST_P(ExpressionTest, ErrorRecoveryLimits) {
             "'..'\n | ......\n | .^");
 }
 
-TEST(ExpressionTest, ExpressionSizeLimit) {
-  ParserOptions options;
-  options.expression_size_codepoint_limit = 10;
-  auto result = Parse("...............", "", options);
+TEST_P(ExpressionImplTest, ExpressionSizeLimit) {
+  options_.expression_size_codepoint_limit = 10;
+  auto result = Parse("...............", "", options_);
   EXPECT_THAT(result, Not(IsOk()));
   EXPECT_EQ(
       result.status().message(),
       "expression size exceeds codepoint limit. input size: 15, limit: 10");
 }
 
-TEST(ExpressionTest, RecursionDepthLongArgList) {
-  ParserOptions options;
+TEST_P(ExpressionImplTest, RecursionDepthLongArgList) {
   // The particular number here is an implementation detail: the underlying
   // visitor will recurse up to 8 times before branching to the create list or
   // const steps. The call graph looks something like:
@@ -1615,9 +1827,9 @@ TEST(ExpressionTest, RecursionDepthLongArgList) {
   // ->visitCreateList->visit[arg]->visitExpr...
   // The expected max depth for create list with an arbitrary number of elements
   // is 15.
-  options.max_recursion_depth = 16;
+  options_.max_recursion_depth = 16;
 
-  EXPECT_THAT(Parse("[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]", "", options), IsOk());
+  EXPECT_THAT(Parse("[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]", "", options_), IsOk());
 }
 
 TEST(ExpressionTest, RecursionDepthExceeded) {
@@ -1634,10 +1846,9 @@ TEST(ExpressionTest, RecursionDepthExceeded) {
               HasSubstr("Exceeded max recursion depth of 6 when parsing."));
 }
 
-TEST(ExpressionTest, DisableQuotedIdentifiers) {
-  ParserOptions options;
-  options.enable_quoted_identifiers = false;
-  auto result = Parse("foo.`bar`", "", options);
+TEST_P(ExpressionImplTest, DisableQuotedIdentifiers) {
+  options_.enable_quoted_identifiers = false;
+  auto result = Parse("foo.`bar`", "", options_);
 
   EXPECT_THAT(result, Not(IsOk()));
   EXPECT_THAT(result.status().message(),
@@ -1646,11 +1857,10 @@ TEST(ExpressionTest, DisableQuotedIdentifiers) {
                         " | ....^"));
 }
 
-TEST(ExpressionTest, DisableStandardMacros) {
-  ParserOptions options;
-  options.disable_standard_macros = true;
+TEST_P(ExpressionImplTest, DisableStandardMacros) {
+  options_.disable_standard_macros = true;
 
-  auto result = Parse("has(foo.bar)", "", options);
+  auto result = Parse("has(foo.bar)", "", options_);
 
   ASSERT_THAT(result, IsOk());
   KindAndIdAdorner kind_and_id_adorner;
@@ -1671,8 +1881,15 @@ TEST(ExpressionTest, RecursionDepthIgnoresParentheses) {
   EXPECT_THAT(result, IsOk());
 }
 
-TEST(NewParserBuilderTest, Defaults) {
-  auto builder = cel::NewParserBuilder();
+class NewParserBuilderTest : public testing::TestWithParam<bool> {
+ protected:
+  NewParserBuilderTest() { options_.enable_pratt_parser = GetParam(); }
+
+  ParserOptions options_;
+};
+
+TEST_P(NewParserBuilderTest, Defaults) {
+  auto builder = cel::NewParserBuilder(options_);
   ASSERT_OK_AND_ASSIGN(auto parser, std::move(*builder).Build());
 
   ASSERT_OK_AND_ASSIGN(auto source,
@@ -1682,8 +1899,8 @@ TEST(NewParserBuilderTest, Defaults) {
   EXPECT_FALSE(ast->IsChecked());
 }
 
-TEST(NewParserBuilderTest, CustomMacros) {
-  auto builder = cel::NewParserBuilder();
+TEST_P(NewParserBuilderTest, CustomMacros) {
+  auto builder = cel::NewParserBuilder(options_);
   builder->GetOptions().disable_standard_macros = true;
   ASSERT_THAT(builder->AddMacro(cel::HasMacro()), IsOk());
   ASSERT_OK_AND_ASSIGN(auto parser, std::move(*builder).Build());
@@ -1705,8 +1922,8 @@ TEST(NewParserBuilderTest, CustomMacros) {
             ")^#9:Expr.Call#");
 }
 
-TEST(NewParserBuilderTest, StandardMacrosNotAddedWithStdlib) {
-  auto builder = cel::NewParserBuilder();
+TEST_P(NewParserBuilderTest, StandardMacrosNotAddedWithStdlib) {
+  auto builder = cel::NewParserBuilder(options_);
   builder->GetOptions().disable_standard_macros = false;
   // Add a fake stdlib to check that we don't try to add the standard macros
   // again. Emulates what happens when we add support for subsetting stdlib by
@@ -1735,15 +1952,15 @@ TEST(NewParserBuilderTest, StandardMacrosNotAddedWithStdlib) {
             ")^#9:Expr.Call#");
 }
 
-TEST(NewParserBuilderTest, ForwardsOptions) {
-  auto builder = cel::NewParserBuilder();
+TEST_P(NewParserBuilderTest, ForwardsOptions) {
+  auto builder = cel::NewParserBuilder(options_);
   builder->GetOptions().enable_optional_syntax = true;
   ASSERT_OK_AND_ASSIGN(auto parser, std::move(*builder).Build());
   ASSERT_OK_AND_ASSIGN(auto source, cel::NewSource("a.?b"));
   ASSERT_OK_AND_ASSIGN(auto ast, parser->Parse(*source));
   EXPECT_FALSE(ast->IsChecked());
 
-  builder = cel::NewParserBuilder();
+  builder = cel::NewParserBuilder(options_);
   builder->GetOptions().enable_optional_syntax = false;
   ASSERT_OK_AND_ASSIGN(parser, std::move(*builder).Build());
   ASSERT_OK_AND_ASSIGN(source, cel::NewSource("a.?b"));
@@ -1751,8 +1968,8 @@ TEST(NewParserBuilderTest, ForwardsOptions) {
               StatusIs(absl::StatusCode::kInvalidArgument));
 }
 
-TEST(NewParserBuilderTest, ToBuilderCopiesConfig) {
-  auto builder = cel::NewParserBuilder();
+TEST_P(NewParserBuilderTest, ToBuilderCopiesConfig) {
+  auto builder = cel::NewParserBuilder(options_);
   builder->GetOptions().enable_optional_syntax = true;
   builder->GetOptions().disable_standard_macros = true;
   ASSERT_THAT(builder->AddLibrary({"custom_lib",
@@ -1773,8 +1990,8 @@ TEST(NewParserBuilderTest, ToBuilderCopiesConfig) {
   EXPECT_FALSE(ast->IsChecked());
 }
 
-TEST(NewParserBuilderTest, ToBuilderHandlesStdlibAndOptionalByLibrary) {
-  auto builder = cel::NewParserBuilder();
+TEST_P(NewParserBuilderTest, ToBuilderHandlesStdlibAndOptionalByLibrary) {
+  auto builder = cel::NewParserBuilder(options_);
   builder->GetOptions().disable_standard_macros = true;
   builder->GetOptions().enable_optional_syntax = false;
 
@@ -1809,8 +2026,8 @@ TEST(NewParserBuilderTest, ToBuilderHandlesStdlibAndOptionalByLibrary) {
             ")^#1:Expr.Call#");
 }
 
-TEST(NewParserBuilderTest, ToBuilderPreservesStdlibAndOptionalFromOptions) {
-  auto builder = cel::NewParserBuilder();
+TEST_P(NewParserBuilderTest, ToBuilderPreservesStdlibAndOptionalFromOptions) {
+  auto builder = cel::NewParserBuilder(options_);
   builder->GetOptions().disable_standard_macros = false;
   builder->GetOptions().enable_optional_syntax = true;
 
@@ -1832,11 +2049,19 @@ struct VariadicLogicalOperatorsTestCase {
 };
 
 class VariadicLogicalOperatorsTest
-    : public testing::TestWithParam<VariadicLogicalOperatorsTestCase> {};
+    : public testing::TestWithParam<
+          std::tuple<VariadicLogicalOperatorsTestCase, bool>> {
+ protected:
+  VariadicLogicalOperatorsTest() {
+    options_.enable_pratt_parser = std::get<1>(GetParam());
+  }
+
+  ParserOptions options_;
+};
 
 TEST_P(VariadicLogicalOperatorsTest, Parse) {
-  const auto& test_case = GetParam();
-  auto builder = cel::NewParserBuilder();
+  const auto& test_case = std::get<0>(GetParam());
+  auto builder = cel::NewParserBuilder(options_);
   builder->GetOptions().enable_variadic_logical_operators = true;
   ASSERT_OK_AND_ASSIGN(auto parser, std::move(*builder).Build());
   ASSERT_OK_AND_ASSIGN(auto source, cel::NewSource(test_case.input));
@@ -1848,39 +2073,56 @@ TEST_P(VariadicLogicalOperatorsTest, Parse) {
   EXPECT_EQ(adorned_string, test_case.expected_adorned_string);
 }
 
+std::string VariadicLogicalOperatorsTestName(
+    const testing::TestParamInfo<
+        std::tuple<VariadicLogicalOperatorsTestCase, bool>>& test_info) {
+  bool enable_pratt = std::get<1>(test_info.param);
+  return absl::StrCat(test_info.index, "_", enable_pratt ? "Pratt" : "Legacy");
+}
+
 INSTANTIATE_TEST_SUITE_P(
     VariadicLogicalOperators, VariadicLogicalOperatorsTest,
-    testing::Values(
-        VariadicLogicalOperatorsTestCase{
-            .input = "a && b && c && d",
-            .expected_adorned_string = "_&&_(\n"
-                                       "  a^#1:Expr.Ident#,\n"
-                                       "  b^#2:Expr.Ident#,\n"
-                                       "  c^#4:Expr.Ident#,\n"
-                                       "  d^#6:Expr.Ident#\n"
-                                       ")^#3:Expr.Call#"},
-        VariadicLogicalOperatorsTestCase{
-            .input = "a || b || c || d",
-            .expected_adorned_string = "_||_(\n"
-                                       "  a^#1:Expr.Ident#,\n"
-                                       "  b^#2:Expr.Ident#,\n"
-                                       "  c^#4:Expr.Ident#,\n"
-                                       "  d^#6:Expr.Ident#\n"
-                                       ")^#3:Expr.Call#"},
-        VariadicLogicalOperatorsTestCase{
-            .input = "a && b && (c || d || e)",
-            .expected_adorned_string = "_&&_(\n"
-                                       "  a^#1:Expr.Ident#,\n"
-                                       "  b^#2:Expr.Ident#,\n"
-                                       "  _||_(\n"
-                                       "    c^#4:Expr.Ident#,\n"
-                                       "    d^#5:Expr.Ident#,\n"
-                                       "    e^#7:Expr.Ident#\n"
-                                       "  )^#6:Expr.Call#\n"
-                                       ")^#3:Expr.Call#"}));
+    testing::Combine(
+        testing::Values(
+            VariadicLogicalOperatorsTestCase{
+                .input = "a && b && c && d",
+                .expected_adorned_string = "_&&_(\n"
+                                           "  a^#1:Expr.Ident#,\n"
+                                           "  b^#2:Expr.Ident#,\n"
+                                           "  c^#4:Expr.Ident#,\n"
+                                           "  d^#6:Expr.Ident#\n"
+                                           ")^#3:Expr.Call#"},
+            VariadicLogicalOperatorsTestCase{
+                .input = "a || b || c || d",
+                .expected_adorned_string = "_||_(\n"
+                                           "  a^#1:Expr.Ident#,\n"
+                                           "  b^#2:Expr.Ident#,\n"
+                                           "  c^#4:Expr.Ident#,\n"
+                                           "  d^#6:Expr.Ident#\n"
+                                           ")^#3:Expr.Call#"},
+            VariadicLogicalOperatorsTestCase{
+                .input = "a && b && (c || d || e)",
+                .expected_adorned_string = "_&&_(\n"
+                                           "  a^#1:Expr.Ident#,\n"
+                                           "  b^#2:Expr.Ident#,\n"
+                                           "  _||_(\n"
+                                           "    c^#4:Expr.Ident#,\n"
+                                           "    d^#5:Expr.Ident#,\n"
+                                           "    e^#7:Expr.Ident#\n"
+                                           "  )^#6:Expr.Call#\n"
+                                           ")^#3:Expr.Call#"}),
+        testing::Bool()),
+    VariadicLogicalOperatorsTestName);
 
-TEST(ParserTest, ParseFailurePopulatesIssues) {
-  auto builder = cel::NewParserBuilder();
+class ParserTest : public testing::TestWithParam<bool> {
+ protected:
+  ParserTest() { options_.enable_pratt_parser = GetParam(); }
+
+  ParserOptions options_;
+};
+
+TEST_P(ParserTest, ParseFailurePopulatesIssues) {
+  auto builder = cel::NewParserBuilder(options_);
   ASSERT_OK_AND_ASSIGN(auto parser, std::move(*builder).Build());
 
   ASSERT_OK_AND_ASSIGN(auto source, cel::NewSource("a +", "test.cel"));
@@ -1898,15 +2140,33 @@ TEST(ParserTest, ParseFailurePopulatesIssues) {
   EXPECT_EQ(issues[0].location().column, 3);
 }
 
-std::string TestName(const testing::TestParamInfo<TestInfo>& test_info) {
-  std::string name = absl::StrCat(test_info.index, "-", test_info.param.I);
+std::string ExpressionTestName(
+    const testing::TestParamInfo<std::tuple<TestInfo, bool>>& test_info) {
+  const TestInfo& info = std::get<0>(test_info.param);
+  bool enable_pratt = std::get<1>(test_info.param);
+  std::string name = absl::StrCat(test_info.index, "_",
+                                  enable_pratt ? "Pratt_" : "Legacy_", info.I);
   absl::c_replace_if(name, [](char c) { return !absl::ascii_isalnum(c); }, '_');
-  return name;
   return name;
 }
 
 INSTANTIATE_TEST_SUITE_P(CelParserTest, ExpressionTest,
-                         testing::ValuesIn(test_cases), TestName);
+                         testing::Combine(testing::ValuesIn(test_cases),
+                                          testing::Bool()),
+                         ExpressionTestName);
+
+std::string ParserImplTestName(const testing::TestParamInfo<bool>& info) {
+  return info.param ? "Pratt" : "Legacy";
+}
+
+INSTANTIATE_TEST_SUITE_P(CelParserTest, ExpressionImplTest, testing::Bool(),
+                         ParserImplTestName);
+
+INSTANTIATE_TEST_SUITE_P(CelParserTest, NewParserBuilderTest, testing::Bool(),
+                         ParserImplTestName);
+
+INSTANTIATE_TEST_SUITE_P(CelParserTest, ParserTest, testing::Bool(),
+                         ParserImplTestName);
 
 }  // namespace
 }  // namespace google::api::expr::parser

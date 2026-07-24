@@ -69,6 +69,8 @@ ABSL_FLAG(bool, select_optimization, false, "Enable select optimization.");
 ABSL_FLAG(bool, enable_variadic_logical_operators, false,
           "Enable parsing logical AND & OR operators as a single flat variadic "
           "call.");
+ABSL_FLAG(bool, enable_pratt_parser, true,
+          "Enable manual (Pratt) parser instead of ANTLR parser.");
 
 namespace {
 
@@ -266,6 +268,7 @@ NewConformanceServiceFromFlags() {
           .select_optimization = absl::GetFlag(FLAGS_select_optimization),
           .enable_variadic_logical_operators =
               absl::GetFlag(FLAGS_enable_variadic_logical_operators),
+          .enable_pratt_parser = absl::GetFlag(FLAGS_enable_pratt_parser),
       });
   ABSL_CHECK_OK(status_or_service);
   return std::shared_ptr<cel_conformance::ConformanceServiceInterface>(

@@ -405,8 +405,8 @@ class TestMacroExprExpanderSupport
  public:
   int64_t NextId() override { return 42; }
   int64_t CopyId(int64_t id) override { return id; }
-  cel::Expr ReportError(std::string_view) override { return cel::Expr(); }
-  cel::Expr ReportErrorAt(const cel::Expr&, std::string_view) override {
+  cel::Expr ReportError(absl::string_view) override { return cel::Expr(); }
+  cel::Expr ReportErrorAt(const cel::Expr&, absl::string_view) override {
     return cel::Expr();
   }
 };

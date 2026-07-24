@@ -25,8 +25,9 @@
 #include <limits>
 #include <map>
 #include <memory>
+#include <optional>
 #include <string>
-#include <tuple>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -39,6 +40,7 @@
 #include "absl/container/flat_hash_set.h"
 #include "absl/functional/overload.h"
 #include "absl/log/absl_check.h"
+#include "absl/log/check.h"
 #include "absl/memory/memory.h"
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
@@ -57,13 +59,14 @@
 #include "common/ast/expr_proto.h"
 #include "common/ast/source_info_proto.h"
 #include "common/constant.h"
+#include "common/expr.h"
 #include "common/expr_factory.h"
 #include "common/operators.h"
 #include "common/source.h"
 #include "internal/lexis.h"
 #include "internal/status_macros.h"
 #include "internal/strings.h"
-#include "internal/utf8.h"
+#include "parser/internal/pratt_parser.h"
 #pragma push_macro("IN")
 #undef IN
 #include "parser/internal/CelBaseVisitor.h"
@@ -1661,6 +1664,7 @@ absl::StatusOr<ParseResult> ParseImpl(
     const cel::Source& source, const cel::MacroRegistry& registry,
     const ParserOptions& options,
     std::vector<cel::ParseIssue>* parse_issues = nullptr) {
+  ABSL_DCHECK(!options.enable_pratt_parser);
   try {
     CodePointStream input(source.content(), source.description());
     if (input.size() > options.expression_size_codepoint_limit) {
@@ -1844,6 +1848,10 @@ class ParserBuilderImpl : public cel::ParserBuilder {
       library_ids.insert("optional");
     }
     CEL_RETURN_IF_ERROR(macro_registry.RegisterMacros(individual_macros));
+    if (options_.enable_pratt_parser) {
+      return std::make_unique<cel::parser_internal::PrattParserImpl>(
+          options_, std::move(macro_registry), std::move(library_ids));
+    }
     return std::make_unique<ParserImpl>(options_, std::move(macro_registry),
                                         std::move(library_ids));
   }
@@ -1903,9 +1911,19 @@ absl::StatusOr<VerboseParsedExpr> EnrichedParse(
 absl::StatusOr<VerboseParsedExpr> EnrichedParse(
     const cel::Source& source, const cel::MacroRegistry& registry,
     const ParserOptions& options) {
+  ParsedExpr parsed_expr;
+  if (options.enable_pratt_parser) {
+    CEL_ASSIGN_OR_RETURN(
+        std::unique_ptr<cel::Ast> ast,
+        cel::parser_internal::PrattParseImpl(source, registry, options));
+    CEL_RETURN_IF_ERROR(cel::ast_internal::ExprToProto(
+        ast->root_expr(), parsed_expr.mutable_expr()));
+    CEL_RETURN_IF_ERROR(cel::ast_internal::SourceInfoToProto(
+        ast->source_info(), parsed_expr.mutable_source_info()));
+    return VerboseParsedExpr(std::move(parsed_expr), EnrichedSourceInfo());
+  }
   CEL_ASSIGN_OR_RETURN(ParseResult parse_result,
                        ParseImpl(source, registry, options));
-  ParsedExpr parsed_expr;
   CEL_RETURN_IF_ERROR(cel::ast_internal::ExprToProto(
       parse_result.expr, parsed_expr.mutable_expr()));
 

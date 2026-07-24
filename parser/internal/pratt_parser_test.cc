@@ -1810,10 +1810,10 @@ TEST(PrattParserErrorRecoveryTest, ErrorRecoveryLimitOne) {
   EXPECT_THAT(result, StatusIs(absl::StatusCode::kInvalidArgument));
   ASSERT_OK_AND_ASSIGN(auto source, cel::NewSource("......"));
   EXPECT_EQ(FormatIssues(*source, issues),
+            "ERROR: <input>:-1:0: Error recovery limit (1) exceeded\n"
             "ERROR: <input>:1:2: expected identifier\n"
             " | ......\n"
-            " | .^\n"
-            "ERROR: <input>:-1:0: Error recovery limit (1) exceeded");
+            " | .^");
 }
 
 }  // namespace

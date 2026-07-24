@@ -66,6 +66,17 @@ struct ParserOptions final {
   // Enables parsing logical AND & OR operators as a single flat variadic call
   // instead of a balanced/nested binary AST structure.
   bool enable_variadic_logical_operators = false;
+
+  // Enable the manual (Pratt) parser instead of the ANTLR parser.
+  //
+  // CAUTION: Pratt Parser is work in progress. Don't use unless you are aware
+  // of the risks. There is currently no support whatsoever available for
+  // clients of this option.
+  //
+  // This option is temporary and should not be used by new code outside of the
+  // early testing of the Pratt parser.
+  // TODO(b/527638023): Remove this option once the ANTLR parser is removed.
+  bool enable_pratt_parser = false;
 };
 
 }  // namespace cel

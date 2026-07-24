@@ -67,6 +67,11 @@ class PrattParserImpl final : public cel::Parser {
   absl::flat_hash_set<std::string> library_ids_;
 };
 
+absl::StatusOr<std::unique_ptr<cel::Ast>> PrattParseImpl(
+    const cel::Source& source, const cel::MacroRegistry& registry,
+    const ParserOptions& options,
+    std::vector<cel::ParseIssue>* parse_issues = nullptr);
+
 class PrattParserBuilderImpl final : public cel::ParserBuilder {
  public:
   explicit PrattParserBuilderImpl(const cel::ParserOptions& options)

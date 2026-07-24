@@ -117,6 +117,7 @@ cc_library(
         "//parser:macro_registry",
         "//parser:options",
         "//parser:parser_interface",
+        "@com_google_absl//absl/algorithm:container",
         "@com_google_absl//absl/base:nullability",
         "@com_google_absl//absl/cleanup",
         "@com_google_absl//absl/container:flat_hash_map",
