@@ -1,0 +1,158 @@
+// Copyright 2026 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+#include "parser/internal/pratt_parser_worker.h"
+
+#include <cstdint>
+#include <string>
+#include <string_view>
+#include <vector>
+
+#include "absl/base/nullability.h"
+#include "absl/strings/str_cat.h"
+#include "common/source.h"
+#include "parser/internal/lexer.h"
+#include "parser/options.h"
+#include "parser/parser_interface.h"
+
+namespace cel::parser_internal {
+
+ParserWorker::ParserWorker(
+    const cel::Source& source, const cel::ParserOptions& options,
+    std::vector<cel::ParseIssue>* absl_nullable parse_issues)
+    : source_(source),
+      options_(options),
+      lexer_(source_),
+      parse_issues_(parse_issues) {}
+
+void ParserWorker::InitTokenStream() {
+  current_token_ = Token{.type = TokenType::kError, .start = 0, .end = 0};
+  peek_token_ = NextSignificantToken();
+}
+
+std::string ParserWorker::GetTokenText(const Token& tok) const {
+  if (tok.start >= 0 && tok.end >= tok.start &&
+      tok.end <= static_cast<int32_t>(source_.content().size())) {
+    return source_.content().ToString(tok.start, tok.end);
+  }
+  return "";
+}
+
+Token ParserWorker::NextSignificantToken() {
+  while (true) {
+    Token tok = lexer_.Lex();
+    if (tok.type == TokenType::kWhitespace || tok.type == TokenType::kComment) {
+      continue;
+    }
+    if (tok.type == TokenType::kError) {
+      ReportError(tok, lexer_.GetError().message);
+    }
+    return tok;
+  }
+}
+
+Token ParserWorker::NextToken() {
+  current_token_ = peek_token_;
+  if (peek_token_.type != TokenType::kEnd) {
+    peek_token_ = NextSignificantToken();
+  }
+  return current_token_;
+}
+
+bool ParserWorker::Expect(TokenType type, std::string_view msg) {
+  if (peek_token_.type == type) {
+    NextToken();
+    return true;
+  }
+  if (peek_token_.type != TokenType::kError) {
+    std::string err_msg;
+    if (msg.empty()) {
+      std::string tok_text = GetTokenText(peek_token_);
+      std::string formatted_tok;
+      if (peek_token_.type == TokenType::kEnd) {
+        formatted_tok = "<EOF>";
+      } else {
+        formatted_tok = absl::StrCat("'", tok_text, "'");
+      }
+      err_msg = absl::StrCat("mismatched input ", formatted_tok, " expecting '",
+                             TokenTypeToString(type), "'");
+    } else {
+      err_msg = std::string(msg);
+    }
+    ReportError(peek_token_, err_msg);
+  }
+  SynchronizeOnDelimiter();
+  return false;
+}
+
+void ParserWorker::SynchronizeOnDelimiter() {
+  if (is_recovery_limit_exceeded()) {
+    while (peek_token_.type != TokenType::kEnd) {
+      NextToken();
+    }
+    return;
+  }
+  while (peek_token_.type != TokenType::kEnd) {
+    if (peek_token_.type == TokenType::kComma ||
+        peek_token_.type == TokenType::kRightParen ||
+        peek_token_.type == TokenType::kRightBracket ||
+        peek_token_.type == TokenType::kRightBrace) {
+      break;
+    }
+    NextToken();
+  }
+}
+int64_t ParserWorker::NextId(int32_t position) {
+  int64_t id = next_id_++;
+  if (position >= 0) {
+    positions_.insert({id, position});
+  }
+  return id;
+}
+
+int64_t ParserWorker::CopyId(int64_t id) {
+  if (id == 0) {
+    return 0;
+  }
+  int32_t pos = 0;
+  if (auto it = positions_.find(id); it != positions_.end()) {
+    pos = it->second;
+  }
+  return NextId(pos);
+}
+
+void ParserWorker::EraseId(int64_t id) {
+  positions_.erase(id);
+  if (next_id_ == id + 1) {
+    --next_id_;
+  }
+}
+
+void ParserWorker::ReportError(int32_t position, std::string_view msg) {
+  cel::SourceLocation loc;
+  if (auto found = source_.GetLocation(position); found.has_value()) {
+    loc = *found;
+  }
+  ReportError(loc, msg);
+}
+
+void ParserWorker::ReportError(const SourceLocation& loc,
+                               std::string_view msg) {
+  error_count_++;
+  if (parse_issues_ != nullptr) {
+    parse_issues_->push_back(cel::ParseIssue(loc, std::string(msg)));
+  }
+}
+
+}  // namespace cel::parser_internal

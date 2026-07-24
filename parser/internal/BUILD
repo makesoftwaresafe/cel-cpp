@@ -64,6 +64,56 @@ cc_library(
     ],
 )
 
+cc_library(
+    name = "pratt_parser_worker",
+    srcs = ["pratt_parser_worker.cc"],
+    hdrs = ["pratt_parser_worker.h"],
+    deps = [
+        ":ast_factory_interface",
+        ":lexer",
+        "//common:operators",
+        "//common:source",
+        "//internal:lexis",
+        "//internal:strings",
+        "//parser:options",
+        "//parser:parser_interface",
+        "@com_google_absl//absl/base:nullability",
+        "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/types:optional",
+        "@com_google_absl//absl/types:span",
+    ],
+)
+
+cc_library(
+    name = "pratt_parser",
+    srcs = ["pratt_parser.cc"],
+    hdrs = ["pratt_parser.h"],
+    deps = [
+        ":ast_factory",
+        ":pratt_parser_worker",
+        "//common:ast",
+        "//common:expr",
+        "//common:source",
+        "//internal:status_macros",
+        "//parser:macro",
+        "//parser:macro_registry",
+        "//parser:options",
+        "//parser:parser_interface",
+        "@com_google_absl//absl/base:nullability",
+        "@com_google_absl//absl/cleanup",
+        "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/container:flat_hash_set",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/types:span",
+    ],
+)
+
 cc_test(
     name = "ast_factory_test",
     srcs = ["ast_factory_test.cc"],
@@ -82,5 +132,31 @@ cc_test(
         ":lexer",
         "//common:source",
         "//internal:testing",
+    ],
+)
+
+cc_test(
+    name = "pratt_parser_test",
+    srcs = ["pratt_parser_test.cc"],
+    deps = [
+        ":lexer",
+        ":pratt_parser",
+        ":pratt_parser_worker",
+        "//common:ast",
+        "//common:constant",
+        "//common:expr",
+        "//common:source",
+        "//internal:status_macros",
+        "//internal:testing",
+        "//parser:options",
+        "//parser:parser_interface",
+        "//testutil:expr_printer",
+        "@com_google_absl//absl/algorithm:container",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_matchers",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/strings:string_view",
     ],
 )
