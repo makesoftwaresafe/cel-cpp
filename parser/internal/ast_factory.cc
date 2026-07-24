@@ -139,113 +139,146 @@ absl::StatusOr<cel::Expr> AstFactoryInterface<cel::Expr>::CopyAndReplace(
   }
   std::optional<cel::Expr> replaced = replacer(expr);
   if (replaced.has_value()) {
-    return *replaced;
+    return std::move(*replaced);
   }
 
-  cel::Expr new_expr = expr;
-  switch (new_expr.kind_case()) {
+  cel::Expr new_expr;
+  new_expr.set_id(expr.id());
+
+  switch (expr.kind_case()) {
     case cel::ExprKindCase::kUnspecifiedExpr:
+      break;
     case cel::ExprKindCase::kConstant:
+      new_expr.set_const_expr(expr.const_expr());
+      break;
     case cel::ExprKindCase::kIdentExpr:
+      new_expr.set_ident_expr(cel::IdentExpr(expr.ident_expr().name()));
       break;
     case cel::ExprKindCase::kSelectExpr: {
       cel::SelectExpr& select = new_expr.mutable_select_expr();
-      if (select.has_operand()) {
+      select.set_field(expr.select_expr().field());
+      select.set_test_only(expr.select_expr().test_only());
+      if (expr.select_expr().has_operand()) {
         CEL_ASSIGN_OR_RETURN(cel::Expr operand,
-                             CopyAndReplace(select.operand(), replacer,
-                                            max_recursion_depth - 1));
+                             CopyAndReplace(expr.select_expr().operand(),
+                                            replacer, max_recursion_depth - 1));
         select.set_operand(std::move(operand));
       }
       break;
     }
     case cel::ExprKindCase::kCallExpr: {
       cel::CallExpr& call = new_expr.mutable_call_expr();
-      if (call.has_target()) {
-        CEL_ASSIGN_OR_RETURN(
-            cel::Expr target,
-            CopyAndReplace(call.target(), replacer, max_recursion_depth - 1));
+      call.set_function(expr.call_expr().function());
+      if (expr.call_expr().has_target()) {
+        CEL_ASSIGN_OR_RETURN(cel::Expr target,
+                             CopyAndReplace(expr.call_expr().target(), replacer,
+                                            max_recursion_depth - 1));
         call.set_target(std::move(target));
       }
-      for (auto& arg : call.mutable_args()) {
+      call.mutable_args().reserve(expr.call_expr().args().size());
+      for (const auto& arg : expr.call_expr().args()) {
         CEL_ASSIGN_OR_RETURN(
             cel::Expr new_arg,
             CopyAndReplace(arg, replacer, max_recursion_depth - 1));
-        arg = std::move(new_arg);
+        call.mutable_args().push_back(std::move(new_arg));
       }
       break;
     }
     case cel::ExprKindCase::kListExpr: {
       cel::ListExpr& list = new_expr.mutable_list_expr();
-      for (auto& elem : list.mutable_elements()) {
+      list.mutable_elements().reserve(expr.list_expr().elements().size());
+      for (const auto& elem : expr.list_expr().elements()) {
+        cel::ListExprElement new_elem;
+        new_elem.set_optional(elem.optional());
         if (elem.has_expr()) {
           CEL_ASSIGN_OR_RETURN(
-              cel::Expr new_elem,
+              cel::Expr new_child,
               CopyAndReplace(elem.expr(), replacer, max_recursion_depth - 1));
-          elem.set_expr(std::move(new_elem));
+          new_elem.set_expr(std::move(new_child));
         }
+        list.mutable_elements().push_back(std::move(new_elem));
       }
       break;
     }
     case cel::ExprKindCase::kStructExpr: {
       cel::StructExpr& str = new_expr.mutable_struct_expr();
-      for (auto& field : str.mutable_fields()) {
+      str.set_name(expr.struct_expr().name());
+      str.mutable_fields().reserve(expr.struct_expr().fields().size());
+      for (const auto& field : expr.struct_expr().fields()) {
+        cel::StructExprField new_field;
+        new_field.set_id(field.id());
+        new_field.set_name(field.name());
+        new_field.set_optional(field.optional());
         if (field.has_value()) {
           CEL_ASSIGN_OR_RETURN(
               cel::Expr new_val,
               CopyAndReplace(field.value(), replacer, max_recursion_depth - 1));
-          field.set_value(std::move(new_val));
+          new_field.set_value(std::move(new_val));
         }
+        str.mutable_fields().push_back(std::move(new_field));
       }
       break;
     }
     case cel::ExprKindCase::kMapExpr: {
       cel::MapExpr& map = new_expr.mutable_map_expr();
-      for (auto& entry : map.mutable_entries()) {
+      map.mutable_entries().reserve(expr.map_expr().entries().size());
+      for (const auto& entry : expr.map_expr().entries()) {
+        cel::MapExprEntry new_entry;
+        new_entry.set_id(entry.id());
+        new_entry.set_optional(entry.optional());
         if (entry.has_key()) {
           CEL_ASSIGN_OR_RETURN(
               cel::Expr new_key,
               CopyAndReplace(entry.key(), replacer, max_recursion_depth - 1));
-          entry.set_key(std::move(new_key));
+          new_entry.set_key(std::move(new_key));
         }
         if (entry.has_value()) {
           CEL_ASSIGN_OR_RETURN(
               cel::Expr new_val,
               CopyAndReplace(entry.value(), replacer, max_recursion_depth - 1));
-          entry.set_value(std::move(new_val));
+          new_entry.set_value(std::move(new_val));
         }
+        map.mutable_entries().push_back(std::move(new_entry));
       }
       break;
     }
     case cel::ExprKindCase::kComprehensionExpr: {
       cel::ComprehensionExpr& comp = new_expr.mutable_comprehension_expr();
-      if (comp.has_accu_init()) {
-        CEL_ASSIGN_OR_RETURN(cel::Expr new_accu_init,
-                             CopyAndReplace(comp.accu_init(), replacer,
-                                            max_recursion_depth - 1));
+      comp.set_iter_var(expr.comprehension_expr().iter_var());
+      comp.set_iter_var2(expr.comprehension_expr().iter_var2());
+      comp.set_accu_var(expr.comprehension_expr().accu_var());
+      if (expr.comprehension_expr().has_accu_init()) {
+        CEL_ASSIGN_OR_RETURN(
+            cel::Expr new_accu_init,
+            CopyAndReplace(expr.comprehension_expr().accu_init(), replacer,
+                           max_recursion_depth - 1));
         comp.set_accu_init(std::move(new_accu_init));
       }
-      if (comp.has_iter_range()) {
-        CEL_ASSIGN_OR_RETURN(cel::Expr new_iter_range,
-                             CopyAndReplace(comp.iter_range(), replacer,
-                                            max_recursion_depth - 1));
+      if (expr.comprehension_expr().has_iter_range()) {
+        CEL_ASSIGN_OR_RETURN(
+            cel::Expr new_iter_range,
+            CopyAndReplace(expr.comprehension_expr().iter_range(), replacer,
+                           max_recursion_depth - 1));
         comp.set_iter_range(std::move(new_iter_range));
       }
-      if (comp.has_loop_condition()) {
-        CEL_ASSIGN_OR_RETURN(cel::Expr new_loop_condition,
-                             CopyAndReplace(comp.loop_condition(), replacer,
-                                            max_recursion_depth - 1));
+      if (expr.comprehension_expr().has_loop_condition()) {
+        CEL_ASSIGN_OR_RETURN(
+            cel::Expr new_loop_condition,
+            CopyAndReplace(expr.comprehension_expr().loop_condition(), replacer,
+                           max_recursion_depth - 1));
         comp.set_loop_condition(std::move(new_loop_condition));
       }
-      if (comp.has_loop_step()) {
-        CEL_ASSIGN_OR_RETURN(cel::Expr new_loop_step,
-                             CopyAndReplace(comp.loop_step(), replacer,
-                                            max_recursion_depth - 1));
+      if (expr.comprehension_expr().has_loop_step()) {
+        CEL_ASSIGN_OR_RETURN(
+            cel::Expr new_loop_step,
+            CopyAndReplace(expr.comprehension_expr().loop_step(), replacer,
+                           max_recursion_depth - 1));
         comp.set_loop_step(std::move(new_loop_step));
       }
-      if (comp.has_result()) {
-        CEL_ASSIGN_OR_RETURN(
-            cel::Expr new_result,
-            CopyAndReplace(comp.result(), replacer, max_recursion_depth - 1));
+      if (expr.comprehension_expr().has_result()) {
+        CEL_ASSIGN_OR_RETURN(cel::Expr new_result,
+                             CopyAndReplace(expr.comprehension_expr().result(),
+                                            replacer, max_recursion_depth - 1));
         comp.set_result(std::move(new_result));
       }
       break;

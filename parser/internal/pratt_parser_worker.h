@@ -322,10 +322,13 @@ ExprNode PrattParserWorker<ExprNode>::ParseBinaryAndTernary(int min_prec) {
         return lhs;
       }
       ExprNode false_expr = ParseBinaryAndTernary(0);
-      lhs = ast_factory_.NewCall(
-          op_id, CelOperator::CONDITIONAL,
-          std::vector<ExprNode>{std::move(lhs), std::move(true_expr),
-                                std::move(false_expr)});
+      std::vector<ExprNode> args;
+      args.reserve(3);
+      args.push_back(std::move(lhs));
+      args.push_back(std::move(true_expr));
+      args.push_back(std::move(false_expr));
+      lhs = ast_factory_.NewCall(op_id, CelOperator::CONDITIONAL,
+                                 std::move(args));
       continue;
     }
 
@@ -340,9 +343,12 @@ ExprNode PrattParserWorker<ExprNode>::ParseBinaryAndTernary(int min_prec) {
     Token op_tok = NextToken();
     int64_t op_id = NextId(op_tok);
     ExprNode rhs = ParseBinaryAndTernary(op_info.precedence + 1);
-    lhs = ast_factory_.NewCall(
-        op_id, std::string(op_info.name),
-        std::vector<ExprNode>{std::move(lhs), std::move(rhs)});
+    std::vector<ExprNode> args;
+    args.reserve(2);
+    args.push_back(std::move(lhs));
+    args.push_back(std::move(rhs));
+    lhs =
+        ast_factory_.NewCall(op_id, std::string(op_info.name), std::move(args));
   }
   return lhs;
 }
@@ -396,11 +402,12 @@ ExprNode PrattParserWorker<ExprNode>::ParseSelectorChain() {
           NormalizeIdent(id_tok, /*allow_quoted=*/!is_member_call);
       if (optional) {
         int64_t op_id = NextId(dot_tok);
-        lhs = ast_factory_.NewCall(
-            op_id, "_?._",
-            std::vector<ExprNode>{
-                std::move(lhs),
-                ast_factory_.NewStringConst(NextId(id_tok), id_text)});
+        std::vector<ExprNode> args;
+        args.reserve(2);
+        args.push_back(std::move(lhs));
+        args.push_back(
+            ast_factory_.NewStringConst(NextId(id_tok), std::move(id_text)));
+        lhs = ast_factory_.NewCall(op_id, "_?._", std::move(args));
       } else if (peek_token_.type == TokenType::kLeftParen) {
         Token lparen = NextToken();
         int64_t call_id = NextId(lparen);
@@ -429,9 +436,12 @@ ExprNode PrattParserWorker<ExprNode>::ParseSelectorChain() {
       }
       ExprNode index = ParseExpr();
       Expect(TokenType::kRightBracket, "expected ']'");
-      lhs = ast_factory_.NewCall(
-          op_id, optional ? "_[?_]" : CelOperator::INDEX,
-          std::vector<ExprNode>{std::move(lhs), std::move(index)});
+      std::vector<ExprNode> args;
+      args.reserve(2);
+      args.push_back(std::move(lhs));
+      args.push_back(std::move(index));
+      lhs = ast_factory_.NewCall(op_id, optional ? "_[?_]" : CelOperator::INDEX,
+                                 std::move(args));
     } else if (tok == TokenType::kLeftBrace) {
       int32_t struct_pos = GetLeftmostPosition(lhs);
       if (auto struct_name = ExtractStructName(lhs); struct_name.has_value()) {
@@ -455,8 +465,10 @@ ExprNode PrattParserWorker<ExprNode>::ParseUnary() {
     Token op = NextToken();
     int64_t op_id = NextId(op);
     ExprNode operand = ParseSelectorChain();
+    std::vector<ExprNode> args;
+    args.push_back(std::move(operand));
     return ast_factory_.NewCall(op_id, std::string(CelOperator::LOGICAL_NOT),
-                                std::vector<ExprNode>{std::move(operand)});
+                                std::move(args));
   }
   if (tok == TokenType::kMinus) {
     Token op = NextToken();
@@ -505,8 +517,10 @@ ExprNode PrattParserWorker<ExprNode>::ParseUnary() {
     // Regular negate call
     int64_t op_id = NextId(op);
     ExprNode operand = ParseSelectorChain();
+    std::vector<ExprNode> args;
+    args.push_back(std::move(operand));
     return ast_factory_.NewCall(op_id, std::string(CelOperator::NEGATE),
-                                std::vector<ExprNode>{std::move(operand)});
+                                std::move(args));
   }
   return ParsePrimary();
 }
