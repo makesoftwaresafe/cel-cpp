@@ -1055,7 +1055,7 @@ std::string FormatIssues(const cel::Source& source,
       issues, "\n", [&source](std::string* out, const cel::ParseIssue& issue) {
         absl::StrAppend(
             out,
-            absl::StrFormat("ERROR: %s:%zu:%zu: %s", source.description(),
+            absl::StrFormat("ERROR: %s:%d:%d: %s", source.description(),
                             issue.location().line, issue.location().column + 1,
                             issue.message()),
             source.DisplayErrorLocation(issue.location()));
@@ -1576,53 +1576,6 @@ INSTANTIATE_TEST_SUITE_P(PrattParserMacroTest, PrattParserMacroTest,
                          testing::ValuesIn(GetMacroTestCases()),
                          TestName<MacroTestCase>);
 
-TEST(PrattParserMacroErrorTest, ReportError) {
-  auto builder = NewPrattParserBuilder();
-  ASSERT_OK_AND_ASSIGN(
-      auto error_macro,
-      Macro::Global("bad_macro", 1,
-                    [](MacroExprFactory& macro_factory,
-                       absl::Span<Expr> args) -> std::optional<Expr> {
-                      return macro_factory.ReportError("custom macro error");
-                    }));
-
-  ASSERT_THAT(builder->AddMacro(error_macro), IsOk());
-  ASSERT_OK_AND_ASSIGN(auto parser, builder->Build());
-
-  ASSERT_OK_AND_ASSIGN(auto source, cel::NewSource("42 + bad_macro(x)"));
-  std::vector<cel::ParseIssue> issues;
-  auto ast = parser->Parse(*source, &issues);
-  EXPECT_THAT(ast, StatusIs(absl::StatusCode::kInvalidArgument));
-  EXPECT_EQ(FormatIssues(*source, issues),
-            "ERROR: <input>:1:6: custom macro error\n"
-            " | 42 + bad_macro(x)\n"
-            " | .....^");
-}
-
-TEST(PrattParserMacroErrorTest, ReportErrorAt) {
-  auto builder = NewPrattParserBuilder();
-  ASSERT_OK_AND_ASSIGN(
-      auto error_at_macro,
-      Macro::Global("bad_macro_at", 1,
-                    [](MacroExprFactory& macro_factory,
-                       absl::Span<Expr> args) -> std::optional<Expr> {
-                      return macro_factory.ReportErrorAt(args[0],
-                                                         "custom error at arg");
-                    }));
-
-  ASSERT_THAT(builder->AddMacro(error_at_macro), IsOk());
-  ASSERT_OK_AND_ASSIGN(auto parser, builder->Build());
-
-  ASSERT_OK_AND_ASSIGN(auto source, cel::NewSource("bad_macro_at(x)"));
-  std::vector<cel::ParseIssue> issues;
-  auto ast = parser->Parse(*source, &issues);
-  EXPECT_THAT(ast, StatusIs(absl::StatusCode::kInvalidArgument));
-  EXPECT_EQ(FormatIssues(*source, issues),
-            "ERROR: <input>:1:14: custom error at arg\n"
-            " | bad_macro_at(x)\n"
-            " | .............^");
-}
-
 TEST(PrattParserMacroCallsTest, MacroCallsDisabledByDefault) {
   cel::ParserOptions options;
   options.add_macro_calls = false;
@@ -1735,6 +1688,78 @@ TEST(PrattParserMacroCallsTest, NestedMacroCallsUseCopyAndReplaceReplacer) {
         x^#7:Expr.Ident#.b^#8:Expr.Select#
       )^#0:Expr.Call#
     )"));
+}
+
+TEST(PrattParserMacroErrorTest, ReportError) {
+  auto builder = NewPrattParserBuilder();
+  ASSERT_OK_AND_ASSIGN(
+      auto error_macro,
+      Macro::Global("bad_macro", 1,
+                    [](MacroExprFactory& macro_factory,
+                       absl::Span<Expr> args) -> std::optional<Expr> {
+                      return macro_factory.ReportError("custom macro error");
+                    }));
+
+  ASSERT_THAT(builder->AddMacro(error_macro), IsOk());
+  ASSERT_OK_AND_ASSIGN(auto parser, builder->Build());
+
+  ASSERT_OK_AND_ASSIGN(auto source, cel::NewSource("42 + bad_macro(x)"));
+  std::vector<cel::ParseIssue> issues;
+  auto ast = parser->Parse(*source, &issues);
+  EXPECT_THAT(ast, StatusIs(absl::StatusCode::kInvalidArgument));
+  EXPECT_EQ(FormatIssues(*source, issues),
+            "ERROR: <input>:1:6: custom macro error\n"
+            " | 42 + bad_macro(x)\n"
+            " | .....^");
+}
+
+TEST(PrattParserMacroErrorTest, ReportErrorAt) {
+  auto builder = NewPrattParserBuilder();
+  ASSERT_OK_AND_ASSIGN(
+      auto error_at_macro,
+      Macro::Global("bad_macro_at", 1,
+                    [](MacroExprFactory& macro_factory,
+                       absl::Span<Expr> args) -> std::optional<Expr> {
+                      return macro_factory.ReportErrorAt(args[0],
+                                                         "custom error at arg");
+                    }));
+
+  ASSERT_THAT(builder->AddMacro(error_at_macro), IsOk());
+  ASSERT_OK_AND_ASSIGN(auto parser, builder->Build());
+
+  ASSERT_OK_AND_ASSIGN(auto source, cel::NewSource("bad_macro_at(x)"));
+  std::vector<cel::ParseIssue> issues;
+  auto ast = parser->Parse(*source, &issues);
+  EXPECT_THAT(ast, StatusIs(absl::StatusCode::kInvalidArgument));
+  EXPECT_EQ(FormatIssues(*source, issues),
+            "ERROR: <input>:1:14: custom error at arg\n"
+            " | bad_macro_at(x)\n"
+            " | .............^");
+}
+
+TEST(PrattParserErrorRecoveryTest, ErrorRecoveryLimitZero) {
+  cel::ParserOptions options;
+  options.error_recovery_limit = 0;
+  std::vector<cel::ParseIssue> issues;
+  auto result = Parse("......", options, &issues);
+  EXPECT_THAT(result, StatusIs(absl::StatusCode::kInvalidArgument));
+  ASSERT_OK_AND_ASSIGN(auto source, cel::NewSource("......"));
+  EXPECT_EQ(FormatIssues(*source, issues),
+            "ERROR: <input>:-1:0: Error recovery limit (0) exceeded");
+}
+
+TEST(PrattParserErrorRecoveryTest, ErrorRecoveryLimitOne) {
+  cel::ParserOptions options;
+  options.error_recovery_limit = 1;
+  std::vector<cel::ParseIssue> issues;
+  auto result = Parse("......", options, &issues);
+  EXPECT_THAT(result, StatusIs(absl::StatusCode::kInvalidArgument));
+  ASSERT_OK_AND_ASSIGN(auto source, cel::NewSource("......"));
+  EXPECT_EQ(FormatIssues(*source, issues),
+            "ERROR: <input>:1:2: expected identifier\n"
+            " | ......\n"
+            " | .^\n"
+            "ERROR: <input>:-1:0: Error recovery limit (1) exceeded");
 }
 
 }  // namespace

@@ -20,6 +20,7 @@
 
 #include "absl/base/nullability.h"
 #include "absl/strings/str_cat.h"
+#include "absl/strings/str_format.h"
 #include "absl/strings/string_view.h"
 #include "common/source.h"
 #include "parser/internal/lexer.h"
@@ -50,6 +51,9 @@ std::string ParserWorker::GetTokenText(const Token& tok) const {
 }
 
 Token ParserWorker::NextSignificantToken() {
+  if (is_recovery_limit_exceeded()) {
+    return Token{.type = TokenType::kEnd, .start = 0, .end = 0};
+  }
   while (true) {
     Token tok = lexer_.Lex();
     if (tok.type == TokenType::kWhitespace || tok.type == TokenType::kComment) {
@@ -57,6 +61,9 @@ Token ParserWorker::NextSignificantToken() {
     }
     if (tok.type == TokenType::kError) {
       ReportError(tok, lexer_.GetError().message);
+      if (is_recovery_limit_exceeded()) {
+        return Token{.type = TokenType::kEnd, .start = 0, .end = 0};
+      }
     }
     return tok;
   }
@@ -64,6 +71,10 @@ Token ParserWorker::NextSignificantToken() {
 
 Token ParserWorker::NextToken() {
   current_token_ = peek_token_;
+  if (is_recovery_limit_exceeded()) {
+    peek_token_ = Token{.type = TokenType::kEnd, .start = 0, .end = 0};
+    return current_token_;
+  }
   if (peek_token_.type != TokenType::kEnd) {
     peek_token_ = NextSignificantToken();
   }
@@ -74,6 +85,9 @@ bool ParserWorker::Expect(TokenType type, absl::string_view msg) {
   if (peek_token_.type == type) {
     NextToken();
     return true;
+  }
+  if (is_recovery_limit_exceeded()) {
+    return false;
   }
   if (peek_token_.type != TokenType::kError) {
     std::string err_msg;
@@ -98,9 +112,7 @@ bool ParserWorker::Expect(TokenType type, absl::string_view msg) {
 
 void ParserWorker::SynchronizeOnDelimiter() {
   if (is_recovery_limit_exceeded()) {
-    while (peek_token_.type != TokenType::kEnd) {
-      NextToken();
-    }
+    peek_token_ = Token{.type = TokenType::kEnd, .start = 0, .end = 0};
     return;
   }
   while (peek_token_.type != TokenType::kEnd) {
@@ -149,8 +161,20 @@ void ParserWorker::ReportError(int32_t position, absl::string_view msg) {
 
 void ParserWorker::ReportError(const SourceLocation& loc,
                                absl::string_view msg) {
+  if (error_count_ > options_.error_recovery_limit) {
+    return;
+  }
   error_count_++;
-  if (parse_issues_ != nullptr) {
+  if (error_count_ == options_.error_recovery_limit + 1) {
+    if (parse_issues_ != nullptr) {
+      parse_issues_->push_back(
+          cel::ParseIssue(absl::StrFormat("Error recovery limit (%d) exceeded",
+                                          options_.error_recovery_limit)));
+    }
+    peek_token_ = Token{.type = TokenType::kEnd, .start = 0, .end = 0};
+  }
+  if (parse_issues_ != nullptr &&
+      error_count_ <= options_.error_recovery_limit) {
     parse_issues_->push_back(cel::ParseIssue(loc, std::string(msg)));
   }
 }

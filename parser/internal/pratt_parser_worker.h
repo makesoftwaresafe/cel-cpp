@@ -81,7 +81,7 @@ class ParserWorker {
 
   // Error reporting and recovery
   bool is_recovery_limit_exceeded() const {
-    return error_count_ >= options_.error_recovery_limit;
+    return error_count_ > options_.error_recovery_limit;
   }
   void ReportError(int32_t position, absl::string_view msg);
   void ReportError(const SourceLocation& loc, absl::string_view msg);
@@ -214,7 +214,7 @@ class PrattParserWorker : public ParserWorker {
 template <typename ExprNode>
 ExprNode PrattParserWorker<ExprNode>::Parse() {
   ExprNode expr = ParseExpr();
-  if (is_recursion_limit_exceeded()) {
+  if (is_recursion_limit_exceeded() || is_recovery_limit_exceeded()) {
     return expr;
   }
   if (peek_token_.type != TokenType::kEnd &&
@@ -226,7 +226,7 @@ ExprNode PrattParserWorker<ExprNode>::Parse() {
 
 template <typename ExprNode>
 ExprNode PrattParserWorker<ExprNode>::ParseExpr() {
-  if (recursion_limit_exceeded_) {
+  if (recursion_limit_exceeded_ || is_recovery_limit_exceeded()) {
     return ExprNode();
   }
   if (recursion_depth_ > options_.max_recursion_depth) {

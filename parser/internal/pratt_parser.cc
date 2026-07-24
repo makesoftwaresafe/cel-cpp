@@ -50,9 +50,11 @@ namespace {
 std::string DisplayParserError(const cel::Source& source,
                                SourceLocation location,
                                std::string_view message) {
+  int32_t display_column =
+      location.column >= 0 ? location.column + 1 : location.column;
   return absl::StrCat(
-      absl::StrFormat("ERROR: %s:%zu:%zu: %s", source.description(),
-                      location.line, location.column + 1, message),
+      absl::StrFormat("ERROR: %s:%d:%d: %s", source.description(),
+                      location.line, display_column, message),
       source.DisplayErrorLocation(location));
 }
 

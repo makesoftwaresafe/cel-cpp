@@ -1584,7 +1584,7 @@ TEST(ExpressionTest, TsanOom) {
       .IgnoreError();
 }
 
-TEST(ExpressionTest, ErrorRecoveryLimits) {
+TEST_P(ExpressionTest, ErrorRecoveryLimits) {
   ParserOptions options;
   options.error_recovery_limit = 1;
   auto result = Parse("......", "", options);
