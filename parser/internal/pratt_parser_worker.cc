@@ -22,12 +22,79 @@
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_format.h"
 #include "absl/strings/string_view.h"
+#include "common/operators.h"
 #include "common/source.h"
 #include "parser/internal/lexer.h"
 #include "parser/options.h"
 #include "parser/parser_interface.h"
 
 namespace cel::parser_internal {
+namespace {
+
+using CelOperator = ::google::api::expr::common::CelOperator;
+
+const BinaryOpInfo kLogicalOr = {1, CelOperator::LOGICAL_OR, true,
+                                 TokenType::kLogicalOr};
+const BinaryOpInfo kLogicalAnd = {2, CelOperator::LOGICAL_AND, true,
+                                  TokenType::kLogicalAnd};
+const BinaryOpInfo kLess = {3, CelOperator::LESS, false, TokenType::kLess};
+const BinaryOpInfo kLessEqual = {3, CelOperator::LESS_EQUALS, false,
+                                 TokenType::kLessEqual};
+const BinaryOpInfo kGreater = {3, CelOperator::GREATER, false,
+                               TokenType::kGreater};
+const BinaryOpInfo kGreaterEqual = {3, CelOperator::GREATER_EQUALS, false,
+                                    TokenType::kGreaterEqual};
+const BinaryOpInfo kEqualEqual = {3, CelOperator::EQUALS, false,
+                                  TokenType::kEqualEqual};
+const BinaryOpInfo kExclamationEqual = {3, CelOperator::NOT_EQUALS, false,
+                                        TokenType::kExclamationEqual};
+const BinaryOpInfo kIn = {3, CelOperator::IN, false, TokenType::kIn};
+const BinaryOpInfo kPlus = {4, CelOperator::ADD, false, TokenType::kPlus};
+const BinaryOpInfo kMinus = {4, CelOperator::SUBTRACT, false,
+                             TokenType::kMinus};
+const BinaryOpInfo kAsterisk = {5, CelOperator::MULTIPLY, false,
+                                TokenType::kAsterisk};
+const BinaryOpInfo kSlash = {5, CelOperator::DIVIDE, false, TokenType::kSlash};
+const BinaryOpInfo kPercent = {5, CelOperator::MODULO, false,
+                               TokenType::kPercent};
+const BinaryOpInfo kDefaultOpInfo = {0, "", false, TokenType::kError};
+
+}  // namespace
+
+const BinaryOpInfo& GetBinaryOpInfo(TokenType type) {
+  switch (type) {
+    case TokenType::kLogicalOr:
+      return kLogicalOr;
+    case TokenType::kLogicalAnd:
+      return kLogicalAnd;
+    case TokenType::kLess:
+      return kLess;
+    case TokenType::kLessEqual:
+      return kLessEqual;
+    case TokenType::kGreater:
+      return kGreater;
+    case TokenType::kGreaterEqual:
+      return kGreaterEqual;
+    case TokenType::kEqualEqual:
+      return kEqualEqual;
+    case TokenType::kExclamationEqual:
+      return kExclamationEqual;
+    case TokenType::kIn:
+      return kIn;
+    case TokenType::kPlus:
+      return kPlus;
+    case TokenType::kMinus:
+      return kMinus;
+    case TokenType::kAsterisk:
+      return kAsterisk;
+    case TokenType::kSlash:
+      return kSlash;
+    case TokenType::kPercent:
+      return kPercent;
+    default:
+      return kDefaultOpInfo;
+  }
+}
 
 ParserWorker::ParserWorker(
     const cel::Source& source, const cel::ParserOptions& options,

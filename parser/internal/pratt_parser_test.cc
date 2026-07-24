@@ -224,6 +224,12 @@ std::vector<TestCase> GetParserTestCases() {
             )",
       },
       TestCase{
+          .source = "9223372036854775807",
+          .expected_ast = R"(
+              9223372036854775807^#1:int64#
+            )",
+      },
+      TestCase{
           .source = "-9223372036854775808",
           .expected_ast = R"(
               -9223372036854775808^#1:int64#
