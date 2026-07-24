@@ -24,6 +24,7 @@
 #include <utility>
 #include <vector>
 
+#include "absl/base/attributes.h"
 #include "absl/base/nullability.h"
 #include "absl/base/optimization.h"
 #include "absl/container/flat_hash_map.h"
@@ -257,7 +258,7 @@ class PrattParserWorker : public ParserWorker {
   // Example (`(a + b)`): Consumes `(`, recurses to `ParseExpr()`, and expects
   // `)`. Example (`has(x.y)`): Consumes `has`, parses arguments `(x.y)`, and
   // expands the `has` macro.
-  ExprNode ParsePrimary();
+  ABSL_ATTRIBUTE_ALWAYS_INLINE inline ExprNode ParsePrimary();
 
   ExprNode ParseList();
   ExprNode ParseMap();
@@ -621,7 +622,8 @@ ExprNode PrattParserWorker<ExprNode>::ParseIdentOrCall() {
 // (`[...]`, `{...}`), and identifiers/global function calls (`foo`,
 // `has(x.y)`).
 template <typename ExprNode>
-ExprNode PrattParserWorker<ExprNode>::ParsePrimary() {
+ABSL_ATTRIBUTE_ALWAYS_INLINE inline ExprNode
+PrattParserWorker<ExprNode>::ParsePrimary() {
   ExprNode expr;
   TokenType tok_type = peek_token_.type;
   if (tok_type == TokenType::kLeftParen) {
