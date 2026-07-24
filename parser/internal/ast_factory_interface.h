@@ -16,26 +16,15 @@
 #define THIRD_PARTY_CEL_CPP_PARSER_INTERNAL_AST_FACTORY_INTERFACE_H_
 
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
 
-namespace cel::parser_internal {
+#include "absl/functional/function_ref.h"
+#include "absl/status/statusor.h"
 
-// Interface for decoupling parser logic from the underlying AST node
-// data structures.
-//
-// By parameterizing the parser and factory on `ExprNode`, alternative AST node
-// representations (such as `cel::Expr`) can be constructed without modifying
-// parser rules.
-//
-// To implement AST construction using an alternative AST structure:
-// 1. Define or specify your custom node type `MyNode`.
-// 2. Implement a concrete factory specialization `AstFactoryInterface<MyNode>`
-//    that provides inspection (`GetId`, `IsSelect`, etc.) and creation
-//    (`NewCall`, `NewListBuilder`, etc.) operations for `MyNode`.
-// 3. Instantiate the parser worker with your node type:
-//    `PrattParserWorker<MyNode>`.
+namespace cel::parser_internal {
 
 template <typename ExprNode>
 class ListNodeBuilder {
@@ -60,6 +49,20 @@ class StructNodeBuilder {
   ExprNode Build();
 };
 
+// Interface for decoupling parser logic from the underlying AST node
+// data structures.
+//
+// By parameterizing the parser and factory on `ExprNode`, alternative AST node
+// representations (such as `cel::Expr`) can be constructed without modifying
+// parser rules.
+//
+// To implement AST construction using an alternative AST structure:
+// 1. Define or specify your custom node type `MyNode`.
+// 2. Implement a concrete factory specialization `AstFactoryInterface<MyNode>`
+//    that provides inspection (`GetId`, `IsSelect`, etc.) and creation
+//    (`NewCall`, `NewListBuilder`, etc.) operations for `MyNode`.
+// 3. Instantiate the parser worker with your node type:
+//    `PrattParserWorker<MyNode>`.
 template <typename ExprNode>
 class AstFactoryInterface {
  public:
@@ -78,6 +81,10 @@ class AstFactoryInterface {
   bool IsPresenceTest(const ExprNode& expr) const;
   const ExprNode* GetSelectOperand(const ExprNode& expr) const;
   std::string_view GetSelectField(const ExprNode& expr) const;
+  absl::StatusOr<ExprNode> CopyAndReplace(
+      const ExprNode& expr,
+      absl::FunctionRef<std::optional<ExprNode>(const ExprNode&)> replacer,
+      int max_recursion_depth = 1000) const;
 
   ExprNode NewUnspecified(int64_t id);
   ExprNode NewNullConst(int64_t id);

@@ -16,12 +16,12 @@
 #define THIRD_PARTY_CEL_CPP_PARSER_INTERNAL_AST_FACTORY_H_
 
 #include <cstdint>
+#include <optional>
 #include <string>
-#include <utility>
-#include <vector>
 
+#include "absl/functional/function_ref.h"
+#include "absl/status/statusor.h"
 #include "absl/strings/string_view.h"
-#include "common/constant.h"
 #include "common/expr.h"
 #include "common/expr_factory.h"
 #include "parser/internal/ast_factory_interface.h"
@@ -33,21 +33,11 @@ namespace cel::parser_internal {
 template <>
 class ListNodeBuilder<cel::Expr> {
  public:
-  explicit ListNodeBuilder(int64_t id) {
-    expr_.set_id(id);
-    expr_.mutable_list_expr();
-  }
+  explicit ListNodeBuilder(int64_t id);
 
-  ListNodeBuilder& Add(cel::Expr element, bool optional = false) {
-    cel::ListExpr& list_val = expr_.mutable_list_expr();
-    cel::ListExprElement expr_element;
-    expr_element.set_expr(std::move(element));
-    expr_element.set_optional(optional);
-    list_val.mutable_elements().push_back(std::move(expr_element));
-    return *this;
-  }
+  ListNodeBuilder& Add(cel::Expr element, bool optional = false);
 
-  cel::Expr Build() { return std::move(expr_); }
+  cel::Expr Build();
 
  private:
   cel::Expr expr_;
@@ -56,24 +46,12 @@ class ListNodeBuilder<cel::Expr> {
 template <>
 class MapNodeBuilder<cel::Expr> {
  public:
-  explicit MapNodeBuilder(int64_t id) {
-    expr_.set_id(id);
-    expr_.mutable_map_expr();
-  }
+  explicit MapNodeBuilder(int64_t id);
 
   MapNodeBuilder& Add(int64_t id, cel::Expr key, cel::Expr value,
-                      bool optional = false) {
-    cel::MapExpr& map_val = expr_.mutable_map_expr();
-    cel::MapExprEntry entry;
-    entry.set_id(id);
-    entry.set_key(std::move(key));
-    entry.set_value(std::move(value));
-    entry.set_optional(optional);
-    map_val.mutable_entries().push_back(std::move(entry));
-    return *this;
-  }
+                      bool optional = false);
 
-  cel::Expr Build() { return std::move(expr_); }
+  cel::Expr Build();
 
  private:
   cel::Expr expr_;
@@ -82,24 +60,12 @@ class MapNodeBuilder<cel::Expr> {
 template <>
 class StructNodeBuilder<cel::Expr> {
  public:
-  explicit StructNodeBuilder(int64_t id, std::string name) {
-    expr_.set_id(id);
-    expr_.mutable_struct_expr().set_name(std::move(name));
-  }
+  explicit StructNodeBuilder(int64_t id, std::string name);
 
   StructNodeBuilder& Add(int64_t id, std::string name, cel::Expr value,
-                         bool optional = false) {
-    cel::StructExpr& struct_val = expr_.mutable_struct_expr();
-    cel::StructExprField field;
-    field.set_id(id);
-    field.set_name(std::move(name));
-    field.set_value(std::move(value));
-    field.set_optional(optional);
-    struct_val.mutable_fields().push_back(std::move(field));
-    return *this;
-  }
+                         bool optional = false);
 
-  cel::Expr Build() { return std::move(expr_); }
+  cel::Expr Build();
 
  private:
   cel::Expr expr_;
@@ -117,34 +83,28 @@ class AstFactoryInterface<cel::Expr> : public cel::ExprFactory {
   ~AstFactoryInterface() override = default;
 
   // Node inspection and encapsulation API
-  int64_t GetId(const cel::Expr& expr) const { return expr.id(); }
+  int64_t GetId(const cel::Expr& expr) const;
 
-  bool IsEmpty(const cel::Expr& expr) const { return expr.id() == 0; }
+  bool IsEmpty(const cel::Expr& expr) const;
 
-  bool IsConst(const cel::Expr& expr) const { return expr.has_const_expr(); }
+  bool IsConst(const cel::Expr& expr) const;
 
-  bool IsIdent(const cel::Expr& expr) const { return expr.has_ident_expr(); }
+  bool IsIdent(const cel::Expr& expr) const;
 
-  absl::string_view GetIdentName(const cel::Expr& expr) const {
-    return expr.has_ident_expr() ? absl::string_view(expr.ident_expr().name())
-                                 : absl::string_view();
-  }
+  absl::string_view GetIdentName(const cel::Expr& expr) const;
 
-  bool IsSelect(const cel::Expr& expr) const { return expr.has_select_expr(); }
+  bool IsSelect(const cel::Expr& expr) const;
 
-  bool IsPresenceTest(const cel::Expr& expr) const {
-    return expr.has_select_expr() && expr.select_expr().test_only();
-  }
+  bool IsPresenceTest(const cel::Expr& expr) const;
 
-  const cel::Expr* GetSelectOperand(const cel::Expr& expr) const {
-    return expr.has_select_expr() ? &expr.select_expr().operand() : nullptr;
-  }
+  const cel::Expr* GetSelectOperand(const cel::Expr& expr) const;
 
-  absl::string_view GetSelectField(const cel::Expr& expr) const {
-    return expr.has_select_expr()
-               ? absl::string_view(expr.select_expr().field())
-               : absl::string_view();
-  }
+  absl::string_view GetSelectField(const cel::Expr& expr) const;
+
+  absl::StatusOr<cel::Expr> CopyAndReplace(
+      const cel::Expr& expr,
+      absl::FunctionRef<std::optional<cel::Expr>(const cel::Expr&)> replacer,
+      int max_recursion_depth = 1000) const;
 
   // Node creation API
   using cel::ExprFactory::NewBoolConst;
@@ -161,17 +121,11 @@ class AstFactoryInterface<cel::Expr> : public cel::ExprFactory {
   using cel::ExprFactory::NewUintConst;
   using cel::ExprFactory::NewUnspecified;
 
-  ListNodeBuilder<cel::Expr> NewListBuilder(int64_t id) {
-    return ListNodeBuilder<cel::Expr>(id);
-  }
+  ListNodeBuilder<cel::Expr> NewListBuilder(int64_t id);
 
-  StructNodeBuilder<cel::Expr> NewStructBuilder(int64_t id, std::string name) {
-    return StructNodeBuilder<cel::Expr>(id, std::move(name));
-  }
+  StructNodeBuilder<cel::Expr> NewStructBuilder(int64_t id, std::string name);
 
-  MapNodeBuilder<cel::Expr> NewMapBuilder(int64_t id) {
-    return MapNodeBuilder<cel::Expr>(id);
-  }
+  MapNodeBuilder<cel::Expr> NewMapBuilder(int64_t id);
 };
 
 using AstFactory = AstFactoryInterface<cel::Expr>;

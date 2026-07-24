@@ -14,16 +14,22 @@
 
 #include "parser/internal/ast_factory.h"
 
-#include <string>
+#include <cstdint>
+#include <optional>
 #include <utility>
 #include <vector>
 
+#include "absl/status/status.h"
+#include "absl/status/status_matchers.h"
 #include "absl/strings/string_view.h"
+#include "common/constant.h"
 #include "common/expr.h"
 #include "internal/testing.h"
 
 namespace cel::parser_internal {
 namespace {
+
+using ::absl_testing::StatusIs;
 
 TEST(AstFactoryInterfaceTest, AstFactoryUnspecified) {
   AstFactory factory;
@@ -194,6 +200,197 @@ TEST(AstFactoryInterfaceTest, AstFactoryMap) {
   EXPECT_FALSE(map_expr.map_expr().entries()[0].optional());
   EXPECT_EQ(map_expr.map_expr().entries()[1].id(), 63);
   EXPECT_TRUE(map_expr.map_expr().entries()[1].optional());
+}
+
+TEST(AstFactoryInterfaceTest, CopyAndReplace) {
+  AstFactory factory;
+
+  // x + 1
+  std::vector<cel::Expr> args;
+  args.push_back(factory.NewIdent(1, "x"));
+  args.push_back(factory.NewIntConst(2, 1));
+  cel::Expr expr = factory.NewCall(3, "_+_", std::move(args));
+
+  // Transform: x -> y, 1 -> 2
+  ASSERT_OK_AND_ASSIGN(
+      cel::Expr transformed,
+      factory.CopyAndReplace(
+          expr, [&](const cel::Expr& e) -> std::optional<cel::Expr> {
+            if (e.has_ident_expr() && e.ident_expr().name() == "x") {
+              return factory.NewIdent(e.id(), "y");
+            }
+            if (e.has_const_expr() && e.const_expr().has_int_value() &&
+                e.const_expr().int_value() == 1) {
+              return factory.NewIntConst(e.id(), 2);
+            }
+            return std::nullopt;
+          }));
+
+  // Expected: y + 2
+  std::vector<cel::Expr> expected_args;
+  expected_args.push_back(factory.NewIdent(1, "y"));
+  expected_args.push_back(factory.NewIntConst(2, 2));
+  cel::Expr expected = factory.NewCall(3, "_+_", std::move(expected_args));
+
+  EXPECT_EQ(transformed, expected);
+}
+
+TEST(AstFactoryInterfaceTest, CopyAndReplaceDeep) {
+  AstFactory factory;
+
+  auto replacer = [&](const cel::Expr& e) -> std::optional<cel::Expr> {
+    if (e.has_const_expr() && e.const_expr().has_double_value()) {
+      return factory.NewIntConst(
+          e.id(), static_cast<int64_t>(e.const_expr().double_value()));
+    }
+    return std::nullopt;
+  };
+
+  cel::Expr expr = factory.NewCall(
+      1, "func",
+      std::vector<cel::Expr>{
+          factory.NewListBuilder(2)
+              .Add(factory.NewUnspecified(3))
+              .Add(factory.NewNullConst(4))
+              .Add(factory.NewBoolConst(5, true))
+              .Add(factory.NewIntConst(6, 42))
+              .Build(),
+          factory.NewMapBuilder(7)
+              .Add(991, factory.NewStringConst(8, "k1"),
+                   factory.NewUintConst(9, 100u))
+              .Add(992, factory.NewBytesConst(10, "b1"),
+                   factory.NewDoubleConst(11, 3.14159))
+              .Build(),
+          factory.NewStructBuilder(12, "S")
+              .Add(32, "f1", factory.NewIdent(13, "x"))
+              .Add(
+                  33, "f2",
+                  factory.NewSelect(14, factory.NewIdent(15, "y"), "sel_field"))
+              .Add(34, "f3",
+                   factory.NewPresenceTest(16, factory.NewIdent(17, "z"),
+                                           "pres_field"))
+              .Build(),
+          factory.NewMemberCall(
+              18, "mem_func", factory.NewIdent(19, "target"),
+              std::vector<cel::Expr>{[&]() {
+                cel::Expr comp_expr;
+                comp_expr.set_id(20);
+                auto& comp = comp_expr.mutable_comprehension_expr();
+                comp.set_iter_var("i");
+                comp.set_iter_var2("i2");
+                comp.set_accu_var("a");
+                comp.set_accu_init(factory.NewDoubleConst(21, 2.71828));
+                comp.set_iter_range(factory.NewIdent(22, "range"));
+                comp.set_loop_condition(factory.NewBoolConst(23, true));
+                comp.set_loop_step(factory.NewCall(
+                    24, "step_func",
+                    std::vector<cel::Expr>{factory.NewIdent(25, "accu")}));
+                comp.set_result(factory.NewIdent(26, "result"));
+                return comp_expr;
+              }()})});
+
+  ASSERT_OK_AND_ASSIGN(cel::Expr transformed_expr,
+                       factory.CopyAndReplace(expr, replacer));
+
+  cel::Expr expected_transformed_expr = factory.NewCall(
+      1, "func",
+      std::vector<cel::Expr>{
+          factory.NewListBuilder(2)
+              .Add(factory.NewUnspecified(3))
+              .Add(factory.NewNullConst(4))
+              .Add(factory.NewBoolConst(5, true))
+              .Add(factory.NewIntConst(6, 42))
+              .Build(),
+          factory.NewMapBuilder(7)
+              .Add(991, factory.NewStringConst(8, "k1"),
+                   factory.NewUintConst(9, 100u))
+              .Add(992, factory.NewBytesConst(10, "b1"),
+                   factory.NewIntConst(11, 3))  // 3.14159 -> 3
+              .Build(),
+          factory.NewStructBuilder(12, "S")
+              .Add(32, "f1", factory.NewIdent(13, "x"))
+              .Add(
+                  33, "f2",
+                  factory.NewSelect(14, factory.NewIdent(15, "y"), "sel_field"))
+              .Add(34, "f3",
+                   factory.NewPresenceTest(16, factory.NewIdent(17, "z"),
+                                           "pres_field"))
+              .Build(),
+          factory.NewMemberCall(
+              18, "mem_func", factory.NewIdent(19, "target"),
+              std::vector<cel::Expr>{[&]() {
+                cel::Expr comp_expr;
+                comp_expr.set_id(20);
+                auto& comp = comp_expr.mutable_comprehension_expr();
+                comp.set_iter_var("i");
+                comp.set_iter_var2("i2");
+                comp.set_accu_var("a");
+                comp.set_accu_init(factory.NewIntConst(21, 2));  // 2.71828 -> 2
+                comp.set_iter_range(factory.NewIdent(22, "range"));
+                comp.set_loop_condition(factory.NewBoolConst(23, true));
+                comp.set_loop_step(factory.NewCall(
+                    24, "step_func",
+                    std::vector<cel::Expr>{factory.NewIdent(25, "accu")}));
+                comp.set_result(factory.NewIdent(26, "result"));
+                return comp_expr;
+              }()})});
+
+  EXPECT_EQ(transformed_expr, expected_transformed_expr);
+}
+
+TEST(AstFactoryInterfaceTest, CopyAndReplacePrune) {
+  AstFactory factory;
+
+  // (x + 1) + 2
+  std::vector<cel::Expr> inner_args;
+  inner_args.push_back(factory.NewIdent(1, "x"));
+  inner_args.push_back(factory.NewIntConst(2, 1));
+  cel::Expr inner_expr = factory.NewCall(3, "_+_", std::move(inner_args));
+
+  std::vector<cel::Expr> args;
+  args.push_back(std::move(inner_expr));
+  args.push_back(factory.NewIntConst(4, 2));
+  cel::Expr expr = factory.NewCall(5, "_+_", std::move(args));
+
+  // Replace the inner call (id 3) with a single ident "y" (id 9), pruning the
+  // subtree.
+  ASSERT_OK_AND_ASSIGN(
+      cel::Expr transformed,
+      factory.CopyAndReplace(
+          expr, [&](const cel::Expr& e) -> std::optional<cel::Expr> {
+            if (e.id() == 3) {
+              return factory.NewIdent(9, "y");
+            }
+            return std::nullopt;
+          }));
+
+  // Expected: y + 2
+  std::vector<cel::Expr> expected_args;
+  expected_args.push_back(factory.NewIdent(9, "y"));
+  expected_args.push_back(factory.NewIntConst(4, 2));
+  cel::Expr expected = factory.NewCall(5, "_+_", std::move(expected_args));
+
+  EXPECT_EQ(transformed, expected);
+}
+
+TEST(AstFactoryInterfaceTest, CopyAndReplaceMaxRecursionDepth) {
+  AstFactory factory;
+
+  cel::Expr expr = factory.NewIdent(1, "x");
+  for (int i = 2; i <= 10; ++i) {
+    std::vector<cel::Expr> args;
+    args.push_back(std::move(expr));
+    args.push_back(factory.NewIntConst(i, 1));
+    expr = factory.NewCall(i, "_+_", std::move(args));
+  }
+
+  EXPECT_THAT(factory.CopyAndReplace(
+                  expr,
+                  [](const cel::Expr&) -> std::optional<cel::Expr> {
+                    return std::nullopt;
+                  },
+                  /*max_recursion_depth=*/3),
+              StatusIs(absl::StatusCode::kInvalidArgument));
 }
 
 }  // namespace

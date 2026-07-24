@@ -23,16 +23,24 @@ licenses(["notice"])
 cc_library(
     name = "ast_factory_interface",
     hdrs = ["ast_factory_interface.h"],
+    deps = [
+        "@com_google_absl//absl/functional:function_ref",
+        "@com_google_absl//absl/status:statusor",
+    ],
 )
 
 cc_library(
     name = "ast_factory",
+    srcs = ["ast_factory.cc"],
     hdrs = ["ast_factory.h"],
     deps = [
         ":ast_factory_interface",
-        "//common:constant",
         "//common:expr",
         "//common:expr_factory",
+        "//internal:status_macros",
+        "@com_google_absl//absl/functional:function_ref",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings:string_view",
     ],
 )
@@ -119,8 +127,11 @@ cc_test(
     srcs = ["ast_factory_test.cc"],
     deps = [
         ":ast_factory",
+        "//common:constant",
         "//common:expr",
         "//internal:testing",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_matchers",
         "@com_google_absl//absl/strings:string_view",
     ],
 )
