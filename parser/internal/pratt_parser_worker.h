@@ -25,6 +25,7 @@
 #include <vector>
 
 #include "absl/base/nullability.h"
+#include "absl/base/optimization.h"
 #include "absl/container/flat_hash_map.h"
 #include "absl/status/statusor.h"
 #include "absl/strings/ascii.h"
@@ -179,7 +180,6 @@ class PrattParserWorker : public ParserWorker {
   using CelOperator = ::google::api::expr::common::CelOperator;
 
   ExprNode ParseExpr();
-
   // Parses binary operator expressions and ternary conditional expressions
   // (`? :`) using operator-precedence (Pratt) parsing. Consumes operators from
   // the token stream whose binding precedence is greater than or equal to
@@ -193,6 +193,10 @@ class PrattParserWorker : public ParserWorker {
   // `?`, consumes `?`, and recurses with `ParseBinary(1)` for true branch `b`
   // and `ParseBinary(0)` for false branch `c`.
   ExprNode ParseBinaryAndTernary(int min_prec);
+
+  // Parses ternary conditional expressions (`condition ? true_expr :
+  // false_expr`).
+  ExprNode ParseTernary(ExprNode lhs);
 
   // Helper method for parsing a contiguous chain of same-precedence logical
   // operators (`&&` or `||`) iteratively into a list of terms and operator IDs.
@@ -216,6 +220,13 @@ class PrattParserWorker : public ParserWorker {
   // then loops iteratively through `.b`, `[0]`, and `.c(x)`.
   ExprNode ParseSelectorChain();
 
+  // Handler for postfix member, index, receiver method, and
+  // struct initializer operations (`.field`, `[index]`, `.method(args)`,
+  // `Type{field: val}`).
+  //
+  // Processes continuous postfix operation chains iteratively.
+  ExprNode ParseSelectorChainTail(ExprNode lhs);
+
   // Parses prefix unary operators (logical NOT `!` and negation `-`). If a
   // numeric literal immediately follows `-`, folds it directly into a negative
   // constant node (`-42`, `-3.14`). Otherwise, wraps the operand in a `_!_` or
@@ -227,6 +238,9 @@ class PrattParserWorker : public ParserWorker {
   // Example (`!has(x.y)`): Consumes `!` and creates a `LOGICAL_NOT` call node
   // wrapping `has(x.y)`.
   ExprNode ParseUnary();
+
+  // Parses unary operator chains (`!`, `-`).
+  ExprNode ParseUnaryOpsChain(Token first_op);
 
   // Parses primary leaf expressions (`nud` atomic atoms), including
   // parenthesized expressions (`(expr)`), literal constants (`null`, `true`,
@@ -250,10 +264,15 @@ class PrattParserWorker : public ParserWorker {
   ExprNode ParseStruct(int64_t obj_id, absl::string_view struct_name);
   std::vector<ExprNode> ParseArguments(TokenType close_token);
   ExprNode ParseIntLiteral();
+  ExprNode ParseNegativeIntLiteral(int64_t node_id);
   ExprNode ParseUintLiteral();
   ExprNode ParseDoubleLiteral();
+  ExprNode ParseNegativeDoubleLiteral(int64_t node_id);
   ExprNode ParseStringLiteral();
   ExprNode ParseBytesLiteral();
+  ExprNode BuildBinaryCall(int64_t op_id, absl::string_view op_name,
+                           ExprNode lhs, ExprNode rhs);
+  ExprNode ParseIdentOrCall();
   std::string NormalizeIdent(const Token& tok, bool allow_quoted);
   std::optional<std::string> ExtractStructName(const ExprNode& expr);
   int32_t GetLeftmostPosition(const ExprNode& expr);
@@ -304,7 +323,36 @@ ExprNode PrattParserWorker<ExprNode>::ParseExpr() {
   return expr;
 }
 
+template <typename ExprNode>
+ExprNode PrattParserWorker<ExprNode>::ParseTernary(ExprNode lhs) {
+  NextToken();
+  int64_t op_id = NextId();
+  ExprNode true_expr = ParseBinaryAndTernary(1);
+  if (!Expect(TokenType::kColon, "expected ':' in conditional expression")) {
+    return lhs;
+  }
+  ExprNode false_expr = ParseBinaryAndTernary(0);
+  std::vector<ExprNode> args;
+  args.reserve(3);
+  args.push_back(std::move(lhs));
+  args.push_back(std::move(true_expr));
+  args.push_back(std::move(false_expr));
+  return ast_factory_.NewCall(op_id, CelOperator::CONDITIONAL, std::move(args));
+}
+
 const BinaryOpInfo& GetBinaryOpInfo(TokenType type);
+
+template <typename ExprNode>
+ExprNode PrattParserWorker<ExprNode>::BuildBinaryCall(int64_t op_id,
+                                                      absl::string_view op_name,
+                                                      ExprNode lhs,
+                                                      ExprNode rhs) {
+  std::vector<ExprNode> args;
+  args.reserve(2);
+  args.push_back(std::move(lhs));
+  args.push_back(std::move(rhs));
+  return ast_factory_.NewCall(op_id, std::string(op_name), std::move(args));
+}
 
 // Parses binary operator expressions and ternary conditional expressions
 // (`? :`) using Pratt operator-precedence parsing (e.g., `a + b * c`).
@@ -314,21 +362,7 @@ ExprNode PrattParserWorker<ExprNode>::ParseBinaryAndTernary(int min_prec) {
   while (true) {
     TokenType tok = peek_token_.type;
     if (tok == TokenType::kQuestion && min_prec <= 0) {
-      NextToken();
-      int64_t op_id = NextId();
-      ExprNode true_expr = ParseBinaryAndTernary(1);
-      if (!Expect(TokenType::kColon,
-                  "expected ':' in conditional expression")) {
-        return lhs;
-      }
-      ExprNode false_expr = ParseBinaryAndTernary(0);
-      std::vector<ExprNode> args;
-      args.reserve(3);
-      args.push_back(std::move(lhs));
-      args.push_back(std::move(true_expr));
-      args.push_back(std::move(false_expr));
-      lhs = ast_factory_.NewCall(op_id, CelOperator::CONDITIONAL,
-                                 std::move(args));
+      lhs = ParseTernary(std::move(lhs));
       continue;
     }
 
@@ -343,12 +377,7 @@ ExprNode PrattParserWorker<ExprNode>::ParseBinaryAndTernary(int min_prec) {
     Token op_tok = NextToken();
     int64_t op_id = NextId(op_tok);
     ExprNode rhs = ParseBinaryAndTernary(op_info.precedence + 1);
-    std::vector<ExprNode> args;
-    args.reserve(2);
-    args.push_back(std::move(lhs));
-    args.push_back(std::move(rhs));
-    lhs =
-        ast_factory_.NewCall(op_id, std::string(op_info.name), std::move(args));
+    lhs = BuildBinaryCall(op_id, op_info.name, std::move(lhs), std::move(rhs));
   }
   return lhs;
 }
@@ -371,11 +400,21 @@ ExprNode PrattParserWorker<ExprNode>::ParseBalancedLogicalChain(
                         options_.enable_variadic_logical_operators);
 }
 
-// Parses prefix and postfix member/indexing operations iteratively
-// (e.g., `!a.b[0].c(x)`).
 template <typename ExprNode>
 ExprNode PrattParserWorker<ExprNode>::ParseSelectorChain() {
   ExprNode lhs = ParseUnary();
+  TokenType tok = peek_token_.type;
+  if (tok == TokenType::kDot || tok == TokenType::kLeftBracket ||
+      tok == TokenType::kLeftBrace) {
+    return ParseSelectorChainTail(std::move(lhs));
+  }
+  return lhs;
+}
+
+// Parses prefix and postfix member/indexing operations iteratively
+// (e.g., `!a.b[0].c(x)`).
+template <typename ExprNode>
+ExprNode PrattParserWorker<ExprNode>::ParseSelectorChainTail(ExprNode lhs) {
   while (true) {
     TokenType tok = peek_token_.type;
     if (tok == TokenType::kDot) {
@@ -456,73 +495,124 @@ ExprNode PrattParserWorker<ExprNode>::ParseSelectorChain() {
   return lhs;
 }
 
-// Parses prefix unary operators (`!`, `-`) and folds negative numeric literals
-// (e.g., `-42`, `!has(x.y)`).
+template <typename ExprNode>
+ExprNode PrattParserWorker<ExprNode>::ParseUnaryOpsChain(Token first_op) {
+  struct UnaryOpInfo {
+    TokenType type;
+    int64_t id;
+  };
+  std::vector<UnaryOpInfo> ops;
+  ops.push_back({first_op.type, NextId(first_op)});
+
+  while (peek_token_.type == TokenType::kExclamation ||
+         peek_token_.type == TokenType::kMinus) {
+    Token op = NextToken();
+    ops.push_back({op.type, NextId(op)});
+  }
+
+  ExprNode operand;
+  if (!ops.empty() && ops.back().type == TokenType::kMinus) {
+    if (peek_token_.type == TokenType::kInt) {
+      int64_t op_id = ops.back().id;
+      ops.pop_back();
+      operand = ParseNegativeIntLiteral(op_id);
+    } else if (peek_token_.type == TokenType::kFloat) {
+      int64_t op_id = ops.back().id;
+      ops.pop_back();
+      operand = ParseNegativeDoubleLiteral(op_id);
+    } else {
+      operand = ParseSelectorChain();
+    }
+  } else {
+    operand = ParseSelectorChain();
+  }
+
+  for (int i = static_cast<int>(ops.size()) - 1; i >= 0; --i) {
+    std::vector<ExprNode> args;
+    args.push_back(std::move(operand));
+    absl::string_view op_name = (ops[i].type == TokenType::kExclamation)
+                                    ? CelOperator::LOGICAL_NOT
+                                    : CelOperator::NEGATE;
+    operand =
+        ast_factory_.NewCall(ops[i].id, std::string(op_name), std::move(args));
+  }
+
+  return operand;
+}
+
+// Parses prefix unary operators (`!`, `-`) iteratively and folds negative
+// numeric literals (e.g., `-42`, `!has(x.y)`).
 template <typename ExprNode>
 ExprNode PrattParserWorker<ExprNode>::ParseUnary() {
   TokenType tok = peek_token_.type;
-  if (tok == TokenType::kExclamation) {
-    Token op = NextToken();
-    int64_t op_id = NextId(op);
-    ExprNode operand = ParseSelectorChain();
-    std::vector<ExprNode> args;
-    args.push_back(std::move(operand));
-    return ast_factory_.NewCall(op_id, std::string(CelOperator::LOGICAL_NOT),
-                                std::move(args));
+  if (tok != TokenType::kExclamation && tok != TokenType::kMinus) {
+    return ParsePrimary();
   }
-  if (tok == TokenType::kMinus) {
-    Token op = NextToken();
+
+  Token op = NextToken();
+  TokenType op_type = op.type;
+  if (peek_token_.type == TokenType::kExclamation ||
+      peek_token_.type == TokenType::kMinus) {
+    return ParseUnaryOpsChain(op);
+  }
+
+  if (op_type == TokenType::kMinus) {
     if (peek_token_.type == TokenType::kInt) {
-      Token lit_tok = NextToken();
-      std::string text = GetTokenText(lit_tok);
-      int64_t int_val = 0;
-      bool success = false;
-      if (absl::StartsWith(text, "0x") || absl::StartsWith(text, "0X")) {
-        uint64_t uint_val = 0;
-        if (absl::SimpleHexAtoi(text, &uint_val)) {
-          if (uint_val <= uint64_t{0x8000000000000000}) {
-            if (uint_val == uint64_t{0x8000000000000000}) {
-              int_val = std::numeric_limits<int64_t>::min();
-            } else {
-              int_val = -static_cast<int64_t>(uint_val);
-            }
-            success = true;
-          }
-        }
-      } else {
-        if (absl::SimpleAtoi(text, &int_val)) {
-          int_val = -int_val;
-          success = true;
-        } else {
-          // Separately address -2^63, which is not representable as -(2^63)
-          std::string val = absl::StrCat("-", text);
-          success = absl::SimpleAtoi(val, &int_val);
-        }
-      }
-      if (success) {
-        return ast_factory_.NewIntConst(NextId(op.start), int_val);
-      }
-      ReportError(lit_tok, "invalid int literal");
-      return ast_factory_.NewUnspecified(NextId(lit_tok));
+      return ParseNegativeIntLiteral(NextId(op));
     }
     if (peek_token_.type == TokenType::kFloat) {
-      Token lit_tok = NextToken();
-      double double_val = 0.0;
-      if (absl::SimpleAtod(GetTokenText(lit_tok), &double_val)) {
-        return ast_factory_.NewDoubleConst(NextId(op.start), -double_val);
-      }
-      ReportError(lit_tok, "invalid double literal");
-      return ast_factory_.NewUnspecified(NextId(lit_tok));
+      return ParseNegativeDoubleLiteral(NextId(op));
     }
-    // Regular negate call
-    int64_t op_id = NextId(op);
-    ExprNode operand = ParseSelectorChain();
-    std::vector<ExprNode> args;
-    args.push_back(std::move(operand));
-    return ast_factory_.NewCall(op_id, std::string(CelOperator::NEGATE),
-                                std::move(args));
   }
-  return ParsePrimary();
+
+  int64_t op_id = NextId(op);
+  ExprNode operand = ParseSelectorChain();
+  std::vector<ExprNode> args;
+  args.push_back(std::move(operand));
+  absl::string_view op_name = (op_type == TokenType::kExclamation)
+                                  ? CelOperator::LOGICAL_NOT
+                                  : CelOperator::NEGATE;
+  return ast_factory_.NewCall(op_id, std::string(op_name), std::move(args));
+}
+
+// Parses identifiers (e.g., `foo`, `.foo`) and global function or macro calls
+// (e.g., `foo(args)`, `has(x.y)`).
+template <typename ExprNode>
+ExprNode PrattParserWorker<ExprNode>::ParseIdentOrCall() {
+  TokenType tok_type = peek_token_.type;
+  bool leading_dot = false;
+  Token first_tok = peek_token_;
+  if (tok_type == TokenType::kDot) {
+    NextToken();
+    leading_dot = true;
+  }
+  Token id_tok = NextToken();
+  if (id_tok.type != TokenType::kIdent &&
+      id_tok.type != TokenType::kReservedWord) {
+    if (id_tok.type != TokenType::kError) {
+      ReportError(id_tok, "expected identifier");
+    }
+    return ast_factory_.NewUnspecified(NextId(id_tok));
+  }
+  std::string id_text = NormalizeIdent(id_tok, /*allow_quoted=*/false);
+  if (ABSL_PREDICT_FALSE(id_tok.type == TokenType::kReservedWord)) {
+    if (cel::internal::LexisIsReserved(id_text)) {
+      ReportError(id_tok, absl::StrFormat("reserved identifier: %s", id_text));
+    }
+  }
+  std::string name =
+      leading_dot ? absl::StrCat(".", id_text) : std::string(id_text);
+  int64_t id = NextId(leading_dot ? first_tok : id_tok);
+  if (peek_token_.type == TokenType::kLeftParen) {
+    NextToken();
+    std::vector<ExprNode> args = ParseArguments(TokenType::kRightParen);
+    if (auto expanded = TryExpandMacro(id, name, nullptr, args);
+        expanded.has_value()) {
+      return std::move(*expanded);
+    }
+    return ast_factory_.NewCall(id, name, std::move(args));
+  }
+  return ast_factory_.NewIdent(id, std::move(name));
 }
 
 // Parses primary leaf expressions, including parenthesized expressions
@@ -560,41 +650,7 @@ ExprNode PrattParserWorker<ExprNode>::ParsePrimary() {
     expr = ParseMap();
   } else if (tok_type == TokenType::kDot || tok_type == TokenType::kIdent ||
              tok_type == TokenType::kReservedWord) {
-    bool leading_dot = false;
-    Token first_tok = peek_token_;
-    if (tok_type == TokenType::kDot) {
-      NextToken();
-      leading_dot = true;
-    }
-    Token id_tok = NextToken();
-    if (id_tok.type != TokenType::kIdent &&
-        id_tok.type != TokenType::kReservedWord) {
-      if (id_tok.type != TokenType::kError) {
-        ReportError(id_tok, "expected identifier");
-      }
-      expr = ast_factory_.NewUnspecified(NextId(id_tok));
-    } else {
-      std::string id_text = NormalizeIdent(id_tok, /*allow_quoted=*/false);
-      if (cel::internal::LexisIsReserved(id_text)) {
-        ReportError(id_tok,
-                    absl::StrFormat("reserved identifier: %s", id_text));
-      }
-      std::string name =
-          leading_dot ? absl::StrCat(".", id_text) : std::string(id_text);
-      int64_t id = NextId(leading_dot ? first_tok : id_tok);
-      if (peek_token_.type == TokenType::kLeftParen) {
-        NextToken();
-        std::vector<ExprNode> args = ParseArguments(TokenType::kRightParen);
-        if (auto expanded = TryExpandMacro(id, name, nullptr, args);
-            expanded.has_value()) {
-          expr = std::move(*expanded);
-        } else {
-          expr = ast_factory_.NewCall(id, name, std::move(args));
-        }
-      } else {
-        expr = ast_factory_.NewIdent(id, std::move(name));
-      }
-    }
+    expr = ParseIdentOrCall();
   } else {
     Token bad_tok = NextToken();
     if (bad_tok.type != TokenType::kError) {
@@ -757,6 +813,40 @@ ExprNode PrattParserWorker<ExprNode>::ParseIntLiteral() {
   return ast_factory_.NewUnspecified(NextId(tok));
 }
 
+template <typename ExprNode>
+ExprNode PrattParserWorker<ExprNode>::ParseNegativeIntLiteral(int64_t node_id) {
+  Token lit_tok = NextToken();
+  std::string text = GetTokenText(lit_tok);
+  int64_t int_val = 0;
+  bool success = false;
+  if (absl::StartsWith(text, "0x") || absl::StartsWith(text, "0X")) {
+    uint64_t uint_val = 0;
+    if (absl::SimpleHexAtoi(text, &uint_val)) {
+      if (uint_val <= uint64_t{0x8000000000000000}) {
+        if (uint_val == uint64_t{0x8000000000000000}) {
+          int_val = std::numeric_limits<int64_t>::min();
+        } else {
+          int_val = -static_cast<int64_t>(uint_val);
+        }
+        success = true;
+      }
+    }
+  } else if (absl::SimpleAtoi(text, &int_val)) {
+    int_val = -int_val;
+    success = true;
+  } else {
+    // Separately handle -2^63, which is not representable as -(2^63)
+    std::string val = absl::StrCat("-", text);
+    success = absl::SimpleAtoi(val, &int_val);
+  }
+
+  if (success) {
+    return ast_factory_.NewIntConst(node_id, int_val);
+  }
+  ReportError(lit_tok, "invalid int literal");
+  return ast_factory_.NewUnspecified(NextId(lit_tok));
+}
+
 // Parses unsigned ints (e.g., `42u`, `0x1Au`).
 template <typename ExprNode>
 ExprNode PrattParserWorker<ExprNode>::ParseUintLiteral() {
@@ -788,6 +878,18 @@ ExprNode PrattParserWorker<ExprNode>::ParseDoubleLiteral() {
   }
   ReportError(tok, "invalid double literal");
   return ast_factory_.NewUnspecified(NextId(tok));
+}
+
+template <typename ExprNode>
+ExprNode PrattParserWorker<ExprNode>::ParseNegativeDoubleLiteral(
+    int64_t node_id) {
+  Token lit_tok = NextToken();
+  double double_val = 0.0;
+  if (absl::SimpleAtod(GetTokenText(lit_tok), &double_val)) {
+    return ast_factory_.NewDoubleConst(node_id, -double_val);
+  }
+  ReportError(lit_tok, "invalid double literal");
+  return ast_factory_.NewUnspecified(NextId(lit_tok));
 }
 
 // Parses string literals (e.g., `"hello"`, `'world'`, `"""multi"""`).

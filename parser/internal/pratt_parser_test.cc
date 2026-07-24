@@ -724,7 +724,43 @@ std::vector<TestCase> GetParserTestCases() {
             )",
       },
       TestCase{
+          .source = "(((10 - 3) - 2))",
+          .expected_ast = R"(
+              _-_(
+                _-_(
+                  10^#1:int64#,
+                  3^#3:int64#
+                )^#2:Expr.Call#,
+                2^#5:int64#
+              )^#4:Expr.Call#
+            )",
+      },
+      TestCase{
           .source = "1 + 2 * 3 - 1 / 2 == 6 % 1",
+          .expected_ast = R"(
+              _==_(
+                _-_(
+                  _+_(
+                    1^#1:int64#,
+                    _*_(
+                      2^#3:int64#,
+                      3^#5:int64#
+                    )^#4:Expr.Call#
+                  )^#2:Expr.Call#,
+                  _/_(
+                    1^#7:int64#,
+                    2^#9:int64#
+                  )^#8:Expr.Call#
+                )^#6:Expr.Call#,
+                _%_(
+                  6^#11:int64#,
+                  1^#13:int64#
+                )^#12:Expr.Call#
+              )^#10:Expr.Call#
+            )",
+      },
+      TestCase{
+          .source = "(1 + (2 * 3) - (1 / 2)) == (6 % 1)",
           .expected_ast = R"(
               _==_(
                 _-_(
@@ -1038,6 +1074,18 @@ std::vector<TestCase> GetParserTestCases() {
               }^#1:Expr.CreateStruct#
             )",
           .enable_optional_syntax = true,
+      },
+      TestCase{
+          .source = "(((10 - 3) - 2))",
+          .expected_ast = R"(
+              _-_(
+                _-_(
+                  10^#1:int64#,
+                  3^#3:int64#
+                )^#2:Expr.Call#,
+                2^#5:int64#
+              )^#4:Expr.Call#
+            )",
       },
   };
 }
