@@ -64,6 +64,7 @@ cc_library(
         "//runtime:constant_folding",
         "//runtime:optional_types",
         "//runtime:reference_resolver",
+        "//runtime:regex_precompilation",
         "//runtime:runtime_options",
         "//runtime:standard_runtime_builder_factory",
         "//testutil:test_macros",

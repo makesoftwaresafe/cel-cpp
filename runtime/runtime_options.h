@@ -188,6 +188,19 @@ struct RuntimeOptions {
   //
   // If disabled, will use the legacy behavior of rounding to 6 decimal places.
   bool enable_precision_preserving_double_format = true;
+
+  // When enabled, the planner will attempt to use a more performant execution
+  // path for field access when the type is known at plan time, instead of using
+  // the generic field access implementation.
+  //
+  // The runtime will try to verify that the field access is compatible with the
+  // actual type at evaluation time, and will fall back to the generic
+  // implementation if the value is not what was expected.
+  //
+  // This is not recommended if the values bound to the activation are typically
+  // not what the planner expected (e.g. a map that was declared as a proto or
+  // a different message with matching field names).
+  bool enable_typed_field_access = false;
 };
 // LINT.ThenChange(//depot/google3/eval/public/cel_options.h)
 

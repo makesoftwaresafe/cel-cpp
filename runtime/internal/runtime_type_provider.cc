@@ -14,6 +14,7 @@
 
 #include "runtime/internal/runtime_type_provider.h"
 
+#include <optional>
 #include <utility>
 
 #include "absl/base/nullability.h"
@@ -28,7 +29,6 @@
 #include "common/value.h"
 #include "common/values/value_builder.h"
 #include "google/protobuf/arena.h"
-#include "google/protobuf/descriptor.h"
 #include "google/protobuf/message.h"
 
 namespace cel::runtime_internal {
@@ -48,9 +48,14 @@ absl::StatusOr<absl::optional<Type>> RuntimeTypeProvider::FindTypeImpl(
   if (type.has_value()) {
     return type;
   }
-  const auto* desc = descriptor_pool_->FindMessageTypeByName(name);
-  if (desc != nullptr) {
-    return MessageType(desc);
+
+  auto result = descriptor_pool_provider_.FindType(name);
+  if (!result.ok()) {
+    return result;
+  }
+
+  if (result->has_value() && !result->value().IsEnum()) {
+    return result;
   }
 
   if (const auto it = types_.find(name); it != types_.end()) {
@@ -66,24 +71,7 @@ RuntimeTypeProvider::FindEnumConstantImpl(absl::string_view type,
   if (enum_constant.has_value()) {
     return enum_constant;
   }
-  const google::protobuf::EnumDescriptor* enum_desc =
-      descriptor_pool_->FindEnumTypeByName(type);
-  if (enum_desc == nullptr) {
-    return std::nullopt;
-  }
-
-  // Note: we don't support strong enum typing at this time so only the fully
-  // qualified enum values are meaningful, so we don't provide any signal if the
-  // enum type is found but can't match the value name.
-  const google::protobuf::EnumValueDescriptor* value_desc =
-      enum_desc->FindValueByName(value);
-  if (value_desc == nullptr) {
-    return std::nullopt;
-  }
-
-  return TypeIntrospector::EnumConstant{
-      EnumType(enum_desc), enum_desc->full_name(), value_desc->name(),
-      value_desc->number()};
+  return descriptor_pool_provider_.FindEnumConstant(type, value);
 }
 
 absl::StatusOr<absl::optional<StructTypeField>>
@@ -93,18 +81,7 @@ RuntimeTypeProvider::FindStructTypeFieldByNameImpl(
   if (field.has_value()) {
     return field;
   }
-  const auto* desc = descriptor_pool_->FindMessageTypeByName(type);
-  if (desc == nullptr) {
-    return std::nullopt;
-  }
-  const auto* field_desc = desc->FindFieldByName(name);
-  if (field_desc == nullptr) {
-    field_desc = descriptor_pool_->FindExtensionByPrintableName(desc, name);
-    if (field_desc == nullptr) {
-      return std::nullopt;
-    }
-  }
-  return MessageTypeField(field_desc);
+  return descriptor_pool_provider_.FindStructTypeFieldByName(type, name);
 }
 
 absl::StatusOr<absl_nullable ValueBuilderPtr>

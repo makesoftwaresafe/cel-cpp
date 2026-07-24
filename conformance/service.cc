@@ -76,6 +76,7 @@
 #include "runtime/constant_folding.h"
 #include "runtime/optional_types.h"
 #include "runtime/reference_resolver.h"
+#include "runtime/regex_precompilation.h"
 #include "runtime/runtime.h"
 #include "runtime/runtime_options.h"
 #include "runtime/standard_runtime_builder_factory.h"
@@ -283,6 +284,7 @@ class LegacyConformanceServiceImpl : public ConformanceServiceInterface {
       std::cerr << "Enabling optimizations" << std::endl;
       options.constant_folding = true;
       options.constant_arena = constant_arena;
+      options.enable_typed_field_access = true;
     }
 
     if (select_optimization) {
@@ -486,6 +488,9 @@ class ModernConformanceServiceImpl : public ConformanceServiceInterface {
       absl::string_view container) {
     RuntimeOptions options(options_);
     options.container = std::string(container);
+    if (enable_optimizations_) {
+      options.enable_typed_field_access = true;
+    }
     CEL_ASSIGN_OR_RETURN(
         auto builder, CreateStandardRuntimeBuilder(
                           google::protobuf::DescriptorPool::generated_pool(), options));
@@ -493,6 +498,7 @@ class ModernConformanceServiceImpl : public ConformanceServiceInterface {
     if (enable_optimizations_) {
       CEL_RETURN_IF_ERROR(cel::extensions::EnableConstantFolding(
           builder, google::protobuf::MessageFactory::generated_factory()));
+      CEL_RETURN_IF_ERROR(cel::extensions::EnableRegexPrecompilation(builder));
     }
     CEL_RETURN_IF_ERROR(cel::EnableReferenceResolver(
         builder, cel::ReferenceResolverEnabled::kAlways));

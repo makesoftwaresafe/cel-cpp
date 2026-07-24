@@ -109,6 +109,7 @@ cc_library(
         "//common:expr",
         "//common:kind",
         "//common:type",
+        "//common:type_spec_resolver",
         "//common:value",
         "//eval/eval:comprehension_step",
         "//eval/eval:const_value_step",

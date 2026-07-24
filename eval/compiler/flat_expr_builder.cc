@@ -23,6 +23,7 @@
 #include <iterator>
 #include <limits>
 #include <memory>
+#include <optional>
 #include <stack>
 #include <string>
 #include <type_traits>
@@ -30,8 +31,6 @@
 #include <vector>
 
 #include "absl/algorithm/container.h"
-#include "absl/base/attributes.h"
-#include "absl/base/optimization.h"
 #include "absl/container/flat_hash_map.h"
 #include "absl/container/flat_hash_set.h"
 #include "absl/container/node_hash_map.h"
@@ -45,7 +44,6 @@
 #include "absl/strings/str_cat.h"
 #include "absl/strings/string_view.h"
 #include "absl/strings/strip.h"
-#include "absl/types/optional.h"
 #include "absl/types/span.h"
 #include "absl/types/variant.h"
 #include "base/ast.h"
@@ -59,6 +57,7 @@
 #include "common/expr.h"
 #include "common/kind.h"
 #include "common/type.h"
+#include "common/type_spec_resolver.h"
 #include "common/value.h"
 #include "eval/compiler/check_ast_extensions.h"
 #include "eval/compiler/flat_expr_builder_extensions.h"
@@ -528,7 +527,7 @@ class FlatExprVisitor : public cel::AstVisitor {
   FlatExprVisitor(
       const Resolver& resolver, const cel::RuntimeOptions& options,
       std::vector<std::unique_ptr<ProgramOptimizer>> program_optimizers,
-      const absl::flat_hash_map<int64_t, cel::Reference>& reference_map,
+      const absl::flat_hash_map<int64_t, cel::TypeSpec>& type_map,
       const cel::TypeProvider& type_provider, IssueCollector& issue_collector,
       ProgramBuilder& program_builder, PlannerContext& extension_context,
       bool enable_optional_types)
@@ -538,6 +537,7 @@ class FlatExprVisitor : public cel::AstVisitor {
         resolved_select_expr_(nullptr),
         options_(options),
         program_optimizers_(std::move(program_optimizers)),
+        type_map_(type_map),
         issue_collector_(issue_collector),
         program_builder_(program_builder),
         extension_context_(extension_context),
@@ -606,6 +606,21 @@ class FlatExprVisitor : public cel::AstVisitor {
 
   bool PlanRecursiveProgram() const { return max_recursion_depth_ > 0; }
 
+  void SetResolvedType(const cel::Expr& expr, cel::Type type) {
+    resolved_types_[&expr] = std::move(type);
+  }
+
+  std::optional<cel::Type> GetResolvedType(const cel::Expr* expr) const {
+    if (expr == nullptr) {
+      return std::nullopt;
+    }
+    auto it = resolved_types_.find(expr);
+    if (it != resolved_types_.end()) {
+      return it->second;
+    }
+    return std::nullopt;
+  }
+
   void PreVisitExpr(const cel::Expr& expr) override {
     ValidateOrError(!absl::holds_alternative<cel::UnspecifiedExpr>(expr.kind()),
                     "Invalid empty expression");
@@ -615,6 +630,10 @@ class FlatExprVisitor : public cel::AstVisitor {
     if (resume_from_suppressed_branch_ == nullptr &&
         suppressed_branches_.find(&expr) != suppressed_branches_.end()) {
       resume_from_suppressed_branch_ = &expr;
+    }
+
+    if (options_.enable_typed_field_access) {
+      MaybeResolveType(expr);
     }
 
     if (block_.has_value()) {
@@ -977,6 +996,24 @@ class FlatExprVisitor : public cel::AstVisitor {
     }
 
     StringValue field = cel::StringValue(select_expr.field());
+    std::optional<cel::StructType> struct_type;
+    std::optional<cel::StructTypeField> field_type;
+    if (options_.enable_typed_field_access) {
+      std::optional<cel::Type> operand_type =
+          GetResolvedType(&select_expr.operand());
+      if (operand_type.has_value() && operand_type->IsStruct()) {
+        struct_type = operand_type->GetStruct();
+        if (struct_type.has_value()) {
+          auto field_lookup =
+              extension_context_.type_reflector().FindStructTypeFieldByName(
+                  *struct_type, select_expr.field());
+          // Swallow error to fallback to duck typing behavior.
+          if (field_lookup.ok() && field_lookup->has_value()) {
+            field_type = *std::move(field_lookup);
+          }
+        }
+      }
+    }
     if (auto depth = RecursionEligible(); depth.has_value()) {
       auto deps = ExtractRecursiveDependencies();
       if (deps.size() != 1) {
@@ -994,6 +1031,13 @@ class FlatExprVisitor : public cel::AstVisitor {
       return;
     }
 
+    if (field_type.has_value()) {
+      AddStep(CreateTypedSelectStep(
+          std::move(field), *struct_type, *std::move(field_type),
+          select_expr.test_only(), expr.id(),
+          options_.enable_empty_wrapper_null_unboxing, enable_optional_types_));
+      return;
+    }
     AddStep(CreateSelectStep(
         std::move(field), select_expr.test_only(), expr.id(),
         options_.enable_empty_wrapper_null_unboxing, enable_optional_types_));
@@ -1921,6 +1965,8 @@ class FlatExprVisitor : public cel::AstVisitor {
   CallHandlerResult HandleHeterogeneousEqualityIn(const cel::Expr& expr,
                                                   const cel::CallExpr& call);
 
+  void MaybeResolveType(const cel::Expr& expr);
+
   const Resolver& resolver_;
   const cel::TypeProvider& type_provider_;
   absl::Status progress_status_;
@@ -1942,6 +1988,8 @@ class FlatExprVisitor : public cel::AstVisitor {
   absl::flat_hash_set<const cel::Expr*> suppressed_branches_;
   const cel::Expr* resume_from_suppressed_branch_ = nullptr;
   std::vector<std::unique_ptr<ProgramOptimizer>> program_optimizers_;
+  const absl::flat_hash_map<int64_t, cel::TypeSpec>& type_map_;
+  absl::flat_hash_map<const cel::Expr*, cel::Type> resolved_types_;
   IssueCollector& issue_collector_;
 
   ProgramBuilder& program_builder_;
@@ -2159,6 +2207,23 @@ FlatExprVisitor::HandleHeterogeneousEqualityIn(const cel::Expr& expr,
 
   AddStep(CreateInStep(expr.id()));
   return CallHandlerResult::kIntercepted;
+}
+
+void FlatExprVisitor::MaybeResolveType(const cel::Expr& expr) {
+  // Try to resolve the type from the type map, but don't fail if it's not
+  // there. This permits cases where the runtime type is compatible but not
+  // the same as the type checked type.
+  auto it = type_map_.find(expr.id());
+  if (it == type_map_.end()) {
+    return;
+  }
+  absl::StatusOr<cel::Type> type = cel::ConvertTypeSpecToType(
+      it->second, extension_context_.type_reflector(),
+      extension_context_.MutableArena());
+  if (!type.ok()) {
+    return;
+  }
+  SetResolvedType(expr, *type);
 }
 
 void LogicalCondVisitor::PreVisit(const cel::Expr* expr) {
@@ -2561,8 +2626,8 @@ absl::StatusOr<FlatExpression> FlatExprBuilder::CreateExpressionImpl(
   // These objects are expected to remain scoped to one build call -- references
   // to them shouldn't be persisted in any part of the result expression.
   FlatExprVisitor visitor(resolver, options_, std::move(optimizers),
-                          ast->reference_map(), GetTypeProvider(),
-                          issue_collector, program_builder, extension_context,
+                          ast->type_map(), GetTypeProvider(), issue_collector,
+                          program_builder, extension_context,
                           enable_optional_types_);
 
   if (options_.max_recursion_depth == -1 || options_.max_recursion_depth > 0) {

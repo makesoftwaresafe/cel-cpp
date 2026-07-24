@@ -194,6 +194,7 @@ cc_library(
     srcs = ["runtime_type_provider.cc"],
     hdrs = ["runtime_type_provider.h"],
     deps = [
+        "//common:descriptor_pool_type_introspector",
         "//common:type",
         "//common:value",
         "//internal:status_macros",
