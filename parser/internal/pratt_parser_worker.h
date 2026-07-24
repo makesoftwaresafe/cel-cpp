@@ -17,6 +17,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <functional>
 #include <limits>
 #include <optional>
 #include <string>
@@ -24,6 +25,7 @@
 #include <vector>
 
 #include "absl/base/nullability.h"
+#include "absl/cleanup/cleanup.h"
 #include "absl/container/flat_hash_map.h"
 #include "absl/status/statusor.h"
 #include "absl/strings/ascii.h"
@@ -114,16 +116,60 @@ class ParserWorker {
 template <typename ExprNode>
 class PrattParserWorker : public ParserWorker {
  public:
+  using ParserWorker::NextId;
+
   explicit PrattParserWorker(
       const cel::Source& source, const cel::ParserOptions& options,
-      std::vector<cel::ParseIssue>* absl_nullable parse_issues)
-      : ParserWorker(source, options, parse_issues) {
+      std::vector<cel::ParseIssue>* absl_nullable parse_issues,
+      AstFactoryInterface<ExprNode>& ast_factory)
+      : ParserWorker(source, options, parse_issues), ast_factory_(ast_factory) {
     this->InitTokenStream();
   }
 
   ExprNode Parse();
 
+  absl::flat_hash_map<int64_t, ExprNode> ReleaseMacroCalls() {
+    return std::move(macro_calls_);
+  }
+
  private:
+  class MacroExpanderSupport : public MacroExprExpanderSupport<ExprNode> {
+   public:
+    MacroExpanderSupport(PrattParserWorker& worker, int32_t macro_position)
+        : worker_(worker), macro_position_(macro_position) {}
+
+    int64_t NextId() {
+      return macro_position_ >= 0 ? worker_.NextId(macro_position_)
+                                  : worker_.NextId();
+    }
+
+    int64_t CopyId(int64_t id) { return worker_.CopyId(id); }
+
+    ExprNode ReportError(absl::string_view message) {
+      if (macro_position_ >= 0) {
+        worker_.ReportError(macro_position_, message);
+      } else {
+        worker_.ReportError(worker_.current_token_.start, message);
+      }
+      return ExprNode();
+    }
+
+    ExprNode ReportErrorAt(const ExprNode& expr, absl::string_view message) {
+      int32_t pos = 0;
+      auto it =
+          worker_.GetNodePositions().find(worker_.ast_factory_.GetId(expr));
+      if (it != worker_.GetNodePositions().end()) {
+        pos = it->second;
+      }
+      worker_.ReportError(pos, message);
+      return ExprNode();
+    }
+
+   private:
+    PrattParserWorker& worker_;
+    int32_t macro_position_;
+  };
+
   using CelOperator = ::google::api::expr::common::CelOperator;
 
   ExprNode ParseExpr();
@@ -151,7 +197,18 @@ class PrattParserWorker : public ParserWorker {
   ExprNode BalanceLogical(absl::string_view op, std::vector<ExprNode> terms,
                           std::vector<int64_t> ops, bool enable_variadic);
 
-  AstFactoryInterface<ExprNode> ast_factory_;
+  std::optional<ExprNode> TryExpandMacro(int64_t expr_id,
+                                         absl::string_view function,
+                                         ExprNode* target,
+                                         std::vector<ExprNode>& args);
+
+  // Save the original structure of the expression before macro expansion.
+  void RecordMacroCall(int64_t macro_id, absl::string_view function,
+                       std::optional<ExprNode> target,
+                       std::vector<ExprNode> arguments);
+
+  AstFactoryInterface<ExprNode>& ast_factory_;
+  absl::flat_hash_map<int64_t, ExprNode> macro_calls_;
 };
 
 template <typename ExprNode>
@@ -172,28 +229,26 @@ ExprNode PrattParserWorker<ExprNode>::ParseExpr() {
   if (recursion_limit_exceeded_) {
     return ExprNode();
   }
-  if (recursion_depth_ >= options_.max_recursion_depth) {
+  if (recursion_depth_ > options_.max_recursion_depth) {
     recursion_limit_exceeded_ = true;
     return ExprNode();
   }
   recursion_depth_++;
+  auto recursion_cleanup = absl::MakeCleanup([this]() { recursion_depth_--; });
   ExprNode lhs = ParseConditionalOr();
   if (peek_token_.type == TokenType::kQuestion) {
     NextToken();
     int64_t op_id = NextId();
     ExprNode true_expr = ParseConditionalOr();
     if (!Expect(TokenType::kColon, "expected ':' in conditional expression")) {
-      recursion_depth_--;
       return lhs;
     }
     ExprNode false_expr = ParseExpr();
-    recursion_depth_--;
     return ast_factory_.NewCall(
         op_id, CelOperator::CONDITIONAL,
         std::vector<ExprNode>{std::move(lhs), std::move(true_expr),
                               std::move(false_expr)});
   }
-  recursion_depth_--;
   return lhs;
 }
 
@@ -417,8 +472,14 @@ ExprNode PrattParserWorker<ExprNode>::ParseMember() {
         Token lparen = NextToken();
         int64_t call_id = NextId(lparen);
         std::vector<ExprNode> args = ParseArguments(TokenType::kRightParen);
-        lhs = ast_factory_.NewMemberCall(call_id, id_text, std::move(lhs),
-                                         std::move(args));
+        if (std::optional<ExprNode> expanded =
+                TryExpandMacro(call_id, id_text, &lhs, args);
+            expanded.has_value()) {
+          lhs = std::move(*expanded);
+        } else {
+          lhs = ast_factory_.NewMemberCall(call_id, id_text, std::move(lhs),
+                                           std::move(args));
+        }
       } else {
         lhs = ast_factory_.NewSelect(NextId(dot_tok), std::move(lhs), id_text);
       }
@@ -509,7 +570,12 @@ ExprNode PrattParserWorker<ExprNode>::ParsePrimary() {
       if (peek_token_.type == TokenType::kLeftParen) {
         NextToken();
         std::vector<ExprNode> args = ParseArguments(TokenType::kRightParen);
-        expr = ast_factory_.NewCall(id, name, std::move(args));
+        if (auto expanded = TryExpandMacro(id, name, nullptr, args);
+            expanded.has_value()) {
+          expr = std::move(*expanded);
+        } else {
+          expr = ast_factory_.NewCall(id, name, std::move(args));
+        }
       } else {
         expr = ast_factory_.NewIdent(id, std::move(name));
       }
@@ -853,6 +919,97 @@ ExprNode PrattParserWorker<ExprNode>::BalanceLogical(
     return ast_factory_.NewCall(ops[0], std::string(op), std::move(terms));
   }
   return BalancedTree(op, terms, ops, 0, ops.size() - 1);
+}
+
+template <typename ExprNode>
+std::optional<ExprNode> PrattParserWorker<ExprNode>::TryExpandMacro(
+    int64_t expr_id, absl::string_view function, ExprNode* target,
+    std::vector<ExprNode>& args) {
+  bool is_receiver = target != nullptr;
+  auto expander =
+      ast_factory_.NewMacroExprExpander(function, args.size(), is_receiver);
+  if (!expander) {
+    return std::nullopt;
+  }
+
+  std::vector<ExprNode> macro_args;
+  ExprNode macro_target;
+  bool add_macro_calls = options_.add_macro_calls;
+  // We must build the copies of the macro arguments before calling Expand,
+  // because Expand is allowed to mutate the arguments in-place upon success.
+  // However, we only record the macro call if Expand actually succeeds.
+  if (add_macro_calls) {
+    auto build_macro_call_arg = [&](const ExprNode& expr) -> ExprNode {
+      absl::StatusOr<ExprNode> copy_or = ast_factory_.CopyAndReplace(
+          expr,
+          [this](const ExprNode& e) -> std::optional<ExprNode> {
+            if (auto it = macro_calls_.find(ast_factory_.GetId(e));
+                it != macro_calls_.end()) {
+              return ast_factory_.NewUnspecified(ast_factory_.GetId(e));
+            }
+            return std::nullopt;
+          },
+          options_.max_recursion_depth - recursion_depth_);
+      if (!copy_or.ok()) {
+        int32_t macro_position = 0;
+        if (auto it = positions_.find(expr_id); it != positions_.end()) {
+          macro_position = it->second;
+        }
+        ReportError(macro_position, copy_or.status().message());
+        return ast_factory_.NewUnspecified(0);
+      }
+      return *std::move(copy_or);
+    };
+    macro_args.reserve(args.size());
+    for (const auto& arg : args) {
+      macro_args.push_back(build_macro_call_arg(arg));
+    }
+    if (target != nullptr) {
+      macro_target = build_macro_call_arg(*target);
+    }
+  }
+
+  absl::optional<std::reference_wrapper<ExprNode>> target_ref;
+  if (target != nullptr) {
+    target_ref = *target;
+  }
+
+  int32_t macro_position = 0;
+  if (auto it = positions_.find(expr_id); it != positions_.end()) {
+    macro_position = it->second;
+  }
+  MacroExpanderSupport support(*this, macro_position);
+  std::optional<ExprNode> expanded_expr =
+      expander->Expand(target_ref, absl::MakeSpan(args), support);
+
+  if (expanded_expr) {
+    if (add_macro_calls) {
+      RecordMacroCall(ast_factory_.GetId(*expanded_expr), function,
+                      target != nullptr
+                          ? std::make_optional(std::move(macro_target))
+                          : std::nullopt,
+                      std::move(macro_args));
+    }
+    EraseId(expr_id);
+    return expanded_expr;
+  }
+
+  return std::nullopt;
+}
+
+template <typename ExprNode>
+void PrattParserWorker<ExprNode>::RecordMacroCall(
+    int64_t macro_id, absl::string_view function,
+    std::optional<ExprNode> target, std::vector<ExprNode> arguments) {
+  ExprNode call_expr;
+  if (target.has_value()) {
+    call_expr = ast_factory_.NewMemberCall(
+        0, std::string(function), std::move(*target), std::move(arguments));
+  } else {
+    call_expr =
+        ast_factory_.NewCall(0, std::string(function), std::move(arguments));
+  }
+  macro_calls_.insert({macro_id, std::move(call_expr)});
 }
 
 }  // namespace cel::parser_internal

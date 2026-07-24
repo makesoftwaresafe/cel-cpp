@@ -14,6 +14,7 @@
 
 #include "parser/internal/ast_factory.h"
 
+#include <cstddef>
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -25,6 +26,8 @@
 #include "absl/strings/string_view.h"
 #include "common/expr.h"
 #include "internal/status_macros.h"
+#include "parser/internal/ast_factory_interface.h"
+#include "parser/macro.h"
 
 namespace cel::parser_internal {
 
@@ -264,6 +267,21 @@ StructNodeBuilder<cel::Expr> AstFactoryInterface<cel::Expr>::NewStructBuilder(
 MapNodeBuilder<cel::Expr> AstFactoryInterface<cel::Expr>::NewMapBuilder(
     int64_t id) {
   return MapNodeBuilder<cel::Expr>(id);
+}
+
+std::optional<MacroExprExpander<cel::Expr>>
+AstFactoryInterface<cel::Expr>::NewMacroExprExpander(std::string_view name,
+                                                     size_t arg_count,
+                                                     bool receiver_style) {
+  if (macro_registry_ == nullptr) {
+    return std::nullopt;
+  }
+  std::optional<cel::Macro> macro =
+      macro_registry_->FindMacro(name, arg_count, receiver_style);
+  if (!macro) {
+    return std::nullopt;
+  }
+  return std::optional<MacroExprExpander<cel::Expr>>(std::in_place, *macro);
 }
 
 }  // namespace cel::parser_internal

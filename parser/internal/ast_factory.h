@@ -15,16 +15,24 @@
 #ifndef THIRD_PARTY_CEL_CPP_PARSER_INTERNAL_AST_FACTORY_H_
 #define THIRD_PARTY_CEL_CPP_PARSER_INTERNAL_AST_FACTORY_H_
 
+#include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <optional>
 #include <string>
+#include <utility>
 
+#include "absl/base/nullability.h"
 #include "absl/functional/function_ref.h"
 #include "absl/status/statusor.h"
 #include "absl/strings/string_view.h"
+#include "absl/types/span.h"
 #include "common/expr.h"
 #include "common/expr_factory.h"
 #include "parser/internal/ast_factory_interface.h"
+#include "parser/macro.h"
+#include "parser/macro_expr_factory.h"
+#include "parser/macro_registry.h"
 
 namespace cel::parser_internal {
 
@@ -72,9 +80,34 @@ class StructNodeBuilder<cel::Expr> {
 };
 
 template <>
+class AstFactoryInterface<cel::Expr>;
+
+template <>
+class MacroExprExpanderSupport<cel::Expr> : public cel::MacroExprFactory {};
+
+template <>
+class MacroExprExpander<cel::Expr> {
+ public:
+  explicit MacroExprExpander(cel::Macro macro) : macro_(std::move(macro)) {}
+
+  std::optional<cel::Expr> Expand(
+      std::optional<std::reference_wrapper<cel::Expr>> target,
+      absl::Span<cel::Expr> args,
+      MacroExprExpanderSupport<cel::Expr>& support) {
+    return macro_.Expand(support, target, args);
+  }
+
+ private:
+  cel::Macro macro_;
+};
+
+template <>
 class AstFactoryInterface<cel::Expr> : public cel::ExprFactory {
  public:
-  AstFactoryInterface() = default;
+  explicit AstFactoryInterface(
+      const cel::MacroRegistry* absl_nullable macro_registry = nullptr)
+      : macro_registry_(macro_registry) {}
+
   AstFactoryInterface(const AstFactoryInterface&) = delete;
   AstFactoryInterface(AstFactoryInterface&&) = delete;
   AstFactoryInterface& operator=(const AstFactoryInterface&) = delete;
@@ -126,6 +159,12 @@ class AstFactoryInterface<cel::Expr> : public cel::ExprFactory {
   StructNodeBuilder<cel::Expr> NewStructBuilder(int64_t id, std::string name);
 
   MapNodeBuilder<cel::Expr> NewMapBuilder(int64_t id);
+
+  std::optional<MacroExprExpander<cel::Expr>> NewMacroExprExpander(
+      std::string_view name, size_t arg_count, bool receiver_style);
+
+ private:
+  const cel::MacroRegistry* absl_nullable macro_registry_ = nullptr;
 };
 
 using AstFactory = AstFactoryInterface<cel::Expr>;

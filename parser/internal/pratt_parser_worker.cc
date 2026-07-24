@@ -16,11 +16,11 @@
 
 #include <cstdint>
 #include <string>
-#include <string_view>
 #include <vector>
 
 #include "absl/base/nullability.h"
 #include "absl/strings/str_cat.h"
+#include "absl/strings/string_view.h"
 #include "common/source.h"
 #include "parser/internal/lexer.h"
 #include "parser/options.h"
@@ -70,7 +70,7 @@ Token ParserWorker::NextToken() {
   return current_token_;
 }
 
-bool ParserWorker::Expect(TokenType type, std::string_view msg) {
+bool ParserWorker::Expect(TokenType type, absl::string_view msg) {
   if (peek_token_.type == type) {
     NextToken();
     return true;
@@ -139,7 +139,7 @@ void ParserWorker::EraseId(int64_t id) {
   }
 }
 
-void ParserWorker::ReportError(int32_t position, std::string_view msg) {
+void ParserWorker::ReportError(int32_t position, absl::string_view msg) {
   cel::SourceLocation loc;
   if (auto found = source_.GetLocation(position); found.has_value()) {
     loc = *found;
@@ -148,7 +148,7 @@ void ParserWorker::ReportError(int32_t position, std::string_view msg) {
 }
 
 void ParserWorker::ReportError(const SourceLocation& loc,
-                               std::string_view msg) {
+                               absl::string_view msg) {
   error_count_++;
   if (parse_issues_ != nullptr) {
     parse_issues_->push_back(cel::ParseIssue(loc, std::string(msg)));

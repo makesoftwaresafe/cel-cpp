@@ -15,8 +15,11 @@
 #include "parser/internal/pratt_parser.h"
 
 #include <cstddef>
+#include <cstdint>
 #include <memory>
+#include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "absl/algorithm/container.h"
@@ -29,6 +32,7 @@
 #include "absl/strings/str_join.h"
 #include "absl/strings/str_split.h"
 #include "absl/strings/string_view.h"
+#include "absl/types/span.h"
 #include "common/ast.h"
 #include "common/constant.h"
 #include "common/expr.h"
@@ -37,6 +41,8 @@
 #include "internal/testing.h"
 #include "parser/internal/lexer.h"
 #include "parser/internal/pratt_parser_worker.h"
+#include "parser/macro.h"
+#include "parser/macro_expr_factory.h"
 #include "parser/options.h"
 #include "parser/parser_interface.h"
 #include "testutil/expr_printer.h"
@@ -47,10 +53,18 @@
 namespace cel::parser_internal {
 namespace {
 
+using ::absl_testing::IsOk;
 using ::absl_testing::IsOkAndHolds;
 using ::absl_testing::StatusIs;
 using ::testing::Eq;
 using ::testing::NotNull;
+
+template <typename T>
+std::string TestName(const testing::TestParamInfo<T>& test_info) {
+  std::string name = absl::StrCat(test_info.index, "-", test_info.param.source);
+  absl::c_replace_if(name, [](char c) { return !absl::ascii_isalnum(c); }, '_');
+  return name;
+}
 
 absl::StatusOr<std::unique_ptr<cel::Ast>> Parse(
     std::string_view expression,
@@ -75,18 +89,6 @@ struct TestCase {
 };
 
 class PrattParserTest : public testing::TestWithParam<TestCase> {};
-
-std::string Unindent(std::string_view multiline) {
-  std::vector<std::string> unindented_lines;
-  int indent = -1;
-  for (std::string_view line : absl::StrSplit(multiline, '\n')) {
-    std::size_t pos = line.find_first_not_of(" \t");
-    if (pos == std::string_view::npos) continue;
-    if (indent == -1) indent = pos;
-    unindented_lines.push_back(std::string(line.substr(indent)));
-  }
-  return absl::StrJoin(unindented_lines, "\n");
-}
 
 std::string_view ConstantKind(const cel::Constant& c) {
   switch (c.kind_case()) {
@@ -153,6 +155,31 @@ class KindAndIdAdorner : public cel::test::ExpressionAdorner {
   }
 };
 
+std::string Unindent(std::string_view multiline) {
+  std::vector<std::string> unindented_lines;
+  int indent = -1;
+  for (std::string_view line : absl::StrSplit(multiline, '\n')) {
+    std::size_t pos = line.find_first_not_of(" \t");
+    if (pos == std::string_view::npos) continue;
+    if (indent == -1) indent = pos;
+    unindented_lines.push_back(std::string(line.substr(indent)));
+  }
+  return absl::StrJoin(unindented_lines, "\n");
+}
+
+MATCHER_P(AstIs, expected_ast, "") {
+  KindAndIdAdorner kind_and_id_adorner;
+  test::ExprPrinter printer(kind_and_id_adorner);
+  std::string actual = Unindent(printer.Print(arg));
+  std::string expected = Unindent(expected_ast);
+  if (actual == expected) {
+    return true;
+  }
+  *result_listener << "\n  Actual:   " << actual
+                   << "\n  Expected: " << expected;
+  return false;
+}
+
 TEST_P(PrattParserTest, Parse) {
   const TestCase& test_case = GetParam();
   cel::ParserOptions options;
@@ -161,10 +188,7 @@ TEST_P(PrattParserTest, Parse) {
       test_case.enable_variadic_logical_operators;
   ASSERT_OK_AND_ASSIGN(std::unique_ptr<cel::Ast> ast,
                        Parse(test_case.source, options));
-  const Expr& root = ast->root_expr();
-  KindAndIdAdorner kind_and_id_adorner;
-  test::ExprPrinter printer(kind_and_id_adorner);
-  EXPECT_EQ(Unindent(printer.Print(root)), Unindent(test_case.expected_ast));
+  EXPECT_THAT(ast->root_expr(), AstIs(test_case.expected_ast));
 }
 
 std::vector<TestCase> GetParserTestCases() {
@@ -1012,14 +1036,9 @@ std::vector<TestCase> GetParserTestCases() {
   };
 }
 
-std::string TestName(const testing::TestParamInfo<TestCase>& test_info) {
-  std::string name = absl::StrCat(test_info.index, "-", test_info.param.source);
-  absl::c_replace_if(name, [](char c) { return !absl::ascii_isalnum(c); }, '_');
-  return name;
-}
-
 INSTANTIATE_TEST_SUITE_P(PrattParserTest, PrattParserTest,
-                         testing::ValuesIn(GetParserTestCases()), TestName);
+                         testing::ValuesIn(GetParserTestCases()),
+                         TestName<TestCase>);
 
 struct ErrorTestCase {
   std::string_view source;
@@ -1375,7 +1394,8 @@ std::vector<ErrorTestCase> GetErrorTestCases() {
 }
 
 INSTANTIATE_TEST_SUITE_P(PrattParserErrorTest, PrattParserErrorTest,
-                         testing::ValuesIn(GetErrorTestCases()));
+                         testing::ValuesIn(GetErrorTestCases()),
+                         TestName<ErrorTestCase>);
 
 TEST(PrattParserTest, SourceInfoPositionsPopulated) {
   ASSERT_OK_AND_ASSIGN(std::unique_ptr<cel::Ast> ast, Parse("a + b"));
@@ -1428,6 +1448,293 @@ TEST(ParserWorkerTest, GetTokenTextBoundsChecking) {
   EXPECT_EQ(worker.GetTokenText(
                 Token{.type = TokenType::kIdent, .start = 0, .end = 100}),
             "");
+}
+
+struct MacroTestCase {
+  std::string_view source;
+  std::string_view expected_ast;
+};
+
+class PrattParserMacroTest : public testing::TestWithParam<MacroTestCase> {};
+
+TEST_P(PrattParserMacroTest, MacroExprExpander) {
+  const MacroTestCase& test_case = GetParam();
+  auto builder = NewPrattParserBuilder();
+  ASSERT_OK_AND_ASSIGN(
+      auto global_macro,
+      Macro::Global("foo", 1,
+                    [](MacroExprFactory& macro_factory,
+                       absl::Span<Expr> args) -> std::optional<Expr> {
+                      return macro_factory.NewCall("my_macro", std::move(args));
+                    }));
+
+  ASSERT_OK_AND_ASSIGN(
+      auto receiver_macro,
+      Macro::Receiver("bar", 2,
+                      [](MacroExprFactory& macro_factory, Expr& target,
+                         absl::Span<Expr> args) -> std::optional<Expr> {
+                        return macro_factory.NewMemberCall(
+                            "my_bar", std::move(target), std::move(args));
+                      }));
+
+  ASSERT_THAT(builder->AddMacro(global_macro), IsOk());
+  ASSERT_THAT(builder->AddMacro(receiver_macro), IsOk());
+  ASSERT_OK_AND_ASSIGN(auto parser, builder->Build());
+
+  ASSERT_OK_AND_ASSIGN(auto source, cel::NewSource(test_case.source));
+  ASSERT_OK_AND_ASSIGN(auto ast, parser->Parse(*source));
+
+  EXPECT_THAT(ast->root_expr(), AstIs(test_case.expected_ast));
+}
+
+std::vector<MacroTestCase> GetMacroTestCases() {
+  return {
+      MacroTestCase{
+          .source = "foo(x)",
+          .expected_ast = R"(
+              my_macro(
+                x^#2:Expr.Ident#
+              )^#3:Expr.Call#
+            )",
+      },
+      MacroTestCase{
+          .source = "x.bar(y, z)",
+          .expected_ast = R"(
+              x^#1:Expr.Ident#.my_bar(
+                y^#3:Expr.Ident#,
+                z^#4:Expr.Ident#
+              )^#5:Expr.Call#
+            )",
+      },
+      // Number of args doesn't match the macro definition
+      MacroTestCase{
+          .source = "foo(x, y)",
+          .expected_ast = R"(
+              foo(
+                x^#2:Expr.Ident#,
+                y^#3:Expr.Ident#
+              )^#1:Expr.Call#
+            )",
+      },
+      // Number of args doesn't match the macro definition
+      MacroTestCase{
+          .source = "x.bar(y)",
+          .expected_ast = R"(
+              x^#1:Expr.Ident#.bar(
+                y^#3:Expr.Ident#
+              )^#2:Expr.Call#
+            )",
+      },
+      // No target provided for receiver macro
+      MacroTestCase{
+          .source = "bar(x, y)",
+          .expected_ast = R"(
+              bar(
+                x^#2:Expr.Ident#,
+                y^#3:Expr.Ident#
+              )^#1:Expr.Call#
+            )",
+      },
+      // Target provided for global macro
+      MacroTestCase{
+          .source = "x.foo(y)",
+          .expected_ast = R"(
+              x^#1:Expr.Ident#.foo(
+                y^#3:Expr.Ident#
+              )^#2:Expr.Call#
+            )",
+      },
+      // Global macro not registered
+      MacroTestCase{
+          .source = "baz(x)",
+          .expected_ast = R"(
+              baz(
+                x^#2:Expr.Ident#
+              )^#1:Expr.Call#
+            )",
+      },
+      // Receiver macro not registered
+      MacroTestCase{
+          .source = "x.baz(x)",
+          .expected_ast = R"(
+              x^#1:Expr.Ident#.baz(
+                x^#3:Expr.Ident#
+              )^#2:Expr.Call#
+            )",
+      },
+      // has() macro
+      MacroTestCase{
+          .source = "has(message.field)",
+          .expected_ast = R"(
+              message^#2:Expr.Ident#.field~test-only~^#4:Expr.Select#
+            )",
+      },
+  };
+}
+
+INSTANTIATE_TEST_SUITE_P(PrattParserMacroTest, PrattParserMacroTest,
+                         testing::ValuesIn(GetMacroTestCases()),
+                         TestName<MacroTestCase>);
+
+TEST(PrattParserMacroErrorTest, ReportError) {
+  auto builder = NewPrattParserBuilder();
+  ASSERT_OK_AND_ASSIGN(
+      auto error_macro,
+      Macro::Global("bad_macro", 1,
+                    [](MacroExprFactory& macro_factory,
+                       absl::Span<Expr> args) -> std::optional<Expr> {
+                      return macro_factory.ReportError("custom macro error");
+                    }));
+
+  ASSERT_THAT(builder->AddMacro(error_macro), IsOk());
+  ASSERT_OK_AND_ASSIGN(auto parser, builder->Build());
+
+  ASSERT_OK_AND_ASSIGN(auto source, cel::NewSource("42 + bad_macro(x)"));
+  std::vector<cel::ParseIssue> issues;
+  auto ast = parser->Parse(*source, &issues);
+  EXPECT_THAT(ast, StatusIs(absl::StatusCode::kInvalidArgument));
+  EXPECT_EQ(FormatIssues(*source, issues),
+            "ERROR: <input>:1:6: custom macro error\n"
+            " | 42 + bad_macro(x)\n"
+            " | .....^");
+}
+
+TEST(PrattParserMacroErrorTest, ReportErrorAt) {
+  auto builder = NewPrattParserBuilder();
+  ASSERT_OK_AND_ASSIGN(
+      auto error_at_macro,
+      Macro::Global("bad_macro_at", 1,
+                    [](MacroExprFactory& macro_factory,
+                       absl::Span<Expr> args) -> std::optional<Expr> {
+                      return macro_factory.ReportErrorAt(args[0],
+                                                         "custom error at arg");
+                    }));
+
+  ASSERT_THAT(builder->AddMacro(error_at_macro), IsOk());
+  ASSERT_OK_AND_ASSIGN(auto parser, builder->Build());
+
+  ASSERT_OK_AND_ASSIGN(auto source, cel::NewSource("bad_macro_at(x)"));
+  std::vector<cel::ParseIssue> issues;
+  auto ast = parser->Parse(*source, &issues);
+  EXPECT_THAT(ast, StatusIs(absl::StatusCode::kInvalidArgument));
+  EXPECT_EQ(FormatIssues(*source, issues),
+            "ERROR: <input>:1:14: custom error at arg\n"
+            " | bad_macro_at(x)\n"
+            " | .............^");
+}
+
+TEST(PrattParserMacroCallsTest, MacroCallsDisabledByDefault) {
+  cel::ParserOptions options;
+  options.add_macro_calls = false;
+  ASSERT_OK_AND_ASSIGN(auto ast, Parse("has(a.b)", options));
+  EXPECT_TRUE(ast->source_info().macro_calls().empty());
+}
+
+TEST(PrattParserMacroCallsTest, GlobalMacroCallRecorded) {
+  cel::ParserOptions options;
+  options.add_macro_calls = true;
+  ASSERT_OK_AND_ASSIGN(auto ast, Parse("has(a.b)", options));
+
+  const auto& macro_calls = ast->source_info().macro_calls();
+  EXPECT_FALSE(macro_calls.empty());
+  EXPECT_TRUE(macro_calls.contains(ast->root_expr().id()));
+
+  const auto& macro_call = macro_calls.at(ast->root_expr().id());
+  EXPECT_THAT(macro_call, AstIs(R"(
+      has(
+        a^#2:Expr.Ident#.b^#3:Expr.Select#
+      )^#0:Expr.Call#
+    )"));
+}
+
+TEST(PrattParserMacroCallsTest, ReceiverMacroCallRecorded) {
+  cel::ParserOptions options;
+  options.add_macro_calls = true;
+  ASSERT_OK_AND_ASSIGN(auto ast, Parse("[1, 2].exists(x, x > 0)", options));
+
+  const auto& macro_calls = ast->source_info().macro_calls();
+  EXPECT_FALSE(macro_calls.empty());
+  EXPECT_TRUE(macro_calls.contains(ast->root_expr().id()));
+
+  const auto& exists_macro_call = macro_calls.at(ast->root_expr().id());
+  EXPECT_THAT(exists_macro_call, AstIs(R"(
+      [
+        1^#2:int64#,
+        2^#3:int64#
+      ]^#1:Expr.CreateList#.exists(
+        x^#5:Expr.Ident#,
+        _>_(
+          x^#6:Expr.Ident#,
+          0^#8:int64#
+        )^#7:Expr.Call#
+      )^#0:Expr.Call#
+    )"));
+}
+
+TEST(PrattParserMacroCallsTest, NestedMacroCallsUseCopyAndReplaceReplacer) {
+  cel::ParserOptions options;
+  options.add_macro_calls = true;
+  ASSERT_OK_AND_ASSIGN(auto ast, Parse("[1, 2].all(x, has(x.b))", options));
+
+  const auto& root_expr = ast->root_expr();
+  EXPECT_THAT(root_expr, AstIs(R"(
+      __comprehension__(
+        // Variable
+        x,
+        // Target
+        [
+          1^#2:int64#,
+          2^#3:int64#
+        ]^#1:Expr.CreateList#,
+        // Accumulator
+        @result,
+        // Init
+        true^#10:bool#,
+        // LoopCondition
+        @not_strictly_false(
+          @result^#11:Expr.Ident#
+        )^#12:Expr.Call#,
+        // LoopStep
+        _&&_(
+          @result^#13:Expr.Ident#,
+          x^#7:Expr.Ident#.b~test-only~^#9:Expr.Select#
+        )^#14:Expr.Call#,
+        // Result
+        @result^#15:Expr.Ident#)^#16:Expr.Comprehension#
+    )"));
+
+  const auto& macro_calls = ast->source_info().macro_calls();
+  // There should be 2 recorded macro calls: one for 'all', one for 'has'.
+  EXPECT_EQ(macro_calls.size(), 2);
+
+  int64_t all_macro_id = root_expr.id();
+  EXPECT_TRUE(macro_calls.contains(all_macro_id));
+
+  const auto& all_macro_call = macro_calls.at(all_macro_id);
+  // The second argument of 'all' is the inner 'has(x.b)' call.
+  // Because 'has(x.b)' was already expanded and recorded in macro_calls
+  // it is represented as an UnspecifiedExpr holding the inner macro's ID.
+  EXPECT_THAT(all_macro_call, AstIs(R"(
+      [
+        1^#2:int64#,
+        2^#3:int64#
+      ]^#1:Expr.CreateList#.all(
+        x^#5:Expr.Ident#,
+        ^#9:unspecified_expr#
+      )^#0:Expr.Call#
+    )"));
+
+  const auto& has_call = all_macro_call.call_expr().args()[1];
+  int64_t has_macro_id = has_call.id();
+  EXPECT_EQ(has_macro_id, 9);  // ^#9:unspecified_expr#
+  EXPECT_TRUE(macro_calls.contains(has_macro_id));
+
+  const auto& has_macro_call = macro_calls.at(has_macro_id);
+  EXPECT_THAT(has_macro_call, AstIs(R"(
+      has(
+        x^#7:Expr.Ident#.b^#8:Expr.Select#
+      )^#0:Expr.Call#
+    )"));
 }
 
 }  // namespace

@@ -21,10 +21,13 @@
 #include <vector>
 
 #include "absl/base/nullability.h"
+#include "absl/container/flat_hash_map.h"
 #include "absl/container/flat_hash_set.h"
+#include "absl/status/status.h"
 #include "absl/status/statusor.h"
 #include "common/ast.h"
 #include "common/source.h"
+#include "parser/macro.h"
 #include "parser/macro_registry.h"
 #include "parser/options.h"
 #include "parser/parser_interface.h"
@@ -64,8 +67,35 @@ class PrattParserImpl final : public cel::Parser {
   absl::flat_hash_set<std::string> library_ids_;
 };
 
-std::unique_ptr<cel::ParserBuilder> NewPrattParserBuilder(
-    const cel::ParserOptions& options = cel::ParserOptions());
+class PrattParserBuilderImpl final : public cel::ParserBuilder {
+ public:
+  explicit PrattParserBuilderImpl(const cel::ParserOptions& options)
+      : options_(options) {}
+
+  cel::ParserOptions& GetOptions() override { return options_; }
+
+  absl::Status AddMacro(const cel::Macro& macro) override;
+
+  absl::Status AddLibrary(cel::ParserLibrary library) override;
+
+  absl::Status AddLibrarySubset(cel::ParserLibrarySubset subset) override;
+
+  absl::StatusOr<std::unique_ptr<cel::Parser>> Build() override;
+
+ private:
+  friend class PrattParserImpl;
+
+  cel::ParserOptions options_;
+  std::vector<cel::Macro> macros_;
+  absl::flat_hash_set<std::string> library_ids_;
+  std::vector<cel::ParserLibrary> libraries_;
+  absl::flat_hash_map<std::string, cel::ParserLibrarySubset> library_subsets_;
+};
+
+inline std::unique_ptr<cel::ParserBuilder> NewPrattParserBuilder(
+    const cel::ParserOptions& options = cel::ParserOptions()) {
+  return std::make_unique<PrattParserBuilderImpl>(options);
+}
 
 }  // namespace cel::parser_internal
 

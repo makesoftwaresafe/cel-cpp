@@ -33,6 +33,11 @@ namespace cel {
 class ParserMacroExprFactory;
 class TestMacroExprFactory;
 
+namespace parser_internal {
+template <typename ExprNode>
+class MacroExprExpanderSupport;
+}  // namespace parser_internal
+
 // `MacroExprFactory` is a specialization of `ExprFactory` for `MacroExpander`
 // which disallows explicitly specifying IDs.
 class MacroExprFactory : protected ExprFactory {
@@ -318,6 +323,7 @@ class MacroExprFactory : protected ExprFactory {
  private:
   friend class ParserMacroExprFactory;
   friend class TestMacroExprFactory;
+  friend class parser_internal::MacroExprExpanderSupport<Expr>;
 
   explicit MacroExprFactory() = default;
 };

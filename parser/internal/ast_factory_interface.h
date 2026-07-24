@@ -15,7 +15,9 @@
 #ifndef THIRD_PARTY_CEL_CPP_PARSER_INTERNAL_AST_FACTORY_INTERFACE_H_
 #define THIRD_PARTY_CEL_CPP_PARSER_INTERNAL_AST_FACTORY_INTERFACE_H_
 
+#include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -23,6 +25,7 @@
 
 #include "absl/functional/function_ref.h"
 #include "absl/status/statusor.h"
+#include "absl/types/span.h"
 
 namespace cel::parser_internal {
 
@@ -47,6 +50,17 @@ class StructNodeBuilder {
   StructNodeBuilder& Add(int64_t id, std::string name, ExprNode value,
                          bool optional = false);
   ExprNode Build();
+};
+
+template <typename ExprNode>
+class MacroExprExpanderSupport {};
+
+template <typename ExprNode>
+class MacroExprExpander {
+ public:
+  std::optional<ExprNode> Expand(
+      std::optional<std::reference_wrapper<ExprNode>> target,
+      absl::Span<ExprNode> args, MacroExprExpanderSupport<ExprNode>& support);
 };
 
 // Interface for decoupling parser logic from the underlying AST node
@@ -104,6 +118,11 @@ class AstFactoryInterface {
   ListNodeBuilder<ExprNode> NewListBuilder(int64_t id);
   MapNodeBuilder<ExprNode> NewMapBuilder(int64_t id);
   StructNodeBuilder<ExprNode> NewStructBuilder(int64_t id, std::string name);
+
+  // Returns a macro expander for the given macro name, or null if there
+  // is no registered macro with that name and argument count.
+  std::optional<MacroExprExpander<ExprNode>> NewMacroExprExpander(
+      std::string_view name, size_t arg_count, bool receiver_style);
 };
 
 }  // namespace cel::parser_internal

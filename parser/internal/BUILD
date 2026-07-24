@@ -26,6 +26,7 @@ cc_library(
     deps = [
         "@com_google_absl//absl/functional:function_ref",
         "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/types:span",
     ],
 )
 
@@ -38,10 +39,15 @@ cc_library(
         "//common:expr",
         "//common:expr_factory",
         "//internal:status_macros",
+        "//parser:macro",
+        "//parser:macro_expr_factory",
+        "//parser:macro_registry",
+        "@com_google_absl//absl/base:nullability",
         "@com_google_absl//absl/functional:function_ref",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
     ],
 )
 
@@ -86,6 +92,7 @@ cc_library(
         "//parser:options",
         "//parser:parser_interface",
         "@com_google_absl//absl/base:nullability",
+        "@com_google_absl//absl/cleanup",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings",
@@ -127,12 +134,17 @@ cc_test(
     srcs = ["ast_factory_test.cc"],
     deps = [
         ":ast_factory",
+        ":ast_factory_interface",
         "//common:constant",
         "//common:expr",
         "//internal:testing",
+        "//parser:macro",
+        "//parser:macro_expr_factory",
+        "//parser:macro_registry",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:status_matchers",
         "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
     ],
 )
 
@@ -159,6 +171,8 @@ cc_test(
         "//common:source",
         "//internal:status_macros",
         "//internal:testing",
+        "//parser:macro",
+        "//parser:macro_expr_factory",
         "//parser:options",
         "//parser:parser_interface",
         "//testutil:expr_printer",
@@ -169,6 +183,7 @@ cc_test(
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
     ],
 )
 

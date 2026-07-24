@@ -22,12 +22,19 @@
 #include "absl/status/status.h"
 #include "absl/status/status_matchers.h"
 #include "absl/strings/string_view.h"
+#include "absl/types/span.h"
 #include "common/constant.h"
 #include "common/expr.h"
 #include "internal/testing.h"
+#include "parser/internal/ast_factory_interface.h"
+#include "parser/macro.h"
+#include "parser/macro_expr_factory.h"
+#include "parser/macro_registry.h"
 
 namespace cel::parser_internal {
 namespace {
+
+using ::absl_testing::IsOk;
 
 using ::absl_testing::StatusIs;
 
@@ -391,6 +398,51 @@ TEST(AstFactoryInterfaceTest, CopyAndReplaceMaxRecursionDepth) {
                   },
                   /*max_recursion_depth=*/3),
               StatusIs(absl::StatusCode::kInvalidArgument));
+}
+
+class TestMacroExprExpanderSupport
+    : public MacroExprExpanderSupport<cel::Expr> {
+ public:
+  int64_t NextId() override { return 42; }
+  int64_t CopyId(int64_t id) override { return id; }
+  cel::Expr ReportError(std::string_view) override { return cel::Expr(); }
+  cel::Expr ReportErrorAt(const cel::Expr&, std::string_view) override {
+    return cel::Expr();
+  }
+};
+
+TEST(AstFactoryInterfaceTest, MacroExprExpander) {
+  MacroRegistry macro_registry;
+  AstFactory factory(&macro_registry);
+  ASSERT_OK_AND_ASSIGN(
+      auto foo_macro,
+      Macro::Global("foo", 1,
+                    [](MacroExprFactory& macro_factory,
+                       absl::Span<Expr> args) -> std::optional<Expr> {
+                      return macro_factory.NewCall("my_macro", std::move(args));
+                    }));
+
+  ASSERT_THAT(macro_registry.RegisterMacro(foo_macro), IsOk());
+
+  auto expander1 = factory.NewMacroExprExpander("foo", 1, false);
+  ASSERT_TRUE(expander1.has_value());
+
+  std::vector<Expr> expand_args;
+  expand_args.push_back(factory.NewIdent(1, "x"));
+
+  TestMacroExprExpanderSupport support;
+  auto result =
+      expander1->Expand(std::nullopt, absl::MakeSpan(expand_args), support);
+  ASSERT_TRUE(result.has_value());
+
+  std::vector<Expr> expected_args;
+  expected_args.push_back(factory.NewIdent(1, "x"));
+  Expr expected = factory.NewCall(42, "my_macro", std::move(expected_args));
+
+  EXPECT_EQ(*result, expected);
+
+  auto expander2 = factory.NewMacroExprExpander("bar", 1, false);
+  EXPECT_FALSE(expander2.has_value());
 }
 
 }  // namespace
