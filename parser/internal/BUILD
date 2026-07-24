@@ -160,3 +160,20 @@ cc_test(
         "@com_google_absl//absl/strings:string_view",
     ],
 )
+
+cc_test(
+    name = "pratt_parser_benchmark",
+    srcs = ["pratt_parser_benchmark.cc"],
+    tags = ["benchmark"],
+    deps = [
+        ":pratt_parser",
+        "//common:source",
+        "//internal:benchmark",
+        "//internal:testing",
+        "//parser",
+        "//parser:options",
+        "//parser:parser_interface",
+        "@com_google_absl//absl/log:absl_check",
+        "@com_google_absl//absl/strings",
+    ],
+)
