@@ -48,7 +48,10 @@ const BinaryOpInfo kEqualEqual = {3, CelOperator::EQUALS, false,
                                   TokenType::kEqualEqual};
 const BinaryOpInfo kExclamationEqual = {3, CelOperator::NOT_EQUALS, false,
                                         TokenType::kExclamationEqual};
+#pragma push_macro("IN")
+#undef IN
 const BinaryOpInfo kIn = {3, CelOperator::IN, false, TokenType::kIn};
+#pragma pop_macro("IN")
 const BinaryOpInfo kPlus = {4, CelOperator::ADD, false, TokenType::kPlus};
 const BinaryOpInfo kMinus = {4, CelOperator::SUBTRACT, false,
                              TokenType::kMinus};
