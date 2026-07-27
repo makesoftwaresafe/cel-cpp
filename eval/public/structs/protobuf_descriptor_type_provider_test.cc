@@ -24,6 +24,8 @@
 #include "eval/public/testing/matchers.h"
 #include "extensions/protobuf/memory_manager.h"
 #include "internal/testing.h"
+#include "internal/testing_descriptor_pool.h"
+#include "internal/testing_message_factory.h"
 #include "cel/expr/conformance/proto3/test_all_types.pb.h"
 #include "google/protobuf/arena.h"
 #include "google/protobuf/descriptor.h"
@@ -101,8 +103,8 @@ TEST(ProtobufDescriptorProvider, NotFound) {
 
 TEST(ProtobufDescriptorProvider, FindType) {
   ProtobufDescriptorProvider provider(
-      google::protobuf::DescriptorPool::generated_pool(),
-      google::protobuf::MessageFactory::generated_factory());
+      cel::internal::GetTestingDescriptorPool(),
+      cel::internal::GetTestingMessageFactory());
   ASSERT_OK_AND_ASSIGN(std::optional<cel::Type> wrapper_type,
                        provider.FindType("google.protobuf.Int64Value"));
   ASSERT_TRUE(wrapper_type.has_value());

@@ -371,6 +371,8 @@ cc_test(
         "//eval/public/testing:matchers",
         "//extensions/protobuf:memory_manager",
         "//internal:testing",
+        "//internal:testing_descriptor_pool",
+        "//internal:testing_message_factory",
         "@com_google_absl//absl/status:status_matchers",
         "@com_google_cel_spec//proto/cel/expr/conformance/proto3:test_all_types_cc_proto",
         "@com_google_protobuf//:protobuf",
