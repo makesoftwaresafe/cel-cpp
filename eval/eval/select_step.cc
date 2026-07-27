@@ -471,6 +471,62 @@ absl::Status ProtoSelectStep::EvaluateLegacyMessageGetField(
       &frame->value_stack().Peek());
 }
 
+class ProtoHasStep : public SelectStep {
+ public:
+  ProtoHasStep(StringValue value, int64_t expr_id,
+               bool enable_wrapper_type_null_unboxing,
+               bool enable_optional_types, const google::protobuf::Descriptor* descriptor,
+               const google::protobuf::FieldDescriptor* field_descriptor)
+      : SelectStep(std::move(value), /*test_field_presence=*/true, expr_id,
+                   enable_wrapper_type_null_unboxing, enable_optional_types),
+        descriptor_(descriptor),
+        field_descriptor_(field_descriptor) {
+    ABSL_DCHECK(descriptor_ != nullptr);
+    ABSL_DCHECK(field_descriptor_ != nullptr);
+  }
+
+  absl::Status Evaluate(ExecutionFrame* frame) const override {
+    if (!frame->value_stack().HasEnough(1)) {
+      return absl::InternalError(
+          "No arguments supplied for Select-type expression");
+    }
+
+    const Value& arg = frame->value_stack().Peek();
+    if (auto unwrapped = arg.AsParsedMessage();
+        unwrapped.has_value() && unwrapped->GetDescriptor() == descriptor_) {
+      return EvaluateHas(frame, *unwrapped);
+    } else if (const google::protobuf::Message* legacy_message =
+                   cel::interop_internal::GetLegacyMessage(arg);
+               legacy_message != nullptr &&
+               legacy_message->GetDescriptor() == descriptor_) {
+      cel::ParsedMessageValue parsed_message =
+          cel::UnsafeParsedMessageValue(legacy_message);
+      return EvaluateHas(frame, parsed_message);
+    }
+    // If we get an unexpected value type, fall back to the generic
+    // implementation.
+    return SelectStep::Evaluate(frame);
+  }
+
+ private:
+  absl::Status EvaluateHas(ExecutionFrame* frame,
+                           const cel::ParsedMessageValue& parsed_message) const;
+
+  const google::protobuf::Descriptor* descriptor_;
+  const google::protobuf::FieldDescriptor* field_descriptor_;
+};
+
+absl::Status ProtoHasStep::EvaluateHas(
+    ExecutionFrame* frame,
+    const cel::ParsedMessageValue& parsed_message) const {
+  if (CheckAttributeTrail(field_, frame)) {
+    return absl::OkStatus();
+  }
+  frame->value_stack().Peek() =
+      BoolValue{parsed_message.HasField(field_descriptor_)};
+  return absl::OkStatus();
+}
+
 }  // namespace
 
 std::unique_ptr<DirectExpressionStep> CreateDirectSelectStep(
@@ -496,10 +552,10 @@ absl::StatusOr<std::unique_ptr<ExpressionStep>> CreateTypedSelectStep(
     cel::StringValue field, cel::StructType resolved_operand_type,
     cel::StructTypeField resolved_field, bool test_only, int64_t expr_id,
     bool enable_wrapper_type_null_unboxing, bool enable_optional_types) {
-  if (!resolved_operand_type.IsMessage() || test_only) {
+  if (!resolved_operand_type.IsMessage()) {
     // The specialization only supports messages. Fallback to the generic
     // implementation for other types.
-    // TODO(uncreated-issue/89): support has() for messages.
+    // TODO(uncreated-issue/89): support optional select and chaining.
     return CreateSelectStep(std::move(field), test_only, expr_id,
                             enable_wrapper_type_null_unboxing,
                             enable_optional_types);
@@ -510,6 +566,12 @@ absl::StatusOr<std::unique_ptr<ExpressionStep>> CreateTypedSelectStep(
   ABSL_DCHECK(resolved_field.IsMessage());
   const google::protobuf::FieldDescriptor* field_descriptor =
       resolved_field.GetMessage().descriptor();
+
+  if (test_only) {
+    return std::make_unique<ProtoHasStep>(
+        std::move(field), expr_id, enable_wrapper_type_null_unboxing,
+        enable_optional_types, descriptor, field_descriptor);
+  }
 
   return std::make_unique<ProtoSelectStep>(
       std::move(field), expr_id, enable_wrapper_type_null_unboxing,

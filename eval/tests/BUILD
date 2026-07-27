@@ -85,7 +85,6 @@ cc_test(
         "//internal:benchmark",
         "//internal:testing",
         "//internal:testing_descriptor_pool",
-        "//internal:testing_message_factory",
         "//parser",
         "//parser:macro_registry",
         "//runtime",

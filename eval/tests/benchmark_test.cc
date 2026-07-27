@@ -592,16 +592,34 @@ BENCHMARK(BM_HasMap);
 
 void BM_HasProto(benchmark::State& state) {
   google::protobuf::Arena arena;
-  Activation activation;
-  ASSERT_OK_AND_ASSIGN(ParsedExpr parsed_expr,
-                       parser::Parse("has(request.path) && !has(request.ip)"));
+  ASSERT_OK_AND_ASSIGN(
+      auto compiler_builder,
+      cel::NewCompilerBuilder(google::protobuf::DescriptorPool::generated_pool()));
+  ASSERT_THAT(compiler_builder->AddLibrary(cel::StandardCompilerLibrary()),
+              IsOk());
+  ASSERT_THAT(
+      compiler_builder->GetCheckerBuilder().AddVariable(cel::MakeVariableDecl(
+          "request", cel::MessageType(RequestContext::descriptor()))),
+      IsOk());
+  ASSERT_OK_AND_ASSIGN(auto compiler, compiler_builder->Build());
+
+  ASSERT_OK_AND_ASSIGN(
+      auto validation_result,
+      compiler->Compile("has(request.path) && !has(request.ip)"));
+  ASSERT_TRUE(validation_result.IsValid());
+  ASSERT_OK_AND_ASSIGN(auto ast, validation_result.ReleaseAst());
+
+  cel::expr::CheckedExpr checked_expr;
+  ASSERT_THAT(cel::AstToCheckedExpr(*ast, &checked_expr), IsOk());
+
   InterpreterOptions options = GetOptions(arena);
   auto builder = CreateCelExpressionBuilder(options);
-  auto reg_status = RegisterBuiltinFunctions(builder->GetRegistry(), options);
+  ASSERT_THAT(RegisterBuiltinFunctions(builder->GetRegistry(), options),
+              IsOk());
 
-  ASSERT_OK_AND_ASSIGN(auto cel_expr,
-                       builder->CreateExpression(&parsed_expr.expr(), nullptr));
+  ASSERT_OK_AND_ASSIGN(auto cel_expr, builder->CreateExpression(&checked_expr));
 
+  Activation activation;
   RequestContext request;
   request.set_path(kPath);
   request.set_token(kToken);
@@ -620,17 +638,34 @@ BENCHMARK(BM_HasProto);
 
 void BM_HasProtoMap(benchmark::State& state) {
   google::protobuf::Arena arena;
-  Activation activation;
-  ASSERT_OK_AND_ASSIGN(ParsedExpr parsed_expr,
-                       parser::Parse("has(request.headers.create_time) && "
-                                     "!has(request.headers.update_time)"));
+  ASSERT_OK_AND_ASSIGN(
+      auto compiler_builder,
+      cel::NewCompilerBuilder(google::protobuf::DescriptorPool::generated_pool()));
+  ASSERT_THAT(compiler_builder->AddLibrary(cel::StandardCompilerLibrary()),
+              IsOk());
+  ASSERT_THAT(
+      compiler_builder->GetCheckerBuilder().AddVariable(cel::MakeVariableDecl(
+          "request", cel::MessageType(RequestContext::descriptor()))),
+      IsOk());
+  ASSERT_OK_AND_ASSIGN(auto compiler, compiler_builder->Build());
+
+  ASSERT_OK_AND_ASSIGN(auto validation_result,
+                       compiler->Compile("has(request.headers.create_time) && "
+                                         "!has(request.headers.update_time)"));
+  ASSERT_TRUE(validation_result.IsValid());
+  ASSERT_OK_AND_ASSIGN(auto ast, validation_result.ReleaseAst());
+
+  cel::expr::CheckedExpr checked_expr;
+  ASSERT_THAT(cel::AstToCheckedExpr(*ast, &checked_expr), IsOk());
+
   InterpreterOptions options = GetOptions(arena);
   auto builder = CreateCelExpressionBuilder(options);
-  auto reg_status = RegisterBuiltinFunctions(builder->GetRegistry(), options);
+  ASSERT_THAT(RegisterBuiltinFunctions(builder->GetRegistry(), options),
+              IsOk());
 
-  ASSERT_OK_AND_ASSIGN(auto cel_expr,
-                       builder->CreateExpression(&parsed_expr.expr(), nullptr));
+  ASSERT_OK_AND_ASSIGN(auto cel_expr, builder->CreateExpression(&checked_expr));
 
+  Activation activation;
   RequestContext request;
   request.mutable_headers()->insert({"create_time", "2021-01-01"});
   activation.InsertValue("request",
@@ -648,17 +683,34 @@ BENCHMARK(BM_HasProtoMap);
 
 void BM_ReadProtoMap(benchmark::State& state) {
   google::protobuf::Arena arena;
-  Activation activation;
-  ASSERT_OK_AND_ASSIGN(ParsedExpr parsed_expr, parser::Parse(R"cel(
+  ASSERT_OK_AND_ASSIGN(
+      auto compiler_builder,
+      cel::NewCompilerBuilder(google::protobuf::DescriptorPool::generated_pool()));
+  ASSERT_THAT(compiler_builder->AddLibrary(cel::StandardCompilerLibrary()),
+              IsOk());
+  ASSERT_THAT(
+      compiler_builder->GetCheckerBuilder().AddVariable(cel::MakeVariableDecl(
+          "request", cel::MessageType(RequestContext::descriptor()))),
+      IsOk());
+  ASSERT_OK_AND_ASSIGN(auto compiler, compiler_builder->Build());
+
+  ASSERT_OK_AND_ASSIGN(auto validation_result, compiler->Compile(R"cel(
      request.headers.create_time == "2021-01-01"
    )cel"));
+  ASSERT_TRUE(validation_result.IsValid());
+  ASSERT_OK_AND_ASSIGN(auto ast, validation_result.ReleaseAst());
+
+  cel::expr::CheckedExpr checked_expr;
+  ASSERT_THAT(cel::AstToCheckedExpr(*ast, &checked_expr), IsOk());
+
   InterpreterOptions options = GetOptions(arena);
   auto builder = CreateCelExpressionBuilder(options);
-  auto reg_status = RegisterBuiltinFunctions(builder->GetRegistry(), options);
+  ASSERT_THAT(RegisterBuiltinFunctions(builder->GetRegistry(), options),
+              IsOk());
 
-  ASSERT_OK_AND_ASSIGN(auto cel_expr,
-                       builder->CreateExpression(&parsed_expr.expr(), nullptr));
+  ASSERT_OK_AND_ASSIGN(auto cel_expr, builder->CreateExpression(&checked_expr));
 
+  Activation activation;
   RequestContext request;
   request.mutable_headers()->insert({"create_time", "2021-01-01"});
   activation.InsertValue("request",
@@ -676,17 +728,34 @@ BENCHMARK(BM_ReadProtoMap);
 
 void BM_NestedProtoFieldRead(benchmark::State& state) {
   google::protobuf::Arena arena;
-  Activation activation;
-  ASSERT_OK_AND_ASSIGN(ParsedExpr parsed_expr, parser::Parse(R"cel(
+  ASSERT_OK_AND_ASSIGN(
+      auto compiler_builder,
+      cel::NewCompilerBuilder(google::protobuf::DescriptorPool::generated_pool()));
+  ASSERT_THAT(compiler_builder->AddLibrary(cel::StandardCompilerLibrary()),
+              IsOk());
+  ASSERT_THAT(
+      compiler_builder->GetCheckerBuilder().AddVariable(cel::MakeVariableDecl(
+          "request", cel::MessageType(RequestContext::descriptor()))),
+      IsOk());
+  ASSERT_OK_AND_ASSIGN(auto compiler, compiler_builder->Build());
+
+  ASSERT_OK_AND_ASSIGN(auto validation_result, compiler->Compile(R"cel(
       !request.a.b.c.d.e
    )cel"));
+  ASSERT_TRUE(validation_result.IsValid());
+  ASSERT_OK_AND_ASSIGN(auto ast, validation_result.ReleaseAst());
+
+  cel::expr::CheckedExpr checked_expr;
+  ASSERT_THAT(cel::AstToCheckedExpr(*ast, &checked_expr), IsOk());
+
   InterpreterOptions options = GetOptions(arena);
   auto builder = CreateCelExpressionBuilder(options);
-  auto reg_status = RegisterBuiltinFunctions(builder->GetRegistry(), options);
+  ASSERT_THAT(RegisterBuiltinFunctions(builder->GetRegistry(), options),
+              IsOk());
 
-  ASSERT_OK_AND_ASSIGN(auto cel_expr,
-                       builder->CreateExpression(&parsed_expr.expr(), nullptr));
+  ASSERT_OK_AND_ASSIGN(auto cel_expr, builder->CreateExpression(&checked_expr));
 
+  Activation activation;
   RequestContext request;
   request.mutable_a()->mutable_b()->mutable_c()->mutable_d()->set_e(false);
   activation.InsertValue("request",
@@ -704,17 +773,34 @@ BENCHMARK(BM_NestedProtoFieldRead);
 
 void BM_NestedProtoFieldReadDefaults(benchmark::State& state) {
   google::protobuf::Arena arena;
-  Activation activation;
-  ASSERT_OK_AND_ASSIGN(ParsedExpr parsed_expr, parser::Parse(R"cel(
+  ASSERT_OK_AND_ASSIGN(
+      auto compiler_builder,
+      cel::NewCompilerBuilder(google::protobuf::DescriptorPool::generated_pool()));
+  ASSERT_THAT(compiler_builder->AddLibrary(cel::StandardCompilerLibrary()),
+              IsOk());
+  ASSERT_THAT(
+      compiler_builder->GetCheckerBuilder().AddVariable(cel::MakeVariableDecl(
+          "request", cel::MessageType(RequestContext::descriptor()))),
+      IsOk());
+  ASSERT_OK_AND_ASSIGN(auto compiler, compiler_builder->Build());
+
+  ASSERT_OK_AND_ASSIGN(auto validation_result, compiler->Compile(R"cel(
       !request.a.b.c.d.e
    )cel"));
+  ASSERT_TRUE(validation_result.IsValid());
+  ASSERT_OK_AND_ASSIGN(auto ast, validation_result.ReleaseAst());
+
+  cel::expr::CheckedExpr checked_expr;
+  ASSERT_THAT(cel::AstToCheckedExpr(*ast, &checked_expr), IsOk());
+
   InterpreterOptions options = GetOptions(arena);
   auto builder = CreateCelExpressionBuilder(options);
-  auto reg_status = RegisterBuiltinFunctions(builder->GetRegistry(), options);
+  ASSERT_THAT(RegisterBuiltinFunctions(builder->GetRegistry(), options),
+              IsOk());
 
-  ASSERT_OK_AND_ASSIGN(auto cel_expr,
-                       builder->CreateExpression(&parsed_expr.expr(), nullptr));
+  ASSERT_OK_AND_ASSIGN(auto cel_expr, builder->CreateExpression(&checked_expr));
 
+  Activation activation;
   RequestContext request;
   activation.InsertValue("request",
                          CelProtoWrapper::CreateMessage(&request, &arena));
@@ -731,18 +817,35 @@ BENCHMARK(BM_NestedProtoFieldReadDefaults);
 
 void BM_ProtoStructAccess(benchmark::State& state) {
   google::protobuf::Arena arena;
-  Activation activation;
-  ASSERT_OK_AND_ASSIGN(ParsedExpr parsed_expr, parser::Parse(R"cel(
+  ASSERT_OK_AND_ASSIGN(
+      auto compiler_builder,
+      cel::NewCompilerBuilder(google::protobuf::DescriptorPool::generated_pool()));
+  ASSERT_THAT(compiler_builder->AddLibrary(cel::StandardCompilerLibrary()),
+              IsOk());
+  ASSERT_THAT(
+      compiler_builder->GetCheckerBuilder().AddVariable(cel::MakeVariableDecl(
+          "request",
+          cel::MessageType(AttributeContext::Request::descriptor()))),
+      IsOk());
+  ASSERT_OK_AND_ASSIGN(auto compiler, compiler_builder->Build());
+
+  ASSERT_OK_AND_ASSIGN(auto validation_result, compiler->Compile(R"cel(
       has(request.auth.claims.iss) && request.auth.claims.iss == 'accounts.google.com'
    )cel"));
+  ASSERT_TRUE(validation_result.IsValid());
+  ASSERT_OK_AND_ASSIGN(auto ast, validation_result.ReleaseAst());
+
+  cel::expr::CheckedExpr checked_expr;
+  ASSERT_THAT(cel::AstToCheckedExpr(*ast, &checked_expr), IsOk());
+
   InterpreterOptions options = GetOptions(arena);
   auto builder = CreateCelExpressionBuilder(options);
   ASSERT_THAT(RegisterBuiltinFunctions(builder->GetRegistry(), options),
               IsOk());
 
-  ASSERT_OK_AND_ASSIGN(auto cel_expr,
-                       builder->CreateExpression(&parsed_expr.expr(), nullptr));
+  ASSERT_OK_AND_ASSIGN(auto cel_expr, builder->CreateExpression(&checked_expr));
 
+  Activation activation;
   AttributeContext::Request request;
   auto* auth = request.mutable_auth();
   (*auth->mutable_claims()->mutable_fields())["iss"].set_string_value(
@@ -762,18 +865,35 @@ BENCHMARK(BM_ProtoStructAccess);
 
 void BM_ProtoListAccess(benchmark::State& state) {
   google::protobuf::Arena arena;
-  Activation activation;
-  ASSERT_OK_AND_ASSIGN(ParsedExpr parsed_expr, parser::Parse(R"cel(
+  ASSERT_OK_AND_ASSIGN(
+      auto compiler_builder,
+      cel::NewCompilerBuilder(google::protobuf::DescriptorPool::generated_pool()));
+  ASSERT_THAT(compiler_builder->AddLibrary(cel::StandardCompilerLibrary()),
+              IsOk());
+  ASSERT_THAT(
+      compiler_builder->GetCheckerBuilder().AddVariable(cel::MakeVariableDecl(
+          "request",
+          cel::MessageType(AttributeContext::Request::descriptor()))),
+      IsOk());
+  ASSERT_OK_AND_ASSIGN(auto compiler, compiler_builder->Build());
+
+  ASSERT_OK_AND_ASSIGN(auto validation_result, compiler->Compile(R"cel(
       "//.../accessLevels/MY_LEVEL_4" in request.auth.access_levels
    )cel"));
+  ASSERT_TRUE(validation_result.IsValid());
+  ASSERT_OK_AND_ASSIGN(auto ast, validation_result.ReleaseAst());
+
+  cel::expr::CheckedExpr checked_expr;
+  ASSERT_THAT(cel::AstToCheckedExpr(*ast, &checked_expr), IsOk());
+
   InterpreterOptions options = GetOptions(arena);
   auto builder = CreateCelExpressionBuilder(options);
   ASSERT_THAT(RegisterBuiltinFunctions(builder->GetRegistry(), options),
               IsOk());
 
-  ASSERT_OK_AND_ASSIGN(auto cel_expr,
-                       builder->CreateExpression(&parsed_expr.expr(), nullptr));
+  ASSERT_OK_AND_ASSIGN(auto cel_expr, builder->CreateExpression(&checked_expr));
 
+  Activation activation;
   AttributeContext::Request request;
   auto* auth = request.mutable_auth();
   auth->add_access_levels("//.../accessLevels/MY_LEVEL_0");

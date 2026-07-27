@@ -702,12 +702,25 @@ BENCHMARK(BM_HasMap);
 
 void BM_HasProto(benchmark::State& state) {
   RuntimeOptions options = GetOptions();
-  auto runtime = StandardRuntimeOrDie(options);
+  auto runtime =
+      StandardRuntimeOrDie(options, google::protobuf::DescriptorPool::generated_pool());
 
-  ASSERT_OK_AND_ASSIGN(ParsedExpr parsed_expr,
-                       Parse("has(request.path) && !has(request.ip)"));
-  ASSERT_OK_AND_ASSIGN(auto cel_expr, ProtobufRuntimeAdapter::CreateProgram(
-                                          *runtime, parsed_expr));
+  ASSERT_OK_AND_ASSIGN(
+      auto builder,
+      NewCompilerBuilder(google::protobuf::DescriptorPool::generated_pool()));
+  ASSERT_THAT(builder->AddLibrary(StandardCompilerLibrary()), IsOk());
+  ASSERT_THAT(builder->GetCheckerBuilder().AddVariable(MakeVariableDecl(
+                  "request", cel::MessageType(RequestContext::descriptor()))),
+              IsOk());
+  ASSERT_OK_AND_ASSIGN(auto compiler, builder->Build());
+
+  ASSERT_OK_AND_ASSIGN(
+      ValidationResult validation_result,
+      compiler->Compile("has(request.path) && !has(request.ip)"));
+  ASSERT_TRUE(validation_result.IsValid());
+  ASSERT_OK_AND_ASSIGN(auto ast, validation_result.ReleaseAst());
+
+  ASSERT_OK_AND_ASSIGN(auto cel_expr, runtime->CreateProgram(std::move(ast)));
 
   google::protobuf::Arena arena;
   Activation activation;
@@ -729,13 +742,25 @@ BENCHMARK(BM_HasProto);
 
 void BM_HasProtoMap(benchmark::State& state) {
   RuntimeOptions options = GetOptions();
-  auto runtime = StandardRuntimeOrDie(options);
+  auto runtime =
+      StandardRuntimeOrDie(options, google::protobuf::DescriptorPool::generated_pool());
 
-  ASSERT_OK_AND_ASSIGN(ParsedExpr parsed_expr,
-                       Parse("has(request.headers.create_time) && "
-                             "!has(request.headers.update_time)"));
-  ASSERT_OK_AND_ASSIGN(auto cel_expr, ProtobufRuntimeAdapter::CreateProgram(
-                                          *runtime, parsed_expr));
+  ASSERT_OK_AND_ASSIGN(
+      auto builder,
+      NewCompilerBuilder(google::protobuf::DescriptorPool::generated_pool()));
+  ASSERT_THAT(builder->AddLibrary(StandardCompilerLibrary()), IsOk());
+  ASSERT_THAT(builder->GetCheckerBuilder().AddVariable(MakeVariableDecl(
+                  "request", cel::MessageType(RequestContext::descriptor()))),
+              IsOk());
+  ASSERT_OK_AND_ASSIGN(auto compiler, builder->Build());
+
+  ASSERT_OK_AND_ASSIGN(ValidationResult validation_result,
+                       compiler->Compile("has(request.headers.create_time) && "
+                                         "!has(request.headers.update_time)"));
+  ASSERT_TRUE(validation_result.IsValid());
+  ASSERT_OK_AND_ASSIGN(auto ast, validation_result.ReleaseAst());
+
+  ASSERT_OK_AND_ASSIGN(auto cel_expr, runtime->CreateProgram(std::move(ast)));
 
   google::protobuf::Arena arena;
   Activation activation;
@@ -755,15 +780,27 @@ void BM_HasProtoMap(benchmark::State& state) {
 BENCHMARK(BM_HasProtoMap);
 
 void BM_ReadProtoMap(benchmark::State& state) {
-  ASSERT_OK_AND_ASSIGN(ParsedExpr parsed_expr, Parse(R"cel(
+  RuntimeOptions options = GetOptions();
+  auto runtime =
+      StandardRuntimeOrDie(options, google::protobuf::DescriptorPool::generated_pool());
+
+  ASSERT_OK_AND_ASSIGN(
+      auto builder,
+      NewCompilerBuilder(google::protobuf::DescriptorPool::generated_pool()));
+  ASSERT_THAT(builder->AddLibrary(StandardCompilerLibrary()), IsOk());
+  ASSERT_THAT(builder->GetCheckerBuilder().AddVariable(MakeVariableDecl(
+                  "request", cel::MessageType(RequestContext::descriptor()))),
+              IsOk());
+  ASSERT_OK_AND_ASSIGN(auto compiler, builder->Build());
+
+  ASSERT_OK_AND_ASSIGN(ValidationResult validation_result,
+                       compiler->Compile(R"cel(
      request.headers.create_time == "2021-01-01"
    )cel"));
+  ASSERT_TRUE(validation_result.IsValid());
+  ASSERT_OK_AND_ASSIGN(auto ast, validation_result.ReleaseAst());
 
-  RuntimeOptions options = GetOptions();
-  auto runtime = StandardRuntimeOrDie(options);
-
-  ASSERT_OK_AND_ASSIGN(auto cel_expr, ProtobufRuntimeAdapter::CreateProgram(
-                                          *runtime, parsed_expr));
+  ASSERT_OK_AND_ASSIGN(auto cel_expr, runtime->CreateProgram(std::move(ast)));
 
   google::protobuf::Arena arena;
   Activation activation;
@@ -783,15 +820,27 @@ void BM_ReadProtoMap(benchmark::State& state) {
 BENCHMARK(BM_ReadProtoMap);
 
 void BM_NestedProtoFieldRead(benchmark::State& state) {
-  ASSERT_OK_AND_ASSIGN(ParsedExpr parsed_expr, Parse(R"cel(
+  RuntimeOptions options = GetOptions();
+  auto runtime =
+      StandardRuntimeOrDie(options, google::protobuf::DescriptorPool::generated_pool());
+
+  ASSERT_OK_AND_ASSIGN(
+      auto builder,
+      NewCompilerBuilder(google::protobuf::DescriptorPool::generated_pool()));
+  ASSERT_THAT(builder->AddLibrary(StandardCompilerLibrary()), IsOk());
+  ASSERT_THAT(builder->GetCheckerBuilder().AddVariable(MakeVariableDecl(
+                  "request", cel::MessageType(RequestContext::descriptor()))),
+              IsOk());
+  ASSERT_OK_AND_ASSIGN(auto compiler, builder->Build());
+
+  ASSERT_OK_AND_ASSIGN(ValidationResult validation_result,
+                       compiler->Compile(R"cel(
       !request.a.b.c.d.e
    )cel"));
+  ASSERT_TRUE(validation_result.IsValid());
+  ASSERT_OK_AND_ASSIGN(auto ast, validation_result.ReleaseAst());
 
-  RuntimeOptions options = GetOptions();
-  auto runtime = StandardRuntimeOrDie(options);
-
-  ASSERT_OK_AND_ASSIGN(auto cel_expr, ProtobufRuntimeAdapter::CreateProgram(
-                                          *runtime, parsed_expr));
+  ASSERT_OK_AND_ASSIGN(auto cel_expr, runtime->CreateProgram(std::move(ast)));
 
   google::protobuf::Arena arena;
   Activation activation;
@@ -811,15 +860,27 @@ void BM_NestedProtoFieldRead(benchmark::State& state) {
 BENCHMARK(BM_NestedProtoFieldRead);
 
 void BM_NestedProtoFieldReadDefaults(benchmark::State& state) {
-  ASSERT_OK_AND_ASSIGN(ParsedExpr parsed_expr, Parse(R"cel(
+  RuntimeOptions options = GetOptions();
+  auto runtime =
+      StandardRuntimeOrDie(options, google::protobuf::DescriptorPool::generated_pool());
+
+  ASSERT_OK_AND_ASSIGN(
+      auto builder,
+      NewCompilerBuilder(google::protobuf::DescriptorPool::generated_pool()));
+  ASSERT_THAT(builder->AddLibrary(StandardCompilerLibrary()), IsOk());
+  ASSERT_THAT(builder->GetCheckerBuilder().AddVariable(MakeVariableDecl(
+                  "request", cel::MessageType(RequestContext::descriptor()))),
+              IsOk());
+  ASSERT_OK_AND_ASSIGN(auto compiler, builder->Build());
+
+  ASSERT_OK_AND_ASSIGN(ValidationResult validation_result,
+                       compiler->Compile(R"cel(
       !request.a.b.c.d.e
    )cel"));
+  ASSERT_TRUE(validation_result.IsValid());
+  ASSERT_OK_AND_ASSIGN(auto ast, validation_result.ReleaseAst());
 
-  RuntimeOptions options = GetOptions();
-  auto runtime = StandardRuntimeOrDie(options);
-
-  ASSERT_OK_AND_ASSIGN(auto cel_expr, ProtobufRuntimeAdapter::CreateProgram(
-                                          *runtime, parsed_expr));
+  ASSERT_OK_AND_ASSIGN(auto cel_expr, runtime->CreateProgram(std::move(ast)));
 
   google::protobuf::Arena arena;
   Activation activation;
@@ -838,15 +899,28 @@ void BM_NestedProtoFieldReadDefaults(benchmark::State& state) {
 BENCHMARK(BM_NestedProtoFieldReadDefaults);
 
 void BM_ProtoStructAccess(benchmark::State& state) {
-  ASSERT_OK_AND_ASSIGN(ParsedExpr parsed_expr, Parse(R"cel(
+  RuntimeOptions options = GetOptions();
+  auto runtime =
+      StandardRuntimeOrDie(options, google::protobuf::DescriptorPool::generated_pool());
+
+  ASSERT_OK_AND_ASSIGN(
+      auto builder,
+      NewCompilerBuilder(google::protobuf::DescriptorPool::generated_pool()));
+  ASSERT_THAT(builder->AddLibrary(StandardCompilerLibrary()), IsOk());
+  ASSERT_THAT(builder->GetCheckerBuilder().AddVariable(MakeVariableDecl(
+                  "request",
+                  cel::MessageType(AttributeContext::Request::descriptor()))),
+              IsOk());
+  ASSERT_OK_AND_ASSIGN(auto compiler, builder->Build());
+
+  ASSERT_OK_AND_ASSIGN(ValidationResult validation_result,
+                       compiler->Compile(R"cel(
       has(request.auth.claims.iss) && request.auth.claims.iss == 'accounts.google.com'
    )cel"));
+  ASSERT_TRUE(validation_result.IsValid());
+  ASSERT_OK_AND_ASSIGN(auto ast, validation_result.ReleaseAst());
 
-  RuntimeOptions options = GetOptions();
-  auto runtime = StandardRuntimeOrDie(options);
-
-  ASSERT_OK_AND_ASSIGN(auto cel_expr, ProtobufRuntimeAdapter::CreateProgram(
-                                          *runtime, parsed_expr));
+  ASSERT_OK_AND_ASSIGN(auto cel_expr, runtime->CreateProgram(std::move(ast)));
 
   google::protobuf::Arena arena;
   Activation activation;
@@ -868,15 +942,28 @@ void BM_ProtoStructAccess(benchmark::State& state) {
 BENCHMARK(BM_ProtoStructAccess);
 
 void BM_ProtoListAccess(benchmark::State& state) {
-  ASSERT_OK_AND_ASSIGN(ParsedExpr parsed_expr, Parse(R"cel(
+  RuntimeOptions options = GetOptions();
+  auto runtime =
+      StandardRuntimeOrDie(options, google::protobuf::DescriptorPool::generated_pool());
+
+  ASSERT_OK_AND_ASSIGN(
+      auto builder,
+      NewCompilerBuilder(google::protobuf::DescriptorPool::generated_pool()));
+  ASSERT_THAT(builder->AddLibrary(StandardCompilerLibrary()), IsOk());
+  ASSERT_THAT(builder->GetCheckerBuilder().AddVariable(MakeVariableDecl(
+                  "request",
+                  cel::MessageType(AttributeContext::Request::descriptor()))),
+              IsOk());
+  ASSERT_OK_AND_ASSIGN(auto compiler, builder->Build());
+
+  ASSERT_OK_AND_ASSIGN(ValidationResult validation_result,
+                       compiler->Compile(R"cel(
       "//.../accessLevels/MY_LEVEL_4" in request.auth.access_levels
    )cel"));
+  ASSERT_TRUE(validation_result.IsValid());
+  ASSERT_OK_AND_ASSIGN(auto ast, validation_result.ReleaseAst());
 
-  RuntimeOptions options = GetOptions();
-  auto runtime = StandardRuntimeOrDie(options);
-
-  ASSERT_OK_AND_ASSIGN(auto cel_expr, ProtobufRuntimeAdapter::CreateProgram(
-                                          *runtime, parsed_expr));
+  ASSERT_OK_AND_ASSIGN(auto cel_expr, runtime->CreateProgram(std::move(ast)));
 
   google::protobuf::Arena arena;
   Activation activation;
