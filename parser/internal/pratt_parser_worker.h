@@ -76,7 +76,8 @@ class ParserWorker {
   // ID and Position tracking
   int64_t NextId(int32_t position);
   int64_t NextId(const Token& token) { return NextId(token.start); }
-  int64_t NextId() { return next_id_++; }
+  int64_t NextId();
+  bool NodeLimitExceeded();
   int64_t CopyId(int64_t id);
   void EraseId(int64_t id);
 
@@ -1048,6 +1049,11 @@ std::optional<ExprNode> PrattParserWorker<ExprNode>::TryExpandMacro(
   auto expander =
       ast_factory_.NewMacroExprExpander(function, args.size(), is_receiver);
   if (!expander) {
+    return std::nullopt;
+  }
+  if (NodeLimitExceeded()) {
+    ReportError(expr_id,
+                "could not expand macro: expression node limit exceeded");
     return std::nullopt;
   }
 

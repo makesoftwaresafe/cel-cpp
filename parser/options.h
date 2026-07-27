@@ -42,6 +42,14 @@ struct ParserOptions final {
   int error_recovery_token_lookahead_limit =
       ::cel::parser_internal::kDefaultErrorRecoveryTokenLookaheadLimit;
 
+  // Limit on the number of expression nodes in the abstract syntax tree for the
+  // expression. This prevents cases where macro expansion results in an AST
+  // that is larger than expected from the source expression. Once exceeded,
+  // the parser will record an error and stop expanding macros but continue
+  // parsing to report other errors.
+  int expression_node_limit =
+      ::cel::parser_internal::kDefaultExpressionNodeLimit;
+
   // Add macro calls to macro_calls list in source_info.
   bool add_macro_calls = ::cel::parser_internal::kDefaultAddMacroCalls;
 

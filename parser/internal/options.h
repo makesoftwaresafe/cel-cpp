@@ -21,6 +21,7 @@ inline constexpr int kDefaultErrorRecoveryLimit = 12;
 inline constexpr int kDefaultMaxRecursionDepth = 32;
 inline constexpr int kExpressionSizeCodepointLimit = 100'000;
 inline constexpr int kDefaultErrorRecoveryTokenLookaheadLimit = 512;
+inline constexpr int kDefaultExpressionNodeLimit = 100'000;
 inline constexpr bool kDefaultAddMacroCalls = false;
 
 }  // namespace cel::parser_internal

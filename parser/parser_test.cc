@@ -2140,6 +2140,55 @@ TEST_P(ParserTest, ParseFailurePopulatesIssues) {
   EXPECT_EQ(issues[0].location().column, 3);
 }
 
+TEST_P(ParserTest, ExpressionNodeLimitExceeded) {
+  auto builder = cel::NewParserBuilder(options_);
+  builder->GetOptions().expression_node_limit = 2;
+  ASSERT_OK_AND_ASSIGN(auto parser, std::move(*builder).Build());
+
+  ASSERT_OK_AND_ASSIGN(auto source, cel::NewSource("a + b + c", "test.cel"));
+  std::vector<cel::ParseIssue> issues;
+  auto ast_result = parser->Parse(*source, &issues);
+  EXPECT_THAT(ast_result, Not(IsOk()));
+  ASSERT_THAT(issues, testing::Not(testing::IsEmpty()));
+  EXPECT_THAT(ast_result.status().message(),
+              HasSubstr("expression node limit exceeded"));
+  EXPECT_THAT(issues[0].message(), HasSubstr("expression node limit exceeded"));
+}
+
+TEST_P(ParserTest, MacroExpansionNodeLimitExceeded) {
+  auto builder = cel::NewParserBuilder(options_);
+  builder->GetOptions().expression_node_limit = 5;
+  ASSERT_OK_AND_ASSIGN(auto parser, std::move(*builder).Build());
+
+  ASSERT_OK_AND_ASSIGN(
+      auto source, cel::NewSource("[1, 2, 3, 4, 5].map(x, x * 2)", "test.cel"));
+  std::vector<cel::ParseIssue> issues;
+  auto ast_result = parser->Parse(*source, &issues);
+  EXPECT_THAT(ast_result, Not(IsOk()));
+  ASSERT_THAT(issues, testing::Not(testing::IsEmpty()));
+  EXPECT_THAT(ast_result.status().message(),
+              HasSubstr("expression node limit exceeded"));
+  EXPECT_THAT(
+      issues,
+      testing::Contains(testing::Property(
+          &cel::ParseIssue::message,
+          HasSubstr(
+              "could not expand macro: expression node limit exceeded"))));
+}
+
+TEST_P(ParserTest, MacroExpansionNodeLimitNotExceeded) {
+  auto builder = cel::NewParserBuilder(options_);
+  builder->GetOptions().expression_node_limit = 100;
+  ASSERT_OK_AND_ASSIGN(auto parser, std::move(*builder).Build());
+
+  ASSERT_OK_AND_ASSIGN(
+      auto source, cel::NewSource("[1, 2, 3, 4, 5].map(x, x * 2)", "test.cel"));
+  std::vector<cel::ParseIssue> issues;
+  auto ast_result = parser->Parse(*source, &issues);
+  ASSERT_THAT(ast_result, IsOk());
+  EXPECT_THAT(issues, testing::IsEmpty());
+}
+
 std::string ExpressionTestName(
     const testing::TestParamInfo<std::tuple<TestInfo, bool>>& test_info) {
   const TestInfo& info = std::get<0>(test_info.param);

@@ -165,8 +165,9 @@ SourceRange SourceRangeFromParserRuleContext(
 
 class ParserMacroExprFactory final : public MacroExprFactory {
  public:
-  explicit ParserMacroExprFactory(const cel::Source& source)
-      : source_(source) {}
+  explicit ParserMacroExprFactory(const cel::Source& source,
+                                  int expression_node_limit)
+      : source_(source), expression_node_limit_(expression_node_limit) {}
 
   void BeginMacro(SourceRange macro_position) {
     macro_position_ = macro_position;
@@ -203,11 +204,17 @@ class ParserMacroExprFactory final : public MacroExprFactory {
 
   int64_t NextId(const SourceRange& range) {
     auto id = expr_id_++;
+    if (id > expression_node_limit_ && !node_limit_exceeded_) {
+      node_limit_exceeded_ = true;
+      ReportError(range, "expression node limit exceeded");
+    }
     if (range.begin != -1 || range.end != -1) {
       positions_.insert(std::pair{id, range});
     }
     return id;
   }
+
+  bool is_node_limit_exceeded() const { return node_limit_exceeded_; }
 
   bool HasErrors() const { return error_count_ != 0; }
 
@@ -409,6 +416,8 @@ class ParserMacroExprFactory final : public MacroExprFactory {
   std::vector<ParserError> errors_;
   size_t error_count_ = 0;
   const Source& source_;
+  int expression_node_limit_;
+  bool node_limit_exceeded_ = false;
   SourceRange macro_position_;
 };
 
@@ -623,13 +632,14 @@ class ParserVisitor final : public CelBaseVisitor,
                             public antlr4::BaseErrorListener {
  public:
   ParserVisitor(const cel::Source& source, int max_recursion_depth,
+                int max_expression_node_count,
                 const cel::MacroRegistry& macro_registry,
                 bool add_macro_calls = false,
                 bool enable_optional_syntax = false,
                 bool enable_quoted_identifiers = false,
                 bool enable_variadic_logical_operators = false)
       : source_(source),
-        factory_(source_),
+        factory_(source_, max_expression_node_count),
         macro_registry_(macro_registry),
         recursion_depth_(0),
         max_recursion_depth_(max_recursion_depth),
@@ -1227,6 +1237,8 @@ std::vector<ListExprElement> ParserVisitor::visitList(
     if (!enable_optional_syntax_ && expr_ctx->opt != nullptr) {
       factory_.ReportError(SourceRangeFromParserRuleContext(ctx),
                            "unsupported syntax '?'");
+      // Still generate an ID to detect node limit exceeded.
+      factory_.NextId(SourceRangeFromParserRuleContext(ctx));
       rv.push_back(factory_.NewListElement(factory_.NewUnspecified(0), false));
       continue;
     }
@@ -1298,6 +1310,9 @@ std::vector<MapExprEntry> ParserVisitor::visitEntries(
     if (!enable_optional_syntax_ && ctx->keys[i]->opt) {
       factory_.ReportError(SourceRangeFromParserRuleContext(ctx),
                            "unsupported syntax '?'");
+      // Still generate an ID to detect node limit exceeded.
+      factory_.NextId(SourceRangeFromParserRuleContext(ctx));
+      factory_.NextId(SourceRangeFromParserRuleContext(ctx));
       res.push_back(factory_.NewMapEntry(0, factory_.NewUnspecified(0),
                                          factory_.NewUnspecified(0), false));
       continue;
@@ -1461,29 +1476,34 @@ std::vector<cel::ParseIssue> ParserVisitor::CollectIssues() {
 Expr ParserVisitor::GlobalCallOrMacroImpl(int64_t expr_id,
                                           absl::string_view function,
                                           std::vector<Expr> args) {
-  if (auto macro = macro_registry_.FindMacro(function, args.size(), false);
-      macro) {
-    std::vector<Expr> macro_args;
-    if (add_macro_calls_) {
-      macro_args.reserve(args.size());
-      for (const auto& arg : args) {
-        macro_args.push_back(factory_.BuildMacroCallArg(arg));
-      }
-    }
-    factory_.BeginMacro(factory_.GetSourceRange(expr_id));
-    auto expr = macro->Expand(factory_, std::nullopt, absl::MakeSpan(args));
-    factory_.EndMacro();
-    if (expr) {
-      if (add_macro_calls_) {
-        factory_.AddMacroCall(expr->id(), function, std::nullopt,
-                              std::move(macro_args));
-      }
-      // We did not end up using `expr_id`. Delete metadata.
-      factory_.EraseId(expr_id);
-      return std::move(*expr);
+  auto macro = macro_registry_.FindMacro(function, args.size(), false);
+  if (!macro) {
+    return factory_.NewCall(expr_id, function, std::move(args));
+  }
+  if (factory_.is_node_limit_exceeded()) {
+    return factory_.ReportError(
+        factory_.GetSourceRange(expr_id),
+        "could not expand macro: expression node limit exceeded");
+  }
+  std::vector<Expr> macro_args;
+  if (add_macro_calls_) {
+    macro_args.reserve(args.size());
+    for (const auto& arg : args) {
+      macro_args.push_back(factory_.BuildMacroCallArg(arg));
     }
   }
-
+  factory_.BeginMacro(factory_.GetSourceRange(expr_id));
+  auto expr = macro->Expand(factory_, std::nullopt, absl::MakeSpan(args));
+  factory_.EndMacro();
+  if (expr) {
+    if (add_macro_calls_) {
+      factory_.AddMacroCall(expr->id(), function, std::nullopt,
+                            std::move(macro_args));
+    }
+    // We did not end up using `expr_id`. Delete metadata.
+    factory_.EraseId(expr_id);
+    return std::move(*expr);
+  }
   return factory_.NewCall(expr_id, function, std::move(args));
 }
 
@@ -1491,30 +1511,39 @@ Expr ParserVisitor::ReceiverCallOrMacroImpl(int64_t expr_id,
                                             absl::string_view function,
                                             Expr target,
                                             std::vector<Expr> args) {
-  if (auto macro = macro_registry_.FindMacro(function, args.size(), true);
-      macro) {
-    Expr macro_target;
-    std::vector<Expr> macro_args;
-    if (add_macro_calls_) {
-      macro_args.reserve(args.size());
-      macro_target = factory_.BuildMacroCallArg(target);
-      for (const auto& arg : args) {
-        macro_args.push_back(factory_.BuildMacroCallArg(arg));
-      }
-    }
-    factory_.BeginMacro(factory_.GetSourceRange(expr_id));
-    auto expr = macro->Expand(factory_, std::ref(target), absl::MakeSpan(args));
-    factory_.EndMacro();
-    if (expr) {
-      if (add_macro_calls_) {
-        factory_.AddMacroCall(expr->id(), function, std::move(macro_target),
-                              std::move(macro_args));
-      }
-      // We did not end up using `expr_id`. Delete metadata.
-      factory_.EraseId(expr_id);
-      return std::move(*expr);
+  auto macro = macro_registry_.FindMacro(function, args.size(), true);
+  if (!macro) {
+    return factory_.NewMemberCall(expr_id, function, std::move(target),
+                                  std::move(args));
+  }
+  if (factory_.is_node_limit_exceeded()) {
+    return factory_.ReportError(
+        factory_.GetSourceRange(expr_id),
+        "could not expand macro: expression node limit exceeded");
+  }
+
+  Expr macro_target;
+  std::vector<Expr> macro_args;
+  if (add_macro_calls_) {
+    macro_args.reserve(args.size());
+    macro_target = factory_.BuildMacroCallArg(target);
+    for (const auto& arg : args) {
+      macro_args.push_back(factory_.BuildMacroCallArg(arg));
     }
   }
+  factory_.BeginMacro(factory_.GetSourceRange(expr_id));
+  auto expr = macro->Expand(factory_, std::ref(target), absl::MakeSpan(args));
+  factory_.EndMacro();
+  if (expr) {
+    if (add_macro_calls_) {
+      factory_.AddMacroCall(expr->id(), function, std::move(macro_target),
+                            std::move(macro_args));
+    }
+    // We did not end up using `expr_id`. Delete metadata.
+    factory_.EraseId(expr_id);
+    return std::move(*expr);
+  }
+
   return factory_.NewMemberCall(expr_id, function, std::move(target),
                                 std::move(args));
 }
@@ -1677,8 +1706,9 @@ absl::StatusOr<ParseResult> ParseImpl(
     CelParser parser(&tokens);
     ExprRecursionListener listener(options.max_recursion_depth);
     ParserVisitor visitor(
-        source, options.max_recursion_depth, registry, options.add_macro_calls,
-        options.enable_optional_syntax, options.enable_quoted_identifiers,
+        source, options.max_recursion_depth, options.expression_node_limit,
+        registry, options.add_macro_calls, options.enable_optional_syntax,
+        options.enable_quoted_identifiers,
         options.enable_variadic_logical_operators);
 
     lexer.removeErrorListeners();
