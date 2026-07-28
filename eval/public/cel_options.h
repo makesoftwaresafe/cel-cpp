@@ -222,7 +222,7 @@ struct InterpreterOptions {
   // When enabled, the planner will attempt to use a more performant execution
   // path for field access when the type is known at plan time, instead of using
   // the generic field access implementation.
-  bool enable_typed_field_access = false;
+  bool enable_typed_field_access = true;
 };
 // LINT.ThenChange(//depot/google3/runtime/runtime_options.h)
 
