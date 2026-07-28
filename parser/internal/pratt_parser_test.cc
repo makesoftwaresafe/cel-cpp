@@ -67,7 +67,7 @@ std::string TestName(const testing::TestParamInfo<T>& test_info) {
 }
 
 absl::StatusOr<std::unique_ptr<cel::Ast>> Parse(
-    std::string_view expression,
+    absl::string_view expression,
     const cel::ParserOptions& options = cel::ParserOptions(),
     std::vector<cel::ParseIssue>* issues = nullptr) {
 #if USE_PRATT_PARSER
@@ -82,15 +82,15 @@ absl::StatusOr<std::unique_ptr<cel::Ast>> Parse(
 }
 
 struct TestCase {
-  std::string_view source;
-  std::string_view expected_ast;
+  absl::string_view source;
+  absl::string_view expected_ast;
   bool enable_optional_syntax = false;
   bool enable_variadic_logical_operators = false;
 };
 
 class PrattParserTest : public testing::TestWithParam<TestCase> {};
 
-std::string_view ConstantKind(const cel::Constant& c) {
+absl::string_view ConstantKind(const cel::Constant& c) {
   switch (c.kind_case()) {
     case ConstantKindCase::kBool:
       return "bool";
@@ -111,7 +111,7 @@ std::string_view ConstantKind(const cel::Constant& c) {
   }
 }
 
-std::string_view ExprKind(const cel::Expr& e) {
+absl::string_view ExprKind(const cel::Expr& e) {
   switch (e.kind_case()) {
     case ExprKindCase::kConstant:
       // special cased, this doesn't appear.
@@ -155,12 +155,12 @@ class KindAndIdAdorner : public cel::test::ExpressionAdorner {
   }
 };
 
-std::string Unindent(std::string_view multiline) {
+std::string Unindent(absl::string_view multiline) {
   std::vector<std::string> unindented_lines;
   int indent = -1;
-  for (std::string_view line : absl::StrSplit(multiline, '\n')) {
+  for (absl::string_view line : absl::StrSplit(multiline, '\n')) {
     std::size_t pos = line.find_first_not_of(" \t");
-    if (pos == std::string_view::npos) continue;
+    if (pos == absl::string_view::npos) continue;
     if (indent == -1) indent = pos;
     unindented_lines.push_back(std::string(line.substr(indent)));
   }
@@ -1095,8 +1095,8 @@ INSTANTIATE_TEST_SUITE_P(PrattParserTest, PrattParserTest,
                          TestName<TestCase>);
 
 struct ErrorTestCase {
-  std::string_view source;
-  std::string_view expected_error;
+  absl::string_view source;
+  absl::string_view expected_error;
   bool enable_optional_syntax = false;
   bool enable_quoted_identifiers = false;
 };
@@ -1505,8 +1505,8 @@ TEST(ParserWorkerTest, GetTokenTextBoundsChecking) {
 }
 
 struct MacroTestCase {
-  std::string_view source;
-  std::string_view expected_ast;
+  absl::string_view source;
+  absl::string_view expected_ast;
 };
 
 class PrattParserMacroTest : public testing::TestWithParam<MacroTestCase> {};
