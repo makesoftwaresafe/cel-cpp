@@ -198,8 +198,9 @@ void ParserWorker::SynchronizeOnDelimiter() {
 
 int64_t ParserWorker::NextId(int32_t position) {
   int64_t id = next_id_++;
-  if (id > options_.expression_node_limit) {
+  if (id > options_.expression_node_limit && !node_limit_exceeded_) {
     ReportError(position, "expression node limit exceeded");
+    node_limit_exceeded_ = true;
   }
   if (position >= 0) {
     positions_.insert({id, position});
@@ -209,9 +210,7 @@ int64_t ParserWorker::NextId(int32_t position) {
 
 int64_t ParserWorker::NextId() { return NextId(-1); }
 
-bool ParserWorker::NodeLimitExceeded() {
-  return next_id_ > options_.expression_node_limit;
-}
+bool ParserWorker::NodeLimitExceeded() { return node_limit_exceeded_; }
 
 int64_t ParserWorker::CopyId(int64_t id) {
   if (id == 0) {

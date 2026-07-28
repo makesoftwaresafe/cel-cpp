@@ -98,6 +98,7 @@ class ParserWorker {
   Token peek_token_;
   int recursion_depth_ = 0;
   int64_t next_id_ = 1;
+  bool node_limit_exceeded_ = false;
   absl::flat_hash_map<int64_t, int32_t> positions_;
   std::vector<cel::ParseIssue>* absl_nullable parse_issues_;
   int error_count_ = 0;
