@@ -39,6 +39,8 @@ namespace cel {
 
 namespace {
 
+constexpr absl::string_view kOptionalMapVar = "@target";
+
 using google::api::expr::common::CelOperator;
 
 bool IsSimpleIdentifier(const Expr& expr) {
@@ -315,20 +317,50 @@ absl::optional<Expr> ExpandOptMapMacro(MacroExprFactory& factory, Expr& target,
   }
   auto var_name = args[0].ident_expr().name();
 
-  auto target_copy = factory.Copy(target);
-  std::vector<Expr> call_args;
-  call_args.reserve(3);
-  call_args.push_back(factory.NewMemberCall("hasValue", std::move(target)));
+  if (target.has_ident_expr()) {
+    auto target_copy = factory.Copy(target);
+    std::vector<Expr> call_args;
+    call_args.reserve(3);
+    call_args.push_back(factory.NewMemberCall("hasValue", std::move(target)));
+    auto iter_range = factory.NewList();
+    auto accu_init = factory.NewMemberCall("value", std::move(target_copy));
+    auto condition = factory.NewBoolConst(false);
+    auto fold = factory.NewComprehension(
+        "#unused", std::move(iter_range), std::move(var_name),
+        std::move(accu_init), std::move(condition), std::move(args[0]),
+        std::move(args[1]));
+    call_args.push_back(factory.NewCall("optional.of", std::move(fold)));
+    call_args.push_back(factory.NewCall("optional.none"));
+    return factory.NewCall(CelOperator::CONDITIONAL, std::move(call_args));
+  }
+
+  // If the target is complex, use an internal bind expression to avoid
+  // repeating it and blowing up the AST in the expansion
+  auto tmp = factory.NewIdent(kOptionalMapVar);
+  auto tmp_copy = factory.Copy(tmp);
+
   auto iter_range = factory.NewList();
-  auto accu_init = factory.NewMemberCall("value", std::move(target_copy));
+  auto accu_init = factory.NewMemberCall("value", std::move(tmp_copy));
   auto condition = factory.NewBoolConst(false);
+  auto loop_step = std::move(args[0]);
   auto fold = factory.NewComprehension(
       "#unused", std::move(iter_range), std::move(var_name),
-      std::move(accu_init), std::move(condition), std::move(args[0]),
+      std::move(accu_init), std::move(condition), std::move(loop_step),
       std::move(args[1]));
+  std::vector<Expr> call_args;
+  call_args.reserve(3);
+  call_args.push_back(factory.NewMemberCall("hasValue", std::move(tmp)));
   call_args.push_back(factory.NewCall("optional.of", std::move(fold)));
   call_args.push_back(factory.NewCall("optional.none"));
-  return factory.NewCall(CelOperator::CONDITIONAL, std::move(call_args));
+  auto result = factory.NewCall(CelOperator::CONDITIONAL, std::move(call_args));
+
+  iter_range = factory.NewList();
+  accu_init = std::move(target);
+  condition = factory.NewBoolConst(false);
+  loop_step = factory.NewIdent(kOptionalMapVar);
+  return factory.NewComprehension(
+      "#unused", std::move(iter_range), kOptionalMapVar, std::move(accu_init),
+      std::move(condition), loop_step, std::move(result));
 }
 
 Macro MakeOptMapMacro() {
@@ -354,19 +386,47 @@ absl::optional<Expr> ExpandOptFlatMapMacro(MacroExprFactory& factory,
   }
   auto var_name = args[0].ident_expr().name();
 
-  auto target_copy = factory.Copy(target);
+  if (target.has_ident_expr()) {
+    auto target_copy = factory.Copy(target);
+    std::vector<Expr> call_args;
+    call_args.reserve(3);
+    call_args.push_back(factory.NewMemberCall("hasValue", std::move(target)));
+    auto iter_range = factory.NewList();
+    auto accu_init = factory.NewMemberCall("value", std::move(target_copy));
+    auto condition = factory.NewBoolConst(false);
+    call_args.push_back(factory.NewComprehension(
+        "#unused", std::move(iter_range), std::move(var_name),
+        std::move(accu_init), std::move(condition), std::move(args[0]),
+        std::move(args[1])));
+    call_args.push_back(factory.NewCall("optional.none"));
+    return factory.NewCall(CelOperator::CONDITIONAL, std::move(call_args));
+  }
+
+  auto tmp = factory.NewIdent(kOptionalMapVar);
+  auto tmp_copy = factory.Copy(tmp);
+
+  auto iter_range = factory.NewList();
+  auto accu_init = factory.NewMemberCall("value", std::move(tmp_copy));
+  auto condition = factory.NewBoolConst(false);
+  auto loop_step = std::move(args[0]);
+  auto inner = factory.NewComprehension(
+      "#unused", std::move(iter_range), std::move(var_name),
+      std::move(accu_init), std::move(condition), std::move(loop_step),
+      std::move(args[1]));
   std::vector<Expr> call_args;
   call_args.reserve(3);
-  call_args.push_back(factory.NewMemberCall("hasValue", std::move(target)));
-  auto iter_range = factory.NewList();
-  auto accu_init = factory.NewMemberCall("value", std::move(target_copy));
-  auto condition = factory.NewBoolConst(false);
-  call_args.push_back(factory.NewComprehension(
-      "#unused", std::move(iter_range), std::move(var_name),
-      std::move(accu_init), std::move(condition), std::move(args[0]),
-      std::move(args[1])));
+  call_args.push_back(factory.NewMemberCall("hasValue", std::move(tmp)));
+  call_args.push_back(std::move(inner));
   call_args.push_back(factory.NewCall("optional.none"));
-  return factory.NewCall(CelOperator::CONDITIONAL, std::move(call_args));
+  auto result = factory.NewCall(CelOperator::CONDITIONAL, std::move(call_args));
+
+  iter_range = factory.NewList();
+  accu_init = std::move(target);
+  condition = factory.NewBoolConst(false);
+  loop_step = factory.NewIdent(kOptionalMapVar);
+  return factory.NewComprehension(
+      "#unused", std::move(iter_range), kOptionalMapVar, std::move(accu_init),
+      std::move(condition), loop_step, std::move(result));
 }
 
 Macro MakeOptFlatMapMacro() {

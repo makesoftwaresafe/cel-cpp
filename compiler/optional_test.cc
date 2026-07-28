@@ -111,11 +111,66 @@ optional.of(
         TestCase{
             .expr = "optional.of('foo').optMap(x, x)",
             .expected_ast = R"(
-_?_:_(
+__comprehension__(
+  // Variable
+  #unused,
+  // Target
+  []~list(dyn),
+  // Accumulator
+  @target,
+  // Init
   optional.of(
     "foo"~string
-  )~optional_type(string)^optional_of.hasValue()~bool^optional_hasValue,
+  )~optional_type(string)^optional_of,
+  // LoopCondition
+  false~bool,
+  // LoopStep
+  @target~optional_type(string)^@target,
+  // Result
+  _?_:_(
+    @target~optional_type(string)^@target.hasValue()~bool^optional_hasValue,
+    optional.of(
+      __comprehension__(
+        // Variable
+        #unused,
+        // Target
+        []~list(dyn),
+        // Accumulator
+        x,
+        // Init
+        @target~optional_type(string)^@target.value()~string^optional_value,
+        // LoopCondition
+        false~bool,
+        // LoopStep
+        x~string^x,
+        // Result
+        x~string^x)~string
+    )~optional_type(string)^optional_of,
+    optional.none()~optional_type(string)^optional_none
+  )~optional_type(string)^conditional)~optional_type(string)
+)",
+        },
+        TestCase{
+            .expr = "optional.of('foo').optFlatMap(x, optional.of(x))",
+            .expected_ast = R"(
+__comprehension__(
+  // Variable
+  #unused,
+  // Target
+  []~list(dyn),
+  // Accumulator
+  @target,
+  // Init
   optional.of(
+    "foo"~string
+  )~optional_type(string)^optional_of,
+  // LoopCondition
+  false~bool,
+  // LoopStep
+  @target~optional_type(string)^@target,
+  // Result
+  _?_:_(
+    @target~optional_type(string)^@target.hasValue()~bool^optional_hasValue,
     __comprehension__(
       // Variable
       #unused,
@@ -124,48 +179,17 @@ _?_:_(
       // Accumulator
       x,
       // Init
-      optional.of(
-        "foo"~string
-      )~optional_type(string)^optional_of.value()~string^optional_value,
+      @target~optional_type(string)^@target.value()~string^optional_value,
       // LoopCondition
       false~bool,
       // LoopStep
       x~string^x,
       // Result
-      x~string^x)~string
-  )~optional_type(string)^optional_of,
-  optional.none()~optional_type(string)^optional_none
-)~optional_type(string)^conditional
-)",
-        },
-        TestCase{
-            .expr = "optional.of('foo').optFlatMap(x, optional.of(x))",
-            .expected_ast = R"(
-_?_:_(
-  optional.of(
-    "foo"~string
-  )~optional_type(string)^optional_of.hasValue()~bool^optional_hasValue,
-  __comprehension__(
-    // Variable
-    #unused,
-    // Target
-    []~list(dyn),
-    // Accumulator
-    x,
-    // Init
-    optional.of(
-      "foo"~string
-    )~optional_type(string)^optional_of.value()~string^optional_value,
-    // LoopCondition
-    false~bool,
-    // LoopStep
-    x~string^x,
-    // Result
-    optional.of(
-      x~string^x
-    )~optional_type(string)^optional_of)~optional_type(string),
-  optional.none()~optional_type(string)^optional_none
-)~optional_type(string)^conditional
+      optional.of(
+        x~string^x
+      )~optional_type(string)^optional_of)~optional_type(string),
+    optional.none()~optional_type(string)^optional_none
+  )~optional_type(string)^conditional)~optional_type(string)
 )",
         },
         TestCase{
