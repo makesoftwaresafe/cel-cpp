@@ -470,6 +470,7 @@ cc_test(
         ":lists_functions",
         "//checker:type_check_issue",
         "//checker:validation_result",
+        "//common:ast",
         "//common:source",
         "//common:value",
         "//common:value_testing",

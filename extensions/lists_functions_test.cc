@@ -26,6 +26,7 @@
 #include "absl/strings/string_view.h"
 #include "checker/type_check_issue.h"
 #include "checker/validation_result.h"
+#include "common/ast.h"
 #include "common/source.h"
 #include "common/value.h"
 #include "common/value_testing.h"
@@ -123,6 +124,10 @@ INSTANTIATE_TEST_SUITE_P(
         // lists.range()
         {R"cel(lists.range(4) == [0,1,2,3])cel"},
         {R"cel(lists.range(0) == [])cel"},
+        {R"cel(lists.range(-1))cel",
+         "lists.range: size must be non-negative, got -1"},
+        {R"cel(lists.range(1000001))cel",
+         "lists.range: size 1000001 exceeds maximum allowed (1000000)"},
 
         // .reverse()
         {R"cel([5,1,2,3].reverse() == [3,2,1,5])cel"},
@@ -456,6 +461,85 @@ std::vector<ListsExtensionVersionTestCase> CreateListsExtensionVersionParams() {
 
 INSTANTIATE_TEST_SUITE_P(ListsExtensionVersionTest, ListsExtensionVersionTest,
                          ValuesIn(CreateListsExtensionVersionParams()));
+
+TEST(ListsFunctionsTest, CustomMaxRangeSizeOption) {
+  ListsExtensionOptions ext_options;
+  ext_options.max_range_size = 100;
+
+  ASSERT_OK_AND_ASSIGN(
+      auto compiler_builder,
+      NewCompilerBuilder(internal::GetTestingDescriptorPool()));
+  ASSERT_THAT(compiler_builder->AddLibrary(StandardCompilerLibrary()), IsOk());
+  ASSERT_THAT(compiler_builder->AddLibrary(ListsCompilerLibrary(ext_options)),
+              IsOk());
+  ASSERT_OK_AND_ASSIGN(auto compiler, std::move(*compiler_builder).Build());
+
+  ASSERT_OK_AND_ASSIGN(ValidationResult result,
+                       compiler->Compile("lists.range(101)", "<input>"));
+  ASSERT_TRUE(result.IsValid());
+  ASSERT_OK_AND_ASSIGN(std::unique_ptr<Ast> ast, result.ReleaseAst());
+
+  const auto runtime_options = RuntimeOptions{};
+  ASSERT_OK_AND_ASSIGN(
+      auto runtime_builder,
+      CreateStandardRuntimeBuilder(internal::GetTestingDescriptorPool(),
+                                   runtime_options));
+  ASSERT_THAT(RegisterListsFunctions(runtime_builder.function_registry(),
+                                     runtime_options, ext_options),
+              IsOk());
+  ASSERT_OK_AND_ASSIGN(auto runtime, std::move(runtime_builder).Build());
+  ASSERT_OK_AND_ASSIGN(auto program, runtime->CreateProgram(std::move(ast)));
+
+  google::protobuf::Arena arena;
+  Activation activation;
+  ASSERT_OK_AND_ASSIGN(Value eval_result,
+                       program->Evaluate(&arena, activation));
+  EXPECT_THAT(
+      eval_result,
+      ErrorValueIs(StatusIs(
+          testing::_,
+          HasSubstr("lists.range: size 101 exceeds maximum allowed (100)"))));
+}
+
+TEST(ListsFunctionsTest, HardCodedLimitAppliesWhenOptionIsLooser) {
+  ListsExtensionOptions ext_options;
+  ext_options.max_range_size = 2000000;
+
+  ASSERT_OK_AND_ASSIGN(
+      auto compiler_builder,
+      NewCompilerBuilder(internal::GetTestingDescriptorPool()));
+  ASSERT_THAT(compiler_builder->AddLibrary(StandardCompilerLibrary()), IsOk());
+  ASSERT_THAT(compiler_builder->AddLibrary(ListsCompilerLibrary(ext_options)),
+              IsOk());
+  ASSERT_OK_AND_ASSIGN(auto compiler, std::move(*compiler_builder).Build());
+
+  ASSERT_OK_AND_ASSIGN(ValidationResult result,
+                       compiler->Compile("lists.range(1000001)", "<input>"));
+  ASSERT_TRUE(result.IsValid());
+  ASSERT_OK_AND_ASSIGN(std::unique_ptr<Ast> ast, result.ReleaseAst());
+
+  const auto runtime_options = RuntimeOptions{};
+  ASSERT_OK_AND_ASSIGN(
+      auto runtime_builder,
+      CreateStandardRuntimeBuilder(internal::GetTestingDescriptorPool(),
+                                   runtime_options));
+  ASSERT_THAT(RegisterListsFunctions(runtime_builder.function_registry(),
+                                     runtime_options, ext_options),
+              IsOk());
+  ASSERT_OK_AND_ASSIGN(auto runtime, std::move(runtime_builder).Build());
+  ASSERT_OK_AND_ASSIGN(auto program, runtime->CreateProgram(std::move(ast)));
+
+  google::protobuf::Arena arena;
+  Activation activation;
+  ASSERT_OK_AND_ASSIGN(Value eval_result,
+                       program->Evaluate(&arena, activation));
+  EXPECT_THAT(
+      eval_result,
+      ErrorValueIs(StatusIs(
+          testing::_,
+          HasSubstr(
+              "lists.range: size 1000001 exceeds maximum allowed (1000000)"))));
+}
 
 }  // namespace
 }  // namespace cel::extensions

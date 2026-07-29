@@ -15,6 +15,8 @@
 #ifndef THIRD_PARTY_CEL_CPP_EXTENSIONS_LISTS_FUNCTIONS_H_
 #define THIRD_PARTY_CEL_CPP_EXTENSIONS_LISTS_FUNCTIONS_H_
 
+#include <cstdint>
+
 #include "absl/status/status.h"
 #include "checker/type_checker_builder.h"
 #include "compiler/compiler.h"
@@ -26,6 +28,18 @@
 namespace cel::extensions {
 
 constexpr int kListsExtensionLatestVersion = 2;
+
+struct ListsExtensionOptions {
+  int version = kListsExtensionLatestVersion;
+
+  // Maximum size allowed for lists.range().
+  // Setting a tighter limit (e.g. 100) will restrict the max size further.
+  // A standard limit of 1,000,000 applies if a tighter limit isn't
+  // configured.
+  int64_t max_range_size = 1000000;
+};
+
+using ListsFunctionsOptions = ListsExtensionOptions;
 
 // Register implementations for list extension functions.
 //
@@ -45,9 +59,17 @@ constexpr int kListsExtensionLatestVersion = 2;
 //
 // <list(T)>.sort() -> list(T)
 //
-absl::Status RegisterListsFunctions(FunctionRegistry& registry,
-                                    const RuntimeOptions& options,
-                                    int version = kListsExtensionLatestVersion);
+absl::Status RegisterListsFunctions(
+    FunctionRegistry& registry, const RuntimeOptions& options,
+    const ListsExtensionOptions& extension_options = {});
+
+inline absl::Status RegisterListsFunctions(FunctionRegistry& registry,
+                                           const RuntimeOptions& options,
+                                           int version) {
+  ListsExtensionOptions extension_options;
+  extension_options.version = version;
+  return RegisterListsFunctions(registry, options, extension_options);
+}
 
 // Register list macros.
 //
@@ -76,7 +98,14 @@ absl::Status RegisterListsMacros(MacroRegistry& registry,
 // <list(T)>.reverse() -> list(T)
 //
 // <list(T_)>.sort() -> list(T_) where T_ is partially orderable
-CheckerLibrary ListsCheckerLibrary(int version = kListsExtensionLatestVersion);
+CheckerLibrary ListsCheckerLibrary(
+    const ListsExtensionOptions& extension_options = {});
+
+inline CheckerLibrary ListsCheckerLibrary(int version) {
+  ListsExtensionOptions extension_options;
+  extension_options.version = version;
+  return ListsCheckerLibrary(extension_options);
+}
 
 // Provides decls for the following functions:
 //
@@ -96,8 +125,14 @@ CheckerLibrary ListsCheckerLibrary(int version = kListsExtensionLatestVersion);
 //
 // <list(T_)>.sort() -> list(T_) where T_ is partially orderable
 CompilerLibrary ListsCompilerLibrary(
-    int version = kListsExtensionLatestVersion);
+    const ListsExtensionOptions& extension_options = {});
+
+inline CompilerLibrary ListsCompilerLibrary(int version) {
+  ListsExtensionOptions extension_options;
+  extension_options.version = version;
+  return ListsCompilerLibrary(extension_options);
+}
 
 }  // namespace cel::extensions
 
-#endif  // THIRD_PARTY_CEL_CPP_EXTENSIONS_SETS_FUNCTIONS_H_
+#endif  // THIRD_PARTY_CEL_CPP_EXTENSIONS_LISTS_FUNCTIONS_H_

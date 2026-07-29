@@ -68,6 +68,8 @@ absl::Span<const cel::Type> SortableTypes() {
   return kTypes;
 }
 
+constexpr int64_t kMaxRangeSize = 1000000;
+
 // Slow distinct() implementation that uses Equal() to compare values in O(n^2).
 absl::Status ListDistinctHeterogeneousImpl(
     const ListValue& list,
@@ -223,10 +225,20 @@ absl::StatusOr<Value> ListFlatten(
   return std::move(*builder).Build();
 }
 
-absl::StatusOr<ListValue> ListRange(
-    int64_t end, const google::protobuf::DescriptorPool* absl_nonnull descriptor_pool,
+absl::StatusOr<Value> ListRange(
+    int64_t end, int64_t max_range_size,
+    const google::protobuf::DescriptorPool* absl_nonnull descriptor_pool,
     google::protobuf::MessageFactory* absl_nonnull message_factory,
     google::protobuf::Arena* absl_nonnull arena) {
+  if (end < 0) {
+    return ErrorValue(absl::InvalidArgumentError(absl::StrFormat(
+        "lists.range: size must be non-negative, got %d", end)));
+  }
+  if (end > max_range_size) {
+    return ErrorValue(absl::InvalidArgumentError(
+        absl::StrFormat("lists.range: size %d exceeds maximum allowed (%d)",
+                        end, max_range_size)));
+  }
   auto builder = NewListValueBuilder(arena);
   builder->Reserve(end);
   for (int64_t i = 0; i < end; ++i) {
@@ -512,11 +524,27 @@ absl::Status RegisterListFlattenFunction(FunctionRegistry& registry) {
   return absl::OkStatus();
 }
 
-absl::Status RegisterListRangeFunction(FunctionRegistry& registry) {
-  return UnaryFunctionAdapter<absl::StatusOr<Value>,
-                              int64_t>::RegisterGlobalOverload("lists.range",
-                                                               &ListRange,
-                                                               registry);
+absl::Status RegisterListRangeFunction(
+    FunctionRegistry& registry,
+    const ListsExtensionOptions& extension_options) {
+  constexpr int64_t kMaxRangeSize = 1000000;
+  int64_t effective_limit = kMaxRangeSize;
+  if (extension_options.max_range_size > 0 &&
+      extension_options.max_range_size < effective_limit) {
+    effective_limit = extension_options.max_range_size;
+  }
+  return UnaryFunctionAdapter<absl::StatusOr<Value>, int64_t>::
+      RegisterGlobalOverload(
+          "lists.range",
+          [effective_limit](
+              int64_t end,
+              const google::protobuf::DescriptorPool* absl_nonnull descriptor_pool,
+              google::protobuf::MessageFactory* absl_nonnull message_factory,
+              google::protobuf::Arena* absl_nonnull arena) -> absl::StatusOr<Value> {
+            return ListRange(end, effective_limit, descriptor_pool,
+                             message_factory, arena);
+          },
+          registry);
 }
 
 absl::Status RegisterListReverseFunction(FunctionRegistry& registry) {
@@ -657,23 +685,23 @@ absl::Status ConfigureParser(ParserBuilder& builder, int version) {
 
 }  // namespace
 
-absl::Status RegisterListsFunctions(FunctionRegistry& registry,
-                                    const RuntimeOptions& options,
-                                    int version) {
+absl::Status RegisterListsFunctions(
+    FunctionRegistry& registry, const RuntimeOptions& options,
+    const ListsExtensionOptions& extension_options) {
   CEL_RETURN_IF_ERROR(RegisterListSliceFunction(registry));
-  if (version == 0) {
+  if (extension_options.version == 0) {
     return absl::OkStatus();
   }
 
   // Since version 1
   CEL_RETURN_IF_ERROR(RegisterListFlattenFunction(registry));
-  if (version == 1) {
+  if (extension_options.version == 1) {
     return absl::OkStatus();
   }
 
   // Since version 2
   CEL_RETURN_IF_ERROR(RegisterListDistinctFunction(registry));
-  CEL_RETURN_IF_ERROR(RegisterListRangeFunction(registry));
+  CEL_RETURN_IF_ERROR(RegisterListRangeFunction(registry, extension_options));
   CEL_RETURN_IF_ERROR(RegisterListReverseFunction(registry));
   CEL_RETURN_IF_ERROR(RegisterListSortFunction(registry));
   return absl::OkStatus();
@@ -684,18 +712,23 @@ absl::Status RegisterListsMacros(MacroRegistry& registry, const ParserOptions&,
   return registry.RegisterMacros(lists_macros(version));
 }
 
-CheckerLibrary ListsCheckerLibrary(int version) {
+CheckerLibrary ListsCheckerLibrary(
+    const ListsExtensionOptions& extension_options) {
   return {.id = "cel.lib.ext.lists",
-          .configure = [version](TypeCheckerBuilder& builder) {
+          .configure = [version = extension_options.version](
+                           TypeCheckerBuilder& builder) {
             return RegisterListsCheckerDecls(builder, version);
           }};
 }
 
-CompilerLibrary ListsCompilerLibrary(int version) {
-  auto lib = CompilerLibrary::FromCheckerLibrary(ListsCheckerLibrary(version));
-  lib.configure_parser = [version](ParserBuilder& builder) {
-    return ConfigureParser(builder, version);
-  };
+CompilerLibrary ListsCompilerLibrary(
+    const ListsExtensionOptions& extension_options) {
+  auto lib = CompilerLibrary::FromCheckerLibrary(
+      ListsCheckerLibrary(extension_options));
+  lib.configure_parser =
+      [version = extension_options.version](ParserBuilder& builder) {
+        return ConfigureParser(builder, version);
+      };
   return lib;
 }
 
