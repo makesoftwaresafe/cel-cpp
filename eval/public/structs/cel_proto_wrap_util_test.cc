@@ -15,6 +15,7 @@
 #include "eval/public/structs/cel_proto_wrap_util.h"
 
 #include <cassert>
+#include <cstdint>
 #include <limits>
 #include <memory>
 #include <string>
@@ -24,30 +25,32 @@
 #include "google/protobuf/any.pb.h"
 #include "google/protobuf/duration.pb.h"
 #include "google/protobuf/empty.pb.h"
+#include "google/protobuf/field_mask.pb.h"
 #include "google/protobuf/struct.pb.h"
 #include "google/protobuf/wrappers.pb.h"
-#include "absl/base/no_destructor.h"
 #include "absl/status/status.h"
 #include "absl/strings/str_cat.h"
 #include "absl/time/time.h"
+#include "absl/types/span.h"
 #include "eval/public/cel_value.h"
 #include "eval/public/containers/container_backed_list_impl.h"
 #include "eval/public/containers/container_backed_map_impl.h"
-#include "eval/public/message_wrapper.h"
-#include "eval/public/structs/protobuf_value_factory.h"
 #include "eval/public/structs/trivial_legacy_type_info.h"
 #include "eval/testutil/test_message.pb.h"
 #include "internal/proto_time_encoding.h"
-#include "internal/status_macros.h"
 #include "internal/testing.h"
 #include "testutil/util.h"
+#include "google/protobuf/arena.h"
 #include "google/protobuf/dynamic_message.h"
 #include "google/protobuf/message.h"
+#include "google/protobuf/text_format.h"
 
 namespace google::api::expr::runtime::internal {
 
 namespace {
 
+using ::google::protobuf::FieldMask;
+using ::google::protobuf::TextFormat;
 using ::testing::Eq;
 using ::testing::UnorderedPointwise;
 
@@ -434,6 +437,74 @@ TEST_F(CelProtoWrapperTest, UnwrapInvalidAny) {
   any.set_type_url("/invalid.proto.name");
   ASSERT_TRUE(
       UnwrapMessageToValue(&any, &ProtobufValueFactoryImpl, arena()).IsError());
+}
+
+TEST_F(CelProtoWrapperTest, WrapFieldMaskToValue) {
+  FieldMask field_mask;
+  ASSERT_TRUE(TextFormat::ParseFromString(R"pb(
+                                            paths: "foo.bar" paths: "baz"
+                                          )pb",
+                                          &field_mask));
+  CelValue value = ProtobufValueFactoryImpl(&field_mask);
+
+  Value expected_message;
+  ASSERT_TRUE(TextFormat::ParseFromString(R"pb(string_value: "foo.bar,baz")pb",
+                                          &expected_message));
+
+  ExpectWrappedMessage(value, expected_message);
+}
+
+TEST_F(CelProtoWrapperTest, WrapMapWithFieldMaskToAny) {
+  const std::string kField = "field_mask";
+  FieldMask field_mask;
+  ASSERT_TRUE(TextFormat::ParseFromString(R"pb(
+                                            paths: "foo.bar" paths: "baz"
+                                          )pb",
+                                          &field_mask));
+  CelValue value = ProtobufValueFactoryImpl(&field_mask);
+
+  std::vector<std::pair<CelValue, CelValue>> args = {
+      {CelValue::CreateString(CelValue::StringHolder(&kField)), value}};
+  ASSERT_OK_AND_ASSIGN(
+      std::unique_ptr<CelMap> cel_map,
+      CreateContainerBackedMap(
+          absl::Span<std::pair<CelValue, CelValue>>(args.data(), args.size())));
+  CelValue cel_value = CelValue::CreateMap(cel_map.get());
+
+  Struct expected_struct;
+  ASSERT_TRUE(
+      TextFormat::ParseFromString(R"pb(
+                                    fields {
+                                      key: "field_mask"
+                                      value { string_value: "foo.bar,baz" }
+                                    }
+                                  )pb",
+                                  &expected_struct));
+  Any expected_message;
+  ASSERT_TRUE(expected_message.PackFrom(expected_struct));
+
+  ExpectWrappedMessage(cel_value, expected_message);
+}
+
+TEST_F(CelProtoWrapperTest, WrapListWithFieldMaskToAny) {
+  FieldMask field_mask;
+  ASSERT_TRUE(TextFormat::ParseFromString(R"pb(
+                                            paths: "foo.bar" paths: "baz"
+                                          )pb",
+                                          &field_mask));
+  CelValue value = ProtobufValueFactoryImpl(&field_mask);
+
+  std::vector<CelValue> list_entries = {value};
+  ContainerBackedListImpl cel_list(list_entries);
+  CelValue list_value = CelValue::CreateList(&cel_list);
+
+  ListValue expected_list;
+  ASSERT_TRUE(TextFormat::ParseFromString(
+      R"pb(values { string_value: "foo.bar,baz" })pb", &expected_list));
+  Any expected_message;
+  ASSERT_TRUE(expected_message.PackFrom(expected_list));
+
+  ExpectWrappedMessage(list_value, expected_message);
 }
 
 // Test support of google.protobuf.<Type>Value wrappers in CelValue.
