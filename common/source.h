@@ -221,11 +221,40 @@ class SourceSubrange final : public Source {
 
 using SourcePtr = std::unique_ptr<Source>;
 
-absl::StatusOr<absl_nonnull SourcePtr> NewSource(
-    absl::string_view content, std::string description = "<input>");
+struct SourceOptions {
+  // The maximum number of code points allowed in the source.
+  // A negative value indicates no limit (though still limited by
+  // int32_t max value).
+  int max_codepoint_size = 100'000;
+};
 
-absl::StatusOr<absl_nonnull SourcePtr> NewSource(
-    const absl::Cord& content, std::string description = "<input>");
+absl::StatusOr<absl_nonnull SourcePtr> NewSource(absl::string_view content,
+                                                 std::string description,
+                                                 const SourceOptions& options);
+
+absl::StatusOr<absl_nonnull SourcePtr> NewSource(const absl::Cord& content,
+                                                 std::string description,
+                                                 const SourceOptions& options);
+
+inline absl::StatusOr<absl_nonnull SourcePtr> NewSource(
+    absl::string_view content, std::string description) {
+  return NewSource(content, std::move(description), SourceOptions{});
+}
+
+inline absl::StatusOr<absl_nonnull SourcePtr> NewSource(
+    const absl::Cord& content, std::string description) {
+  return NewSource(content, std::move(description), SourceOptions{});
+}
+
+inline absl::StatusOr<absl_nonnull SourcePtr> NewSource(
+    absl::string_view content) {
+  return NewSource(content, "<input>", SourceOptions{});
+}
+
+inline absl::StatusOr<absl_nonnull SourcePtr> NewSource(
+    const absl::Cord& content) {
+  return NewSource(content, "<input>", SourceOptions{});
+}
 
 }  // namespace cel
 

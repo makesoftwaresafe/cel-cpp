@@ -2189,6 +2189,26 @@ TEST_P(ParserTest, MacroExpansionNodeLimitNotExceeded) {
   EXPECT_THAT(issues, testing::IsEmpty());
 }
 
+TEST_P(ParserTest, PrepareSourceForwardsCodepointLimit) {
+  auto builder = cel::NewParserBuilder(options_);
+  builder->GetOptions().expression_size_codepoint_limit = 10;
+  ASSERT_OK_AND_ASSIGN(auto parser, std::move(*builder).Build());
+
+  EXPECT_THAT(parser->PrepareSource("123456789012345", "test.cel"),
+              absl_testing::StatusIs(
+                  absl::StatusCode::kInvalidArgument,
+                  HasSubstr("expression is larger than codepoint limit 10")));
+
+  ASSERT_OK_AND_ASSIGN(auto source,
+                       parser->PrepareSource("1234567890", "test.cel"));
+  EXPECT_EQ(source->description(), "test.cel");
+  EXPECT_EQ(source->content().ToString(), "1234567890");
+
+  ASSERT_OK_AND_ASSIGN(auto source_default_desc,
+                       parser->PrepareSource("1234567890"));
+  EXPECT_EQ(source_default_desc->description(), "<input>");
+}
+
 std::string ExpressionTestName(
     const testing::TestParamInfo<std::tuple<TestInfo, bool>>& test_info) {
   const TestInfo& info = std::get<0>(test_info.param);

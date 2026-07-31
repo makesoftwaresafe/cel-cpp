@@ -163,6 +163,14 @@ absl::StatusOr<std::unique_ptr<cel::Ast>> PrattParserImpl::ParseImpl(
   return PrattParseImpl(source, macro_registry_, options_, parse_issues);
 }
 
+absl::StatusOr<std::unique_ptr<cel::Source>> PrattParserImpl::PrepareSourceImpl(
+    absl::string_view input, absl::string_view description) const {
+  return cel::NewSource(
+      input, std::string(description),
+      cel::SourceOptions{.max_codepoint_size =
+                             options_.expression_size_codepoint_limit});
+}
+
 absl::StatusOr<std::unique_ptr<cel::Ast>> PrattParseImpl(
     const cel::Source& source, const cel::MacroRegistry& registry,
     const ParserOptions& options, std::vector<cel::ParseIssue>* parse_issues) {

@@ -1781,6 +1781,14 @@ class ParserImpl : public cel::Parser {
                                       std::move(parse_result.source_info));
   }
 
+  absl::StatusOr<std::unique_ptr<cel::Source>> PrepareSourceImpl(
+      absl::string_view input, absl::string_view description) const override {
+    return cel::NewSource(
+        input, std::string(description),
+        cel::SourceOptions{.max_codepoint_size =
+                               options_.expression_size_codepoint_limit});
+  }
+
   std::unique_ptr<cel::ParserBuilder> ToBuilder() const override;
 
  private:

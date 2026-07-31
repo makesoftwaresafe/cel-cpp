@@ -59,6 +59,9 @@ class PrattParserImpl final : public cel::Parser {
       const cel::Source& source,
       std::vector<cel::ParseIssue>* absl_nullable parse_issues) const override;
 
+  absl::StatusOr<std::unique_ptr<cel::Source>> PrepareSourceImpl(
+      absl::string_view input, absl::string_view description) const override;
+
   std::unique_ptr<cel::ParserBuilder> ToBuilder() const override;
 
  private:

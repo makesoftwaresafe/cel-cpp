@@ -178,8 +178,8 @@ class Compiler {
 inline absl::StatusOr<ValidationResult> Compiler::Compile(
     absl::string_view source, absl::string_view description,
     google::protobuf::Arena* absl_nullable arena) const {
-  absl::StatusOr<SourcePtr> source_obj =
-      NewSource(source, std::string(description));
+  absl::StatusOr<std::unique_ptr<Source>> source_obj =
+      GetParser().PrepareSource(source, description);
   if (!source_obj.ok()) {
     return source_obj.status();
   }

@@ -307,11 +307,17 @@ struct SourceTextTraits<absl::Cord> {
 
 template <typename T>
 absl::StatusOr<SourcePtr> NewSourceImpl(std::string description, const T& text,
-                                        const size_t text_size) {
+                                        const size_t text_size,
+                                        const size_t max_codepoints) {
   if (ABSL_PREDICT_FALSE(
           text_size >
           static_cast<size_t>(std::numeric_limits<int32_t>::max()))) {
     return absl::InvalidArgumentError("expression larger than 2GiB limit");
+  }
+  if ((text_size >> 2) > max_codepoints) {
+    // If byte size is 4 times the codepoint limit, then definitely exceeded.
+    return absl::InvalidArgumentError(absl::StrCat(
+        "expression is larger than codepoint limit ", max_codepoints));
   }
   using Traits = SourceTextTraits<T>;
   size_t index = 0;
@@ -324,6 +330,10 @@ absl::StatusOr<SourcePtr> NewSourceImpl(std::string description, const T& text,
   std::vector<char32_t> data32;
   absl::InlinedVector<SourcePosition, 1> line_offsets;
   while (index < text_size) {
+    if (offset >= max_codepoints) {
+      return absl::InvalidArgumentError(absl::StrCat(
+          "expression is larger than codepoint limit ", max_codepoints));
+    }
     std::tie(code_point, code_units) = cel::internal::Utf8Decode(it);
     if (ABSL_PREDICT_FALSE(code_point ==
                                cel::internal::kUnicodeReplacementCharacter &&
@@ -375,6 +385,10 @@ absl::StatusOr<SourcePtr> NewSourceImpl(std::string description, const T& text,
       std::move(description), std::move(line_offsets), Traits::ToVector(text));
 latin1:
   while (index < text_size) {
+    if (offset >= max_codepoints) {
+      return absl::InvalidArgumentError(absl::StrCat(
+          "expression is larger than codepoint limit ", max_codepoints));
+    }
     std::tie(code_point, code_units) = internal::Utf8Decode(it);
     if (ABSL_PREDICT_FALSE(code_point ==
                                internal::kUnicodeReplacementCharacter &&
@@ -420,6 +434,10 @@ latin1:
       std::move(description), std::move(line_offsets), std::move(data8));
 basic:
   while (index < text_size) {
+    if (offset >= max_codepoints) {
+      return absl::InvalidArgumentError(absl::StrCat(
+          "expression is larger than codepoint limit ", max_codepoints));
+    }
     std::tie(code_point, code_units) = internal::Utf8Decode(it);
     if (ABSL_PREDICT_FALSE(code_point ==
                                internal::kUnicodeReplacementCharacter &&
@@ -453,6 +471,10 @@ basic:
       std::move(description), std::move(line_offsets), std::move(data16));
 supplemental:
   while (index < text_size) {
+    if (offset >= max_codepoints) {
+      return absl::InvalidArgumentError(absl::StrCat(
+          "expression is larger than codepoint limit ", max_codepoints));
+    }
     std::tie(code_point, code_units) = internal::Utf8Decode(it);
     if (ABSL_PREDICT_FALSE(code_point ==
                                internal::kUnicodeReplacementCharacter &&
@@ -631,16 +653,27 @@ absl::Span<const SourcePosition> SourceSubrange::line_offsets() const {
   return absl::MakeConstSpan(line_offsets_);
 }
 
+static size_t ClampLimit(int value) {
+  if (value < 0) {
+    return std::numeric_limits<size_t>::max();
+  }
+  return static_cast<size_t>(value);
+}
+
 absl::StatusOr<absl_nonnull SourcePtr> NewSource(absl::string_view content,
-                                                 std::string description) {
+                                                 std::string description,
+                                                 const SourceOptions& options) {
   return common_internal::NewSourceImpl(std::move(description), content,
-                                        content.size());
+                                        content.size(),
+                                        ClampLimit(options.max_codepoint_size));
 }
 
 absl::StatusOr<absl_nonnull SourcePtr> NewSource(const absl::Cord& content,
-                                                 std::string description) {
+                                                 std::string description,
+                                                 const SourceOptions& options) {
   return common_internal::NewSourceImpl(std::move(description), content,
-                                        content.size());
+                                        content.size(),
+                                        ClampLimit(options.max_codepoint_size));
 }
 
 }  // namespace cel

@@ -114,6 +114,14 @@ class Parser {
   absl::StatusOr<std::unique_ptr<cel::Ast>> Parse(
       const cel::Source& source, std::vector<ParseIssue>* issues) const;
 
+  // Returns a Source object from the given input.
+  // Validates that the input is well-formed utf-8 and within the configured
+  // source limits.
+  absl::StatusOr<std::unique_ptr<cel::Source>> PrepareSource(
+      absl::string_view input, absl::string_view description) const;
+  absl::StatusOr<std::unique_ptr<cel::Source>> PrepareSource(
+      absl::string_view input) const;
+
   // Returns a builder initialized with the configuration of this parser.
   virtual std::unique_ptr<ParserBuilder> ToBuilder() const = 0;
 
@@ -121,6 +129,9 @@ class Parser {
   virtual absl::StatusOr<std::unique_ptr<cel::Ast>> ParseImpl(
       const cel::Source& source,
       std::vector<ParseIssue>* absl_nullable parse_issues) const = 0;
+
+  virtual absl::StatusOr<std::unique_ptr<cel::Source>> PrepareSourceImpl(
+      absl::string_view input, absl::string_view description) const = 0;
 };
 
 inline absl::StatusOr<std::unique_ptr<cel::Ast>> Parser::Parse(
@@ -132,6 +143,16 @@ inline absl::StatusOr<std::unique_ptr<cel::Ast>> Parser::Parse(
     const cel::Source& source, std::vector<ParseIssue>* issues) const {
   if (issues != nullptr) issues->clear();
   return ParseImpl(source, issues);
+}
+
+inline absl::StatusOr<std::unique_ptr<cel::Source>> Parser::PrepareSource(
+    absl::string_view input, absl::string_view description) const {
+  return PrepareSourceImpl(input, description);
+}
+
+inline absl::StatusOr<std::unique_ptr<cel::Source>> Parser::PrepareSource(
+    absl::string_view input) const {
+  return PrepareSourceImpl(input, "<input>");
 }
 
 }  // namespace cel

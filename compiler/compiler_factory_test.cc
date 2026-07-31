@@ -441,5 +441,24 @@ TEST(CompilerFactoryTest, CompileSourceOverload) {
   EXPECT_TRUE(result.IsValid());
 }
 
+TEST(CompilerFactoryTest, CodepointLimitExceeded) {
+  CompilerOptions options;
+  options.parser_options.expression_size_codepoint_limit = 10;
+  ASSERT_OK_AND_ASSIGN(
+      auto builder,
+      NewCompilerBuilder(cel::internal::GetSharedTestingDescriptorPool(),
+                         options));
+  ASSERT_OK_AND_ASSIGN(auto compiler, builder->Build());
+
+  EXPECT_THAT(
+      compiler->Compile("123456789012345", "test.cel"),
+      StatusIs(absl::StatusCode::kInvalidArgument,
+               HasSubstr("expression is larger than codepoint limit 10")));
+
+  ASSERT_OK_AND_ASSIGN(ValidationResult result,
+                       compiler->Compile("1234567890", "test.cel"));
+  EXPECT_TRUE(result.IsValid());
+}
+
 }  // namespace
 }  // namespace cel

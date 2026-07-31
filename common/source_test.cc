@@ -14,8 +14,11 @@
 
 #include "common/source.h"
 
+#include <cstdint>
+#include <optional>
+
+#include "absl/status/status.h"
 #include "absl/strings/cord.h"
-#include "absl/types/optional.h"
 #include "internal/testing.h"
 
 namespace cel {
@@ -260,6 +263,52 @@ TEST(SourceSubrange, LineOffsetsMiddleSubrange) {
                        NewSource("hello\nworld\ncel\ncpp", "subrange-test"));
   SourceSubrange subrange(*source, SourceRange{6, 15});
   EXPECT_THAT(subrange.line_offsets(), ElementsAre(6, 10));
+}
+
+TEST(StringSource, CodepointLimitExceeded) {
+  SourceOptions options;
+  options.max_codepoint_size = 5;
+
+  EXPECT_THAT(
+      NewSource("123456", "test", options),
+      ::absl_testing::StatusIs(
+          absl::StatusCode::kInvalidArgument,
+          ::testing::HasSubstr("expression is larger than codepoint limit 5")));
+
+  ASSERT_OK_AND_ASSIGN(auto source, NewSource("12345", "test", options));
+  EXPECT_THAT(source->content().ToString(), ::testing::Eq("12345"));
+}
+
+TEST(StringSource, CodepointLimitMultibyteUtf8) {
+  SourceOptions options;
+  options.max_codepoint_size = 5;
+
+  // "Ｈｅｌｌｏ" consists of 5 full-width Unicode characters (15 bytes in
+  // UTF-8).
+  ASSERT_OK_AND_ASSIGN(auto source, NewSource("Ｈｅｌｌｏ", "test", options));
+  EXPECT_THAT(source->content().ToString(), ::testing::Eq("Ｈｅｌｌｏ"));
+
+  options.max_codepoint_size = 4;
+  EXPECT_THAT(
+      NewSource("Ｈｅｌｌｏ", "test", options),
+      ::absl_testing::StatusIs(
+          absl::StatusCode::kInvalidArgument,
+          ::testing::HasSubstr("expression is larger than codepoint limit 4")));
+}
+
+TEST(CordSource, CodepointLimitExceeded) {
+  SourceOptions options;
+  options.max_codepoint_size = 5;
+
+  EXPECT_THAT(
+      NewSource(absl::Cord("123456"), "test", options),
+      ::absl_testing::StatusIs(
+          absl::StatusCode::kInvalidArgument,
+          ::testing::HasSubstr("expression is larger than codepoint limit 5")));
+
+  ASSERT_OK_AND_ASSIGN(auto source,
+                       NewSource(absl::Cord("12345"), "test", options));
+  EXPECT_THAT(source->content().ToString(), ::testing::Eq("12345"));
 }
 
 }  // namespace
