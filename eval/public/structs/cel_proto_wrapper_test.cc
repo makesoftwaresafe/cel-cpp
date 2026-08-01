@@ -1,7 +1,6 @@
 #include "eval/public/structs/cel_proto_wrapper.h"
 
 #include <cassert>
-#include <cstdint>
 #include <limits>
 #include <memory>
 #include <string>
@@ -17,15 +16,14 @@
 #include "absl/status/statusor.h"
 #include "absl/strings/str_cat.h"
 #include "absl/time/time.h"
-#include "absl/types/span.h"
 #include "eval/public/cel_value.h"
 #include "eval/public/containers/container_backed_list_impl.h"
 #include "eval/public/containers/container_backed_map_impl.h"
 #include "eval/testutil/test_message.pb.h"
 #include "internal/proto_time_encoding.h"
+#include "internal/status_macros.h"
 #include "internal/testing.h"
 #include "testutil/util.h"
-#include "google/protobuf/arena.h"
 #include "google/protobuf/dynamic_message.h"
 #include "google/protobuf/message.h"
 

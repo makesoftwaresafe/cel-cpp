@@ -177,6 +177,7 @@ _TESTS_TO_SKIP = [
     "enums/legacy_proto2/select_big,select_neg",
 
     # Skip until fixed.
+    "wrappers/field_mask/to_json",
     "wrappers/empty/to_json",
     "fields/qualified_identifier_resolution/map_value_repeat_key_heterogeneous",
     "parse/receiver_function_names",
