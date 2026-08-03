@@ -1583,11 +1583,12 @@ Value WrapFieldImpl(
       }
       if constexpr (Unsafe::value) {
         return Value::WrapMessageUnsafe(
-            &reflection->GetMessage(*message, field), descriptor_pool,
-            message_factory, arena);
+            &reflection->GetMessage(*message, field, message_factory),
+            descriptor_pool, message_factory, arena);
       } else {
-        return Value::WrapMessage(&reflection->GetMessage(*message, field),
-                                  descriptor_pool, message_factory, arena);
+        return Value::WrapMessage(
+            &reflection->GetMessage(*message, field, message_factory),
+            descriptor_pool, message_factory, arena);
       }
     case google::protobuf::FieldDescriptor::TYPE_BYTES: {
       std::string scratch;
