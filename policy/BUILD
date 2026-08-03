@@ -84,6 +84,7 @@ cc_library(
         ":cel_policy_parser",
         "//common:source",
         "//internal:status_macros",
+        "//internal:utf8",
         "//policy/internal:yaml_string_element_scanner",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",

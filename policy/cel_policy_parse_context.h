@@ -20,6 +20,7 @@
 #include <vector>
 
 #include "absl/strings/string_view.h"
+#include "common/source.h"
 #include "policy/cel_policy.h"
 #include "policy/cel_policy_parse_result.h"
 
@@ -53,11 +54,18 @@ class CelPolicyParseContext {
 
   CelPolicyElementId next_element_id() { return next_element_id_++; }
 
+  void set_byte_to_codepoint_mapping(std::vector<SourcePosition> mapping) {
+    byte_to_codepoint_mapping_ = std::move(mapping);
+  }
+
+  SourcePosition GetCodepointPosition(SourcePosition byte_offset) const;
+
  private:
   std::shared_ptr<CelPolicySource> policy_source_;
   CelPolicyElementId next_element_id_ = 0;
   std::vector<CelPolicyIssue> issues_;
   std::unique_ptr<CelPolicy> policy_;
+  std::vector<SourcePosition> byte_to_codepoint_mapping_;
 };
 
 }  // namespace cel

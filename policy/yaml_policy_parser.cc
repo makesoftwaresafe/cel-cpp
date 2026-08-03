@@ -14,10 +14,12 @@
 
 #include "policy/yaml_policy_parser.h"
 
+#include <cstddef>
 #include <memory>
 #include <optional>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
@@ -25,24 +27,36 @@
 #include "absl/strings/string_view.h"
 #include "common/source.h"
 #include "internal/status_macros.h"
+#include "internal/utf8.h"
 #include "policy/cel_policy.h"
 #include "policy/cel_policy_parse_context.h"
 #include "policy/cel_policy_parse_result.h"
 #include "policy/cel_policy_parser.h"
 #include "policy/internal/yaml_string_element_scanner.h"
 #include "yaml-cpp/exceptions.h"
+#include "yaml-cpp/mark.h"
 #include "yaml-cpp/node/node.h"
 #include "yaml-cpp/node/parse.h"
 #include "yaml-cpp/null.h"
 #include "yaml-cpp/yaml.h"  // IWYU pragma: keep
 
 namespace cel {
+namespace {
+
+SourcePosition GetMarkCodepointPosition(const CelPolicyParseContext& ctx,
+                                        const YAML::Mark& mark) {
+  if (mark.is_null() || mark.pos < 0) return -1;
+  return ctx.GetCodepointPosition(mark.pos);
+}
+
+}  // namespace
 
 CelPolicyElementId YamlPolicyParser::CollectMetadata(
     CelPolicyParseContext& ctx, const YAML::Node& node) const {
   CelPolicyElementId element_id = ctx.next_element_id();
   if (!node.Mark().is_null()) {
-    ctx.policy_source().NoteSourcePosition(element_id, node.Mark().pos);
+    ctx.policy_source().NoteSourcePosition(
+        element_id, GetMarkCodepointPosition(ctx, node.Mark()));
   }
   return element_id;
 }
@@ -62,9 +76,10 @@ std::optional<ValueString> YamlPolicyParser::GetValueString(
   }
 
   if (!node.Mark().is_null() && ctx.policy_source().content() != nullptr) {
+    SourcePosition codepoint_pos = GetMarkCodepointPosition(ctx, node.Mark());
     policy_internal::YamlStringElement element =
         policy_internal::ScanYamlStringElement(
-            ctx.policy_source().content()->content(), node.Mark().pos,
+            ctx.policy_source().content()->content(), codepoint_pos,
             node.as<std::string>());
 
     ctx.policy_source().NoteSourcePosition(id, element.starting_position);
@@ -87,14 +102,40 @@ absl::Status YamlPolicyParser::ParsePolicy(CelPolicyParseContext& ctx) const {
     return absl::OkStatus();
   }
 
-  ctx.policy().set_description(ValueString(-1, source->description()));
+  // TODO(b/542282964): Fold this mapping into cel::Source decoding happens
+  // once.
   std::string text = source->content().ToString();
+  std::vector<SourcePosition> mapping;
+  mapping.resize(text.size() + 1, 0);
+  size_t byte_offset = 0;
+  SourcePosition codepoint = 0;
+  absl::string_view view = text;
+  while (!view.empty()) {
+    auto [code_point, code_units] = cel::internal::Utf8Decode(view);
+    if (code_units == 0) break;
+    for (size_t i = 0; i < code_units; ++i) {
+      if (byte_offset + i < mapping.size()) {
+        mapping[byte_offset + i] = codepoint;
+      }
+    }
+    byte_offset += code_units;
+    view.remove_prefix(code_units);
+    codepoint++;
+  }
+  for (size_t i = byte_offset; i < mapping.size(); ++i) {
+    mapping[i] = codepoint;
+  }
+
+  ctx.set_byte_to_codepoint_mapping(std::move(mapping));
+
+  ctx.policy().set_description(ValueString(-1, source->description()));
   YAML::Node node;
   try {
     node = YAML::Load(text);
   } catch (YAML::Exception& e) {
     if (!e.mark.is_null()) {
-      ctx.policy_source().NoteSourcePosition(0, e.mark.pos);
+      ctx.policy_source().NoteSourcePosition(
+          0, GetMarkCodepointPosition(ctx, e.mark));
     }
     ctx.ReportError(0, "Invalid CEL policy YAML syntax");
     return absl::OkStatus();

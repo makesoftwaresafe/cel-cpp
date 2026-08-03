@@ -151,6 +151,12 @@ TEST_P(YamlPolicyParseErrorTest, YamlSyntaxError) {
 std::vector<ParseTestCase> GetParseTestCases() {
   return {
       ParseTestCase{
+          .yaml = "name: \"unclosed",
+          .expected_error = "1:16: Invalid CEL policy YAML syntax\n"
+                            " | name: \"unclosed\n"
+                            " | ...............^",
+      },
+      ParseTestCase{
           .yaml = R"yaml( ? [ John, Doe ]: age: 30 )yaml",
           .expected_error = "1:22: Invalid CEL policy YAML syntax\n"
                             " |  ? [ John, Doe ]: age: 30 \n"
@@ -195,6 +201,17 @@ std::vector<ParseTestCase> GetParseTestCases() {
                     - cel.expr.conformance
                 )yaml",
           .expected_error = "4:21: Import name is not a string\n"
+                            " |                     - cel.expr.conformance\n"
+                            " | ....................^",
+      },
+      ParseTestCase{
+          .yaml = R"yaml(
+                  # Comment with multi-byte char: €
+                  imports:
+                  - name:
+                    - cel.expr.conformance
+                )yaml",
+          .expected_error = "5:21: Import name is not a string\n"
                             " |                     - cel.expr.conformance\n"
                             " | ....................^",
       },
