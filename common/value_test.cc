@@ -28,9 +28,11 @@
 #include "internal/testing.h"
 #include "internal/testing_descriptor_pool.h"
 #include "internal/testing_message_factory.h"
+#include "cel/expr/conformance/proto2/test_all_types.pb.h"
 #include "cel/expr/conformance/proto3/test_all_types.pb.h"
 #include "google/protobuf/arena.h"
 #include "google/protobuf/descriptor.h"
+#include "google/protobuf/dynamic_message.h"
 #include "google/protobuf/generated_enum_reflection.h"
 
 namespace cel {
@@ -971,6 +973,43 @@ TEST(Value, NumericHeterogeneousEquality) {
   EXPECT_NE(DoubleValue(1), IntValue(2));
   EXPECT_NE(UintValue(1), DoubleValue(2));
   EXPECT_NE(DoubleValue(1), UintValue(2));
+}
+
+TEST(Value, WrapDynamicExtensionMessageField) {
+  google::protobuf::DescriptorPool pool(google::protobuf::DescriptorPool::generated_pool());
+  google::protobuf::FileDescriptorProto file_proto;
+  file_proto.set_name("dynamic_extension.proto");
+  file_proto.set_package("cel.expr.conformance.proto2");
+  file_proto.add_dependency(
+      cel::expr::conformance::proto2::TestAllTypes::descriptor()
+          ->file()
+          ->name());
+
+  auto* msg_type = file_proto.add_message_type();
+  msg_type->set_name("DynamicExtensionMessage");
+
+  auto* ext = file_proto.add_extension();
+  ext->set_name("dynamic_ext");
+  ext->set_number(1000);
+  ext->set_label(google::protobuf::FieldDescriptorProto::LABEL_OPTIONAL);
+  ext->set_type(google::protobuf::FieldDescriptorProto::TYPE_MESSAGE);
+  ext->set_type_name(".cel.expr.conformance.proto2.DynamicExtensionMessage");
+  ext->set_extendee(
+      cel::expr::conformance::proto2::TestAllTypes::descriptor()->full_name());
+
+  const google::protobuf::FileDescriptor* file_desc = pool.BuildFile(file_proto);
+  ASSERT_NE(file_desc, nullptr);
+
+  const google::protobuf::FieldDescriptor* ext_desc =
+      pool.FindExtensionByName("cel.expr.conformance.proto2.dynamic_ext");
+  ASSERT_NE(ext_desc, nullptr);
+
+  google::protobuf::DynamicMessageFactory dynamic_factory(&pool);
+  google::protobuf::Arena arena;
+  cel::expr::conformance::proto2::TestAllTypes test_msg;
+  Value val =
+      Value::WrapField(&test_msg, ext_desc, &pool, &dynamic_factory, &arena);
+  EXPECT_TRUE(val.IsMessage());
 }
 
 using ValueIteratorTest = common_internal::ValueTest<>;
