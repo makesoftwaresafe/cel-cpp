@@ -181,10 +181,43 @@ cc_library(
 
 cc_library(
     name = "legacy_runtime_type_provider",
+    srcs = ["legacy_runtime_type_provider.cc"],
     hdrs = ["legacy_runtime_type_provider.h"],
     deps = [
+        "//common:legacy_value",
+        "//common:memory",
+        "//common:type",
+        "//common:value",
+        "//eval/public:message_wrapper",
+        "//eval/public/structs:legacy_type_adapter",
+        "//eval/public/structs:legacy_type_info_apis",
+        "//eval/public/structs:proto_message_type_adapter",
         "//eval/public/structs:protobuf_descriptor_type_provider",
+        "//extensions/protobuf:memory_manager",
+        "//internal:status_macros",
         "@com_google_absl//absl/base:nullability",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:optional",
+        "@com_google_protobuf//:protobuf",
+    ],
+)
+
+cc_test(
+    name = "legacy_runtime_type_provider_test",
+    srcs = ["legacy_runtime_type_provider_test.cc"],
+    deps = [
+        ":legacy_runtime_type_provider",
+        "//common:type",
+        "//common:value",
+        "//internal:testing",
+        "//internal:testing_descriptor_pool",
+        "//internal:testing_message_factory",
+        "@com_google_absl//absl/status:status_matchers",
+        "@com_google_absl//absl/types:optional",
+        "@com_google_cel_spec//proto/cel/expr/conformance/proto3:test_all_types_cc_proto",
         "@com_google_protobuf//:protobuf",
     ],
 )

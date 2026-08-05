@@ -18,24 +18,20 @@
 #include <optional>
 
 #include "absl/base/attributes.h"
-#include "absl/base/nullability.h"
-#include "absl/status/statusor.h"
 #include "absl/strings/string_view.h"
-#include "common/type.h"
-#include "common/type_reflector.h"
-#include "common/value.h"
 #include "eval/public/structs/legacy_type_adapter.h"
 #include "eval/public/structs/legacy_type_info_apis.h"
-#include "google/protobuf/arena.h"
-#include "google/protobuf/message.h"
 
 namespace google::api::expr::runtime {
 
-// An internal extension of cel::TypeProvider that also deals with legacy types.
+// Provides legacy type adapters for google::api::expr::runtime::CelValue
+// wrapping messages.
 //
-// Note: This API is not finalized. Consult the CEL team before introducing new
-// implementations.
-class LegacyTypeProvider : public cel::TypeReflector {
+// Note: internal use of this type is limited to interop with the Legacy
+// (CelValue) runtime with an internal implementation.
+//
+// New implementations cannot be registered with the evaluator.
+class LegacyTypeProvider {
  public:
   virtual ~LegacyTypeProvider() = default;
 
@@ -60,19 +56,6 @@ class LegacyTypeProvider : public cel::TypeReflector {
       ABSL_ATTRIBUTE_UNUSED absl::string_view name) const {
     return std::nullopt;
   }
-
-  absl::StatusOr<absl_nullable cel::ValueBuilderPtr> NewValueBuilder(
-      absl::string_view name,
-      google::protobuf::MessageFactory* absl_nonnull message_factory,
-      google::protobuf::Arena* absl_nonnull arena) const final;
-
- protected:
-  absl::StatusOr<std::optional<cel::Type>> FindTypeImpl(
-      absl::string_view name) const final;
-
-  absl::StatusOr<std::optional<cel::StructTypeField>>
-  FindStructTypeFieldByNameImpl(absl::string_view type,
-                                absl::string_view name) const final;
 };
 
 }  // namespace google::api::expr::runtime

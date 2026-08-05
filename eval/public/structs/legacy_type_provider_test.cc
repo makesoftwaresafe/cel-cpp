@@ -17,12 +17,10 @@
 #include <optional>
 
 #include "absl/strings/string_view.h"
-#include "common/type.h"
+#include "absl/types/optional.h"
 #include "eval/public/structs/legacy_type_adapter.h"
 #include "eval/public/structs/legacy_type_info_apis.h"
-#include "eval/public/structs/proto_message_type_adapter.h"
 #include "eval/public/structs/trivial_legacy_type_info.h"
-#include "eval/testutil/test_message.pb.h"
 #include "internal/testing.h"
 
 namespace google::api::expr::runtime {
@@ -71,24 +69,6 @@ TEST(LegacyTypeProviderTest, NonEmptyTypeProviderProvidesSomeTypes) {
   EXPECT_TRUE(provider.ProvideLegacyTypeInfo("test").has_value());
   EXPECT_EQ(provider.ProvideLegacyType("other"), std::nullopt);
   EXPECT_EQ(provider.ProvideLegacyTypeInfo("other"), std::nullopt);
-}
-
-TEST(LegacyTypeProviderTest, FindStructTypeFieldByName) {
-  ProtoMessageTypeAdapter adapter(TestMessage::descriptor(), nullptr);
-  LegacyTypeProviderTestImpl provider(&adapter);
-
-  ASSERT_OK_AND_ASSIGN(
-      absl::optional<cel::StructTypeField> field,
-      provider.FindStructTypeFieldByName("test", "int32_value"));
-  ASSERT_TRUE(field.has_value());
-  EXPECT_EQ(field->name(), "int32_value");
-  EXPECT_EQ(field->number(), 1);
-  EXPECT_EQ(field->GetType(), cel::IntType());
-
-  ASSERT_OK_AND_ASSIGN(
-      absl::optional<cel::StructTypeField> not_found_field,
-      provider.FindStructTypeFieldByName("test", "unknown_field"));
-  EXPECT_FALSE(not_found_field.has_value());
 }
 
 }  // namespace

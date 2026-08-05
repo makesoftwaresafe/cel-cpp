@@ -28,6 +28,7 @@
 #include "eval/public/structs/legacy_type_info_apis.h"
 #include "google/protobuf/arena.h"
 #include "google/protobuf/descriptor.h"
+#include "google/protobuf/message.h"
 
 namespace google::api::expr::runtime {
 
@@ -40,7 +41,7 @@ class ProtoMessageTypeAdapter : public LegacyTypeInfoApis,
                                 public LegacyTypeAccessApis,
                                 public LegacyTypeMutationApis {
  public:
-  ProtoMessageTypeAdapter(const google::protobuf::Descriptor* descriptor,
+  ProtoMessageTypeAdapter(const google::protobuf::Descriptor* absl_nonnull descriptor,
                           google::protobuf::MessageFactory* message_factory)
       : message_factory_(message_factory), descriptor_(descriptor) {}
 
@@ -107,6 +108,10 @@ class ProtoMessageTypeAdapter : public LegacyTypeInfoApis,
   std::vector<absl::string_view> ListFields(
       const CelValue::MessageWrapper& instance) const override;
 
+  const google::protobuf::Descriptor* absl_nonnull descriptor() const {
+    return descriptor_;
+  }
+
  private:
   // Helper for standardizing error messages for SetField operation.
   absl::Status ValidateSetFieldOp(bool assertion, absl::string_view field,
@@ -117,7 +122,7 @@ class ProtoMessageTypeAdapter : public LegacyTypeInfoApis,
                         google::protobuf::Message* message) const;
 
   google::protobuf::MessageFactory* message_factory_;
-  const google::protobuf::Descriptor* descriptor_;
+  const google::protobuf::Descriptor* absl_nonnull descriptor_;
 };
 
 // Creates a CelValue from the given field on the proto message. This is the

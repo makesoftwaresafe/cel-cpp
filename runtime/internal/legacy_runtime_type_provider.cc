@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "eval/public/structs/legacy_type_provider.h"
+#include "runtime/internal/legacy_runtime_type_provider.h"
 
 #include <cstdint>
 #include <memory>
@@ -33,72 +33,20 @@
 #include "eval/public/message_wrapper.h"
 #include "eval/public/structs/legacy_type_adapter.h"
 #include "eval/public/structs/legacy_type_info_apis.h"
+#include "eval/public/structs/proto_message_type_adapter.h"
 #include "extensions/protobuf/memory_manager.h"
 #include "internal/status_macros.h"
 #include "google/protobuf/arena.h"
 #include "google/protobuf/descriptor.h"
 #include "google/protobuf/message.h"
 
-namespace google::api::expr::runtime {
+namespace cel::runtime_internal {
 
 namespace {
 
 using google::api::expr::runtime::LegacyTypeAdapter;
+using google::api::expr::runtime::LegacyTypeInfoApis;
 using google::api::expr::runtime::MessageWrapper;
-
-class LegacyStructValueBuilder final : public cel::StructValueBuilder {
- public:
-  LegacyStructValueBuilder(cel::MemoryManagerRef memory_manager,
-                           LegacyTypeAdapter adapter,
-                           MessageWrapper::Builder builder)
-      : memory_manager_(memory_manager),
-        adapter_(adapter),
-        builder_(std::move(builder)) {}
-
-  absl::StatusOr<absl::optional<cel::ErrorValue>> SetFieldByName(
-      absl::string_view name, cel::Value value) override {
-    CEL_ASSIGN_OR_RETURN(
-        auto legacy_value,
-        LegacyValue(cel::extensions::ProtoMemoryManagerArena(memory_manager_),
-                    value),
-        _.With(cel::ErrorValueReturn()));
-    CEL_RETURN_IF_ERROR(adapter_.mutation_apis()->SetField(
-                            name, legacy_value, memory_manager_, builder_))
-        .With(cel::ErrorValueReturn());
-    return std::nullopt;
-  }
-
-  absl::StatusOr<absl::optional<cel::ErrorValue>> SetFieldByNumber(
-      int64_t number, cel::Value value) override {
-    CEL_ASSIGN_OR_RETURN(
-        auto legacy_value,
-        LegacyValue(cel::extensions::ProtoMemoryManagerArena(memory_manager_),
-                    value),
-        _.With(cel::ErrorValueReturn()));
-    CEL_RETURN_IF_ERROR(adapter_.mutation_apis()->SetFieldByNumber(
-                            number, legacy_value, memory_manager_, builder_))
-        .With(cel::ErrorValueReturn());
-    return std::nullopt;
-  }
-
-  absl::StatusOr<cel::StructValue> Build() && override {
-    CEL_ASSIGN_OR_RETURN(auto message,
-                         adapter_.mutation_apis()->AdaptFromWellKnownType(
-                             memory_manager_, std::move(builder_)));
-    if (!message.IsMessage()) {
-      return absl::FailedPreconditionError("expected MessageWrapper");
-    }
-    auto message_wrapper = message.MessageWrapperOrDie();
-    return cel::common_internal::LegacyStructValue(
-        google::protobuf::DownCastMessage<google::protobuf::Message>(message_wrapper.message_ptr()),
-        message_wrapper.legacy_type_info());
-  }
-
- private:
-  cel::MemoryManagerRef memory_manager_;
-  LegacyTypeAdapter adapter_;
-  MessageWrapper::Builder builder_;
-};
 
 class LegacyValueBuilder final : public cel::ValueBuilder {
  public:
@@ -155,28 +103,34 @@ class LegacyValueBuilder final : public cel::ValueBuilder {
 
 }  // namespace
 
-absl::StatusOr<absl_nullable cel::ValueBuilderPtr>
-LegacyTypeProvider::NewValueBuilder(
+absl::StatusOr<absl_nullable ValueBuilderPtr>
+LegacyRuntimeTypeProvider::NewValueBuilder(
     absl::string_view name,
     google::protobuf::MessageFactory* absl_nonnull message_factory,
     google::protobuf::Arena* absl_nonnull arena) const {
-  if (auto type_adapter = ProvideLegacyType(name); type_adapter.has_value()) {
-    const auto* mutation_apis = type_adapter->mutation_apis();
-    if (mutation_apis == nullptr) {
-      return absl::FailedPreconditionError(
-          absl::StrCat("LegacyTypeMutationApis missing for type: ", name));
-    }
-    CEL_ASSIGN_OR_RETURN(
-        auto builder,
-        mutation_apis->NewInstance(cel::MemoryManagerRef::Pooling(arena)));
-    return std::make_unique<LegacyValueBuilder>(
-        cel::MemoryManagerRef::Pooling(arena), *type_adapter,
-        std::move(builder));
+  auto type_adapter = ProvideLegacyType(name);
+
+  if (!type_adapter.has_value()) {
+    return nullptr;
   }
-  return nullptr;
+
+  // We know the implementation should not do this, but can't prove it to type
+  // system.
+  // Defensive checks but impractical to exercise.
+  const auto* mutation_apis = type_adapter->mutation_apis();
+  if (mutation_apis == nullptr) {
+    return absl::FailedPreconditionError(
+        absl::StrCat("LegacyTypeMutationApis missing for type: ", name));
+  }
+
+  CEL_ASSIGN_OR_RETURN(
+      auto builder,
+      mutation_apis->NewInstance(cel::MemoryManagerRef::Pooling(arena)));
+  return std::make_unique<LegacyValueBuilder>(
+      cel::MemoryManagerRef::Pooling(arena), *type_adapter, std::move(builder));
 }
 
-absl::StatusOr<absl::optional<cel::Type>> LegacyTypeProvider::FindTypeImpl(
+absl::StatusOr<std::optional<Type>> LegacyRuntimeTypeProvider::FindTypeImpl(
     absl::string_view name) const {
   if (auto type = cel::FindWellKnownType(name); type.has_value()) {
     return type;
@@ -192,14 +146,14 @@ absl::StatusOr<absl::optional<cel::Type>> LegacyTypeProvider::FindTypeImpl(
   return std::nullopt;
 }
 
-absl::StatusOr<absl::optional<cel::StructTypeField>>
-LegacyTypeProvider::FindStructTypeFieldByNameImpl(
+absl::StatusOr<std::optional<StructTypeField>>
+LegacyRuntimeTypeProvider::FindStructTypeFieldByNameImpl(
     absl::string_view type, absl::string_view name) const {
   if (auto result = cel::FindWellKnownTypeFieldByName(type, name);
       result.has_value()) {
     return result;
   }
-  absl::optional<const LegacyTypeInfoApis*> type_info =
+  std::optional<const LegacyTypeInfoApis*> type_info =
       ProvideLegacyTypeInfo(type);
   if (!type_info.has_value()) {
     return std::nullopt;
@@ -229,4 +183,4 @@ LegacyTypeProvider::FindStructTypeFieldByNameImpl(
   return cel::common_internal::BasicStructTypeField(name, 0, cel::DynType{});
 }
 
-}  // namespace google::api::expr::runtime
+}  // namespace cel::runtime_internal

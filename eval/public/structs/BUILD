@@ -229,26 +229,12 @@ cc_test(
 
 cc_library(
     name = "legacy_type_provider",
-    srcs = ["legacy_type_provider.cc"],
     hdrs = ["legacy_type_provider.h"],
     deps = [
         ":legacy_type_adapter",
         ":legacy_type_info_apis",
-        "//common:legacy_value",
-        "//common:memory",
-        "//common:type",
-        "//common:value",
-        "//eval/public:message_wrapper",
-        "//extensions/protobuf:memory_manager",
-        "//internal:status_macros",
         "@com_google_absl//absl/base:core_headers",
-        "@com_google_absl//absl/base:nullability",
-        "@com_google_absl//absl/status",
-        "@com_google_absl//absl/status:statusor",
-        "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:string_view",
-        "@com_google_absl//absl/types:optional",
-        "@com_google_protobuf//:protobuf",
     ],
 )
 
@@ -359,15 +345,11 @@ cc_test(
     deps = [
         ":legacy_type_info_apis",
         ":protobuf_descriptor_type_provider",
-        "//common:type",
         "//eval/public:cel_value",
         "//eval/public/testing:matchers",
         "//extensions/protobuf:memory_manager",
         "//internal:testing",
-        "//internal:testing_descriptor_pool",
-        "//internal:testing_message_factory",
         "@com_google_absl//absl/status:status_matchers",
-        "@com_google_cel_spec//proto/cel/expr/conformance/proto3:test_all_types_cc_proto",
         "@com_google_protobuf//:protobuf",
         "@com_google_protobuf//:wrappers_cc_proto",
     ],
@@ -413,12 +395,10 @@ cc_test(
         ":legacy_type_adapter",
         ":legacy_type_info_apis",
         ":legacy_type_provider",
-        ":proto_message_type_adapter",
         ":trivial_legacy_type_info",
-        "//common:type",
-        "//eval/testutil:test_message_cc_proto",
         "//internal:testing",
         "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:optional",
     ],
 )
 
