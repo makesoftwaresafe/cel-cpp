@@ -104,6 +104,7 @@ cc_library(
     deps = [
         "@com_google_absl//absl/base:core_headers",
         "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_builder",
     ],
 )
 
@@ -157,9 +158,9 @@ cc_library(
     name = "status_macros",
     hdrs = ["status_macros.h"],
     deps = [
-        ":status_builder",
         "@com_google_absl//absl/base:core_headers",
         "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_macros",
     ],
 )
 
@@ -306,6 +307,7 @@ cc_library(
         "testing.h",
     ],
     deps = [
+        ":status_builder",
         ":status_macros",
         "@com_google_absl//absl/status:status_matchers",
         "@com_google_absl//absl/strings",
@@ -323,6 +325,7 @@ cc_library(
         "testing.h",
     ],
     deps = [
+        ":status_builder",
         ":status_macros",
         "@com_google_absl//absl/status:status_matchers",
         "@com_google_absl//absl/strings",

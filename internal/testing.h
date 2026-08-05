@@ -18,14 +18,15 @@
 #include "gmock/gmock.h"  // IWYU pragma: export
 #include "gtest/gtest.h"  // IWYU pragma: export
 #include "absl/status/status_matchers.h"
+#include "internal/status_builder.h"
 #include "internal/status_macros.h"  // IWYU pragma: keep
 
 #ifndef ASSERT_OK
-#define ASSERT_OK(expr) ASSERT_THAT(expr, ::absl_testing::IsOk())
+#define ASSERT_OK(expr) ABSL_ASSERT_OK(expr)
 #endif
 
 #ifndef EXPECT_OK
-#define EXPECT_OK(expr) EXPECT_THAT(expr, ::absl_testing::IsOk())
+#define EXPECT_OK(expr) ABSL_EXPECT_OK(expr)
 #endif
 
 #ifndef ASSERT_OK_AND_ASSIGN
