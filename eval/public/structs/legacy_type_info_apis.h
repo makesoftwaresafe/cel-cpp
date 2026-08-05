@@ -15,10 +15,10 @@
 #ifndef THIRD_PARTY_CEL_CPP_EVAL_PUBLIC_STRUCTS_LEGACY_TYPE_INFO_APIS_H_
 #define THIRD_PARTY_CEL_CPP_EVAL_PUBLIC_STRUCTS_LEGACY_TYPE_INFO_APIS_H_
 
+#include <optional>
 #include <string>
 
 #include "absl/base/nullability.h"
-#include "absl/status/status.h"
 #include "absl/strings/string_view.h"
 #include "eval/public/message_wrapper.h"
 #include "google/protobuf/descriptor.h"
@@ -28,6 +28,11 @@ namespace google::api::expr::runtime {
 // Forward declared to resolve cyclic dependency.
 class LegacyTypeAccessApis;
 class LegacyTypeMutationApis;
+
+// Forward declare permitted subclasses.
+class DucktypedMessageAdapter;
+class ProtoMessageTypeAdapter;
+class TrivialTypeInfo;
 
 // Interface for providing type info from a user defined type (represented as a
 // message).
@@ -97,10 +102,19 @@ class LegacyTypeInfoApis {
   //
   // The underlying string is expected to remain valid as long as the
   // LegacyTypeInfoApis instance.
-  virtual absl::optional<FieldDescription> FindFieldByName(
+  virtual std::optional<FieldDescription> FindFieldByName(
       absl::string_view name [[maybe_unused]]) const {
-    return absl::nullopt;
+    return std::nullopt;
   }
+
+ private:
+  // This class should only be implemented by CEL. Custom structs are only
+  // supported using the cel::Value APIs.
+  friend class DucktypedMessageAdapter;
+  friend class ProtoMessageTypeAdapter;
+  friend class TrivialTypeInfo;
+
+  LegacyTypeInfoApis() = default;
 };
 
 }  // namespace google::api::expr::runtime

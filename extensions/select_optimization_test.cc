@@ -33,7 +33,6 @@
 #include "absl/strings/str_cat.h"
 #include "absl/strings/string_view.h"
 #include "absl/time/time.h"
-#include "absl/types/optional.h"
 #include "absl/types/span.h"
 #include "base/ast.h"
 #include "base/attribute.h"
@@ -45,8 +44,10 @@
 #include "common/decl_proto.h"
 #include "common/expr.h"
 #include "common/kind.h"
-#include "common/memory.h"
+#include "common/native_type.h"
+#include "common/typeinfo.h"
 #include "common/value.h"
+#include "common/values/custom_struct_value.h"
 #include "compiler/compiler.h"
 #include "compiler/compiler_factory.h"
 #include "compiler/optional.h"
@@ -59,8 +60,6 @@
 #include "eval/public/cel_type_registry.h"
 #include "eval/public/cel_value.h"
 #include "eval/public/structs/cel_proto_wrapper.h"
-#include "eval/public/structs/legacy_type_adapter.h"
-#include "eval/public/structs/legacy_type_info_apis.h"
 #include "extensions/protobuf/ast_converters.h"
 #include "internal/number.h"
 #include "internal/status_macros.h"
@@ -96,18 +95,10 @@ using ::google::api::expr::runtime::CelProtoWrapper;
 using ::google::api::expr::runtime::CelValue;
 using ::google::api::expr::runtime::FlatExprBuilder;
 using ::google::api::expr::runtime::FlatExpression;
-using ::google::api::expr::runtime::LegacyTypeAccessApis;
-using ::google::api::expr::runtime::LegacyTypeInfoApis;
-using ::google::api::expr::runtime::LegacyTypeMutationApis;
-using ::google::protobuf::Empty;
-using ::testing::_;
 using ::testing::AllOf;
-using ::testing::AnyOf;
 using ::testing::ElementsAre;
 using ::testing::Eq;
 using ::testing::HasSubstr;
-using ::testing::NiceMock;
-using ::testing::Return;
 using ::testing::SizeIs;
 using ::testing::Truly;
 
@@ -232,75 +223,105 @@ absl::StatusOr<std::unique_ptr<cel::Ast>> CompileForTestCase(
   return r.ReleaseAst();
 }
 
-class MockAccessApis : public LegacyTypeInfoApis, public LegacyTypeAccessApis {
+class TestPartialQualifyStruct : public CustomStructValueInterface {
  public:
-  std::string DebugString(
-      const MessageWrapper& wrapped_message) const override {
-    return "MockAccessApis";
+  explicit TestPartialQualifyStruct(Value leaf_value)
+      : leaf_value_(std::move(leaf_value)) {}
+
+  std::string DebugString() const override {
+    return "TestPartialQualifyStruct";
   }
 
-  absl::string_view GetTypename(
-      const MessageWrapper& wrapped_message) const override {
-    return "MockAccessApis";
+  absl::Status SerializeTo(
+      const google::protobuf::DescriptorPool* descriptor_pool,
+      google::protobuf::MessageFactory* message_factory,
+      google::protobuf::io::ZeroCopyOutputStream* output) const override {
+    return absl::UnimplementedError("SerializeTo");
   }
 
-  const LegacyTypeAccessApis* GetAccessApis(
-      const MessageWrapper& wrapped_message) const override {
-    return this;
+  absl::Status ConvertToJsonObject(
+      const google::protobuf::DescriptorPool* descriptor_pool,
+      google::protobuf::MessageFactory* message_factory,
+      google::protobuf::Message* json) const override {
+    return absl::UnimplementedError("ConvertToJsonObject");
   }
 
-  const LegacyTypeMutationApis* GetMutationApis(
-      const MessageWrapper& wrapped_message) const override {
-    return nullptr;
+  absl::string_view GetTypeName() const override {
+    return "cel.expr.conformance.proto2.NestedTestAllTypes";
   }
 
-  std::optional<
-      google::api::expr::runtime::LegacyTypeInfoApis::FieldDescription>
-  FindFieldByName(absl::string_view field_name) const override {
-    return std::nullopt;
+  bool IsZeroValue() const override { return false; }
+
+  absl::Status GetFieldByName(absl::string_view name,
+                              ProtoWrapperTypeOptions unboxing_options,
+                              const google::protobuf::DescriptorPool* descriptor_pool,
+                              google::protobuf::MessageFactory* message_factory,
+                              google::protobuf::Arena* arena,
+                              Value* result) const override {
+    if (name == "child" || name == "payload" || name == "standalone_message") {
+      *result = CustomStructValue(this, arena);
+      return absl::OkStatus();
+    }
+    if (name == "bb") {
+      *result = leaf_value_;
+      return absl::OkStatus();
+    }
+    return NoSuchFieldError(name).ToStatus();
   }
 
-  MOCK_METHOD(absl::StatusOr<CelValue>, GetField,
-              (absl::string_view field_name,
-               const CelValue::MessageWrapper& instance,
-               ProtoWrapperTypeOptions unboxing_option,
-               cel::MemoryManagerRef memory_manager),
-              (const, override));
+  absl::Status GetFieldByNumber(int64_t number,
+                                ProtoWrapperTypeOptions unboxing_options,
+                                const google::protobuf::DescriptorPool* descriptor_pool,
+                                google::protobuf::MessageFactory* message_factory,
+                                google::protobuf::Arena* arena,
+                                Value* result) const override {
+    return absl::UnimplementedError("GetFieldByNumber");
+  }
 
-  MOCK_METHOD(absl::StatusOr<bool>, HasField,
-              (absl::string_view field_name,
-               const CelValue::MessageWrapper& value),
-              (const, override));
-
-  MOCK_METHOD(absl::StatusOr<LegacyTypeAccessApis::LegacyQualifyResult>,
-              Qualify,
-              (absl::Span<const SelectQualifier> qualifiers,
-               const CelValue::MessageWrapper& instance, bool presence_test,
-               MemoryManagerRef memory_manager),
-              (const, override));
-
-  bool IsEqualTo(
-      const CelValue::MessageWrapper& instance,
-      const CelValue::MessageWrapper& other_instance) const override {
+  absl::StatusOr<bool> HasFieldByName(absl::string_view name) const override {
+    if (name == "child" || name == "payload" || name == "standalone_message" ||
+        name == "bb") {
+      return true;
+    }
     return false;
   }
 
-  std::vector<absl::string_view> ListFields(
-      const CelValue::MessageWrapper& instance) const override {
-    return {};
+  absl::StatusOr<bool> HasFieldByNumber(int64_t number) const override {
+    return absl::UnimplementedError("HasFieldByNumber");
   }
+
+  absl::Status ForEachField(ForEachFieldCallback callback,
+                            const google::protobuf::DescriptorPool* descriptor_pool,
+                            google::protobuf::MessageFactory* message_factory,
+                            google::protobuf::Arena* arena) const override {
+    return absl::OkStatus();
+  }
+
+  absl::Status Qualify(absl::Span<const SelectQualifier> qualifiers,
+                       bool presence_test,
+                       const google::protobuf::DescriptorPool* descriptor_pool,
+                       google::protobuf::MessageFactory* message_factory,
+                       google::protobuf::Arena* arena, Value* result,
+                       int* count) const override {
+    if (qualifiers.size() >= 3) {
+      *count = 3;
+      *result = CustomStructValue(this, arena);
+      return absl::OkStatus();
+    }
+    return absl::UnimplementedError("Qualify unsupported");
+  }
+
+  CustomStructValue Clone(google::protobuf::Arena* arena) const override {
+    return CustomStructValue(this, arena);
+  }
+
+  NativeTypeId GetNativeTypeId() const override {
+    return cel::TypeId<TestPartialQualifyStruct>();
+  }
+
+ private:
+  Value leaf_value_;
 };
-
-std::pair<MockAccessApis*, CelValue> MakeMockLegacyMessage(
-    google::protobuf::Arena* arena) {
-  auto* mock_access_apis =
-      google::protobuf::Arena::Create<NiceMock<MockAccessApis>>(arena);
-  auto* message = google::protobuf::Arena::Create<Empty>(arena);
-
-  CelValue::MessageWrapper::Builder wrapper(message);
-  return {mock_access_apis,
-          CelValue::CreateMessageWrapper(wrapper.Build(mock_access_apis))};
-}
 
 absl::Status TestBindLegacyValue(absl::string_view variable,
                                  CelValue legacy_value, google::protobuf::Arena* arena,
@@ -1031,24 +1052,12 @@ INSTANTIATE_TEST_SUITE_P(
             "nested_test_all_types.child.payload.standalone_message.bb",
             {},
             [](google::protobuf::Arena* arena, Activation& act) {
-              auto mock_pair = MakeMockLegacyMessage(arena);
-              MockAccessApis* mock = mock_pair.first;
-              CelValue mocked_value = mock_pair.second;
-              ON_CALL(*mock, Qualify(SizeIs(4), _, /*presence_test=*/false, _))
-                  .WillByDefault(
-                      Return(LegacyTypeAccessApis::LegacyQualifyResult{
-                          mocked_value, 3}));
-              ON_CALL(*mock, GetField("bb", _, _, _))
-                  .WillByDefault(Return(CelValue::CreateInt64(42)));
-
-              // Support the forced-fallback case.
-              ON_CALL(*mock, GetField(AnyOf(Eq("child"), Eq("payload"),
-                                            Eq("standalone_message")),
-                                      _, _, _))
-                  .WillByDefault(Return(mocked_value));
-
-              return TestBindLegacyValue("nested_test_all_types", mocked_value,
-                                         arena, act);
+              auto* custom_struct =
+                  google::protobuf::Arena::Create<TestPartialQualifyStruct>(arena,
+                                                                  IntValue(42));
+              act.InsertOrAssignValue("nested_test_all_types",
+                                      CustomStructValue(custom_struct, arena));
+              return absl::OkStatus();
             },
             [](const absl::StatusOr<Value>& got) {
               ASSERT_OK_AND_ASSIGN(Value result, got);
@@ -1061,29 +1070,12 @@ INSTANTIATE_TEST_SUITE_P(
             "has(nested_test_all_types.child.payload.standalone_message.bb)",
             {},
             [](google::protobuf::Arena* arena, Activation& act) {
-              auto mock_pair = MakeMockLegacyMessage(arena);
-              MockAccessApis* mock = mock_pair.first;
-              CelValue mocked_value = mock_pair.second;
-              ON_CALL(*mock, Qualify(SizeIs(4), _, /*presence_test=*/true, _))
-                  .WillByDefault(
-                      Return(LegacyTypeAccessApis::LegacyQualifyResult{
-                          mocked_value, 3}));
-              ON_CALL(*mock, HasField("bb", _)).WillByDefault(Return(true));
-              ON_CALL(*mock, GetField("bb", _, _, _))
-                  .WillByDefault(Return(CelValue::CreateInt64(42)));
-
-              // Support the forced-fallback case.
-              ON_CALL(*mock, GetField(AnyOf(Eq("child"), Eq("payload"),
-                                            Eq("standalone_message")),
-                                      _, _, _))
-                  .WillByDefault(Return(mocked_value));
-              ON_CALL(*mock, HasField(AnyOf(Eq("child"), Eq("payload"),
-                                            Eq("standalone_message")),
-                                      _))
-                  .WillByDefault(Return(true));
-
-              return TestBindLegacyValue("nested_test_all_types", mocked_value,
-                                         arena, act);
+              auto* custom_struct =
+                  google::protobuf::Arena::Create<TestPartialQualifyStruct>(arena,
+                                                                  IntValue(42));
+              act.InsertOrAssignValue("nested_test_all_types",
+                                      CustomStructValue(custom_struct, arena));
+              return absl::OkStatus();
             },
             [](const absl::StatusOr<Value>& got) {
               ASSERT_OK_AND_ASSIGN(Value result, got);

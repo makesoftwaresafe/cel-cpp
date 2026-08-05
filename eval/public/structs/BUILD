@@ -272,14 +272,9 @@ cc_test(
     srcs = ["legacy_type_adapter_test.cc"],
     deps = [
         ":legacy_type_adapter",
-        ":trivial_legacy_type_info",
-        "//eval/public:cel_value",
-        "//eval/public/testing:matchers",
+        ":proto_message_type_adapter",
         "//eval/testutil:test_message_cc_proto",
-        "//extensions/protobuf:memory_manager",
-        "//internal:status_macros",
         "//internal:testing",
-        "@com_google_protobuf//:protobuf",
     ],
 )
 
@@ -301,7 +296,6 @@ cc_library(
         "//eval/public/containers:internal_field_backed_map_impl",
         "//extensions/protobuf:memory_manager",
         "//extensions/protobuf/internal:qualify",
-        "//internal:casts",
         "//internal:status_macros",
         "@com_google_absl//absl/base:no_destructor",
         "@com_google_absl//absl/base:nullability",
@@ -309,7 +303,6 @@ cc_library(
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings",
-        "@com_google_absl//absl/types:optional",
         "@com_google_absl//absl/types:span",
         "@com_google_protobuf//:differencer",
         "@com_google_protobuf//:protobuf",
@@ -386,7 +379,6 @@ cc_library(
     deps = [
         "//eval/public:message_wrapper",
         "@com_google_absl//absl/base:nullability",
-        "@com_google_absl//absl/status",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_protobuf//:protobuf",
     ],
@@ -418,11 +410,14 @@ cc_test(
     name = "legacy_type_provider_test",
     srcs = ["legacy_type_provider_test.cc"],
     deps = [
+        ":legacy_type_adapter",
         ":legacy_type_info_apis",
         ":legacy_type_provider",
+        ":proto_message_type_adapter",
+        ":trivial_legacy_type_info",
         "//common:type",
+        "//eval/testutil:test_message_cc_proto",
         "//internal:testing",
-        "@com_google_absl//absl/status:status_matchers",
         "@com_google_absl//absl/strings:string_view",
     ],
 )

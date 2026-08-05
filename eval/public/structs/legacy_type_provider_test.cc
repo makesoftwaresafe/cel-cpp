@@ -15,18 +15,18 @@
 #include "eval/public/structs/legacy_type_provider.h"
 
 #include <optional>
-#include <string>
 
-#include "absl/status/status_matchers.h"
 #include "absl/strings/string_view.h"
 #include "common/type.h"
+#include "eval/public/structs/legacy_type_adapter.h"
 #include "eval/public/structs/legacy_type_info_apis.h"
+#include "eval/public/structs/proto_message_type_adapter.h"
+#include "eval/public/structs/trivial_legacy_type_info.h"
+#include "eval/testutil/test_message.pb.h"
 #include "internal/testing.h"
 
 namespace google::api::expr::runtime {
 namespace {
-
-using ::absl_testing::IsOk;
 
 class LegacyTypeProviderTestEmpty : public LegacyTypeProvider {
  public:
@@ -34,32 +34,6 @@ class LegacyTypeProviderTestEmpty : public LegacyTypeProvider {
       absl::string_view name) const override {
     return std::nullopt;
   }
-};
-
-class LegacyTypeInfoApisEmpty : public LegacyTypeInfoApis {
- public:
-  std::string DebugString(
-      const MessageWrapper& wrapped_message) const override {
-    return "";
-  }
-  absl::string_view GetTypename(
-      const MessageWrapper& wrapped_message) const override {
-    return test_string_;
-  }
-  const LegacyTypeAccessApis* GetAccessApis(
-      const MessageWrapper& wrapped_message) const override {
-    return nullptr;
-  }
-  absl::optional<FieldDescription> FindFieldByName(
-      absl::string_view name) const override {
-    if (name == "field1") {
-      return FieldDescription{1, "field1"};
-    }
-    return absl::nullopt;
-  }
-
- private:
-  const std::string test_string_ = "test";
 };
 
 class LegacyTypeProviderTestImpl : public LegacyTypeProvider {
@@ -92,8 +66,7 @@ TEST(LegacyTypeProviderTest, EmptyTypeProviderHasProvideTypeInfo) {
 }
 
 TEST(LegacyTypeProviderTest, NonEmptyTypeProviderProvidesSomeTypes) {
-  LegacyTypeInfoApisEmpty test_type_info;
-  LegacyTypeProviderTestImpl provider(&test_type_info);
+  LegacyTypeProviderTestImpl provider(TrivialTypeInfo::GetInstance());
   EXPECT_TRUE(provider.ProvideLegacyType("test").has_value());
   EXPECT_TRUE(provider.ProvideLegacyTypeInfo("test").has_value());
   EXPECT_EQ(provider.ProvideLegacyType("other"), std::nullopt);
@@ -101,15 +74,16 @@ TEST(LegacyTypeProviderTest, NonEmptyTypeProviderProvidesSomeTypes) {
 }
 
 TEST(LegacyTypeProviderTest, FindStructTypeFieldByName) {
-  LegacyTypeInfoApisEmpty test_type_info;
-  LegacyTypeProviderTestImpl provider(&test_type_info);
+  ProtoMessageTypeAdapter adapter(TestMessage::descriptor(), nullptr);
+  LegacyTypeProviderTestImpl provider(&adapter);
 
-  ASSERT_OK_AND_ASSIGN(absl::optional<cel::StructTypeField> field,
-                       provider.FindStructTypeFieldByName("test", "field1"));
+  ASSERT_OK_AND_ASSIGN(
+      absl::optional<cel::StructTypeField> field,
+      provider.FindStructTypeFieldByName("test", "int32_value"));
   ASSERT_TRUE(field.has_value());
-  EXPECT_EQ(field->name(), "field1");
+  EXPECT_EQ(field->name(), "int32_value");
   EXPECT_EQ(field->number(), 1);
-  EXPECT_EQ(field->GetType(), cel::DynType());
+  EXPECT_EQ(field->GetType(), cel::IntType());
 
   ASSERT_OK_AND_ASSIGN(
       absl::optional<cel::StructTypeField> not_found_field,

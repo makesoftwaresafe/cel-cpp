@@ -14,49 +14,19 @@
 
 #include "eval/public/structs/legacy_type_adapter.h"
 
-#include <vector>
-
-#include "eval/public/cel_value.h"
-#include "eval/public/structs/trivial_legacy_type_info.h"
-#include "eval/public/testing/matchers.h"
+#include "eval/public/structs/proto_message_type_adapter.h"
 #include "eval/testutil/test_message.pb.h"
-#include "extensions/protobuf/memory_manager.h"
-#include "internal/status_macros.h"
 #include "internal/testing.h"
 
 namespace google::api::expr::runtime {
 namespace {
 
-class TestAccessApiImpl : public LegacyTypeAccessApis {
- public:
-  TestAccessApiImpl() {}
-  absl::StatusOr<bool> HasField(
-      absl::string_view field_name,
-      const CelValue::MessageWrapper& value) const override {
-    return absl::UnimplementedError("Not implemented");
-  }
+TEST(LegacyTypeAdapter, Basic) {
+  ProtoMessageTypeAdapter adapter(TestMessage::descriptor(), nullptr);
+  LegacyTypeAdapter type_adapter(&adapter, &adapter);
 
-  absl::StatusOr<CelValue> GetField(
-      absl::string_view field_name, const CelValue::MessageWrapper& instance,
-      ProtoWrapperTypeOptions unboxing_option,
-      cel::MemoryManagerRef memory_manager) const override {
-    return absl::UnimplementedError("Not implemented");
-  }
-
-  std::vector<absl::string_view> ListFields(
-      const CelValue::MessageWrapper& instance) const override {
-    return std::vector<absl::string_view>();
-  }
-};
-
-TEST(LegacyTypeAdapterAccessApis, DefaultAlwaysInequal) {
-  TestMessage message;
-  MessageWrapper wrapper(&message, nullptr);
-  MessageWrapper wrapper2(&message, nullptr);
-
-  TestAccessApiImpl impl;
-
-  EXPECT_FALSE(impl.IsEqualTo(wrapper, wrapper2));
+  EXPECT_EQ(type_adapter.access_apis(), &adapter);
+  EXPECT_EQ(type_adapter.mutation_apis(), &adapter);
 }
 
 }  // namespace

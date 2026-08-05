@@ -15,7 +15,7 @@
 #include "eval/public/structs/proto_message_type_adapter.h"
 
 #include <cstdint>
-#include <limits>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -27,7 +27,6 @@
 #include "absl/strings/str_cat.h"
 #include "absl/strings/string_view.h"
 #include "absl/strings/substitute.h"
-#include "absl/types/optional.h"
 #include "absl/types/span.h"
 #include "base/attribute.h"
 #include "common/memory.h"
@@ -42,7 +41,6 @@
 #include "eval/public/structs/legacy_type_info_apis.h"
 #include "extensions/protobuf/internal/qualify.h"
 #include "extensions/protobuf/memory_manager.h"
-#include "internal/casts.h"
 #include "internal/status_macros.h"
 #include "google/protobuf/arena.h"
 #include "google/protobuf/descriptor.h"
@@ -178,7 +176,7 @@ class LegacyQualifyState final
   LegacyQualifyState(const LegacyQualifyState&) = delete;
   LegacyQualifyState& operator=(const LegacyQualifyState&) = delete;
 
-  absl::optional<CelValue>& result() { return result_; }
+  std::optional<CelValue>& result() { return result_; }
 
  private:
   void SetResultFromError(absl::Status status,
@@ -221,7 +219,7 @@ class LegacyQualifyState final
     return absl::OkStatus();
   }
 
-  absl::optional<CelValue> result_;
+  std::optional<CelValue> result_;
 };
 
 absl::StatusOr<LegacyQualifyResult> QualifyImpl(
@@ -279,8 +277,9 @@ std::vector<absl::string_view> ListFieldsImpl(
   return field_names;
 }
 
+}  // namespace
+
 class DucktypedMessageAdapter : public LegacyTypeAccessApis,
-                                public LegacyTypeMutationApis,
                                 public LegacyTypeInfoApis {
  public:
   // Implement field access APIs.
@@ -351,46 +350,6 @@ class DucktypedMessageAdapter : public LegacyTypeAccessApis,
     return message->ShortDebugString();
   }
 
-  bool DefinesField(absl::string_view field_name) const override {
-    // Pretend all our fields exist. Real errors will be returned from field
-    // getters and setters.
-    return true;
-  }
-
-  absl::StatusOr<CelValue::MessageWrapper::Builder> NewInstance(
-      cel::MemoryManagerRef memory_manager) const override {
-    return absl::UnimplementedError("NewInstance is not implemented");
-  }
-
-  absl::StatusOr<CelValue> AdaptFromWellKnownType(
-      cel::MemoryManagerRef memory_manager,
-      CelValue::MessageWrapper::Builder instance) const override {
-    if (!instance.HasFullProto() || instance.message_ptr() == nullptr) {
-      return absl::UnimplementedError(
-          "MessageLite is not supported, descriptor is required");
-    }
-    return ProtoMessageTypeAdapter(
-               static_cast<const google::protobuf::Message*>(instance.message_ptr())
-                   ->GetDescriptor(),
-               nullptr)
-        .AdaptFromWellKnownType(memory_manager, instance);
-  }
-
-  absl::Status SetField(
-      absl::string_view field_name, const CelValue& value,
-      cel::MemoryManagerRef memory_manager,
-      CelValue::MessageWrapper::Builder& instance) const override {
-    if (!instance.HasFullProto() || instance.message_ptr() == nullptr) {
-      return absl::UnimplementedError(
-          "MessageLite is not supported, descriptor is required");
-    }
-    return ProtoMessageTypeAdapter(
-               static_cast<const google::protobuf::Message*>(instance.message_ptr())
-                   ->GetDescriptor(),
-               nullptr)
-        .SetField(field_name, value, memory_manager, instance);
-  }
-
   std::vector<absl::string_view> ListFields(
       const CelValue::MessageWrapper& instance) const override {
     return ListFieldsImpl(instance);
@@ -403,7 +362,7 @@ class DucktypedMessageAdapter : public LegacyTypeAccessApis,
 
   const LegacyTypeMutationApis* GetMutationApis(
       const MessageWrapper& wrapped_message) const override {
-    return this;
+    return nullptr;
   }
 
   static const DucktypedMessageAdapter& GetSingleton() {
@@ -411,6 +370,8 @@ class DucktypedMessageAdapter : public LegacyTypeAccessApis,
     return *instance;
   }
 };
+
+namespace {
 
 CelValue MessageCelValueFactory(const google::protobuf::Message* message) {
   return CelValue::CreateMessageWrapper(
@@ -469,7 +430,7 @@ const LegacyTypeAccessApis* ProtoMessageTypeAdapter::GetAccessApis(
   return this;
 }
 
-absl::optional<LegacyTypeInfoApis::FieldDescription>
+std::optional<LegacyTypeInfoApis::FieldDescription>
 ProtoMessageTypeAdapter::FindFieldByName(absl::string_view field_name) const {
   if (descriptor_ == nullptr) {
     return std::nullopt;

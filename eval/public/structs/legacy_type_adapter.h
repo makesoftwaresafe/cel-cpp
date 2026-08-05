@@ -32,6 +32,10 @@
 
 namespace google::api::expr::runtime {
 
+// Forward declare permitted subclasses.
+class DucktypedMessageAdapter;
+class ProtoMessageTypeAdapter;
+
 // Interface for mutation apis.
 // Note: in the new type system, a type provider represents this by returning
 // a cel::Type and cel::ValueManager for the type.
@@ -71,6 +75,13 @@ class LegacyTypeMutationApis {
       CelValue::MessageWrapper::Builder& instance [[maybe_unused]]) const {
     return absl::UnimplementedError("SetFieldByNumber is not yet implemented");
   }
+
+ private:
+  // This class should only be implemented by CEL. Custom structs are only
+  // supported using the cel::Value APIs.
+  friend class ProtoMessageTypeAdapter;
+
+  LegacyTypeMutationApis() = default;
 };
 
 // Interface for access apis.
@@ -138,6 +149,14 @@ class LegacyTypeAccessApis {
 
   virtual std::vector<absl::string_view> ListFields(
       const CelValue::MessageWrapper& instance) const = 0;
+
+ private:
+  // This class should only be implemented by CEL. Custom structs are only
+  // supported using the cel::Value APIs.
+  friend class DucktypedMessageAdapter;
+  friend class ProtoMessageTypeAdapter;
+
+  LegacyTypeAccessApis() = default;
 };
 
 // Type information about a legacy Struct type.

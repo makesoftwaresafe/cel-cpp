@@ -15,11 +15,12 @@
 #ifndef THIRD_PARTY_CEL_CPP_EVAL_PUBLIC_STRUCTS_TYPE_PROVIDER_H_
 #define THIRD_PARTY_CEL_CPP_EVAL_PUBLIC_STRUCTS_TYPE_PROVIDER_H_
 
+#include <optional>
+
 #include "absl/base/attributes.h"
 #include "absl/base/nullability.h"
 #include "absl/status/statusor.h"
 #include "absl/strings/string_view.h"
-#include "absl/types/optional.h"
 #include "common/type.h"
 #include "common/type_reflector.h"
 #include "common/value.h"
@@ -45,7 +46,7 @@ class LegacyTypeProvider : public cel::TypeReflector {
   // Returned non-null pointers from the adapter implemententation must remain
   // valid as long as the type provider.
   // TODO(uncreated-issue/3): add alternative for new type system.
-  virtual absl::optional<LegacyTypeAdapter> ProvideLegacyType(
+  virtual std::optional<LegacyTypeAdapter> ProvideLegacyType(
       absl::string_view name) const = 0;
 
   // Return LegacyTypeInfoApis for the fully qualified type name if available.
@@ -55,9 +56,9 @@ class LegacyTypeProvider : public cel::TypeReflector {
   // Since custom type providers should create values compatible with evaluator
   // created ones, the TypeInfoApis returned from this method should be the same
   // as the ones used in value creation.
-  virtual absl::optional<const LegacyTypeInfoApis*> ProvideLegacyTypeInfo(
+  virtual std::optional<const LegacyTypeInfoApis*> ProvideLegacyTypeInfo(
       ABSL_ATTRIBUTE_UNUSED absl::string_view name) const {
-    return absl::nullopt;
+    return std::nullopt;
   }
 
   absl::StatusOr<absl_nullable cel::ValueBuilderPtr> NewValueBuilder(
@@ -66,10 +67,10 @@ class LegacyTypeProvider : public cel::TypeReflector {
       google::protobuf::Arena* absl_nonnull arena) const final;
 
  protected:
-  absl::StatusOr<absl::optional<cel::Type>> FindTypeImpl(
+  absl::StatusOr<std::optional<cel::Type>> FindTypeImpl(
       absl::string_view name) const final;
 
-  absl::StatusOr<absl::optional<cel::StructTypeField>>
+  absl::StatusOr<std::optional<cel::StructTypeField>>
   FindStructTypeFieldByNameImpl(absl::string_view type,
                                 absl::string_view name) const final;
 };
