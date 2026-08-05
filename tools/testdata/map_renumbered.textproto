@@ -1,0 +1,168 @@
+# proto-file: google/api/expr/checked.proto
+# proto-message: CheckedExpr
+# Renumbered version of map starting from 52.
+# has({"key 1": "value 1", "key 2": "value 2", "example_string": "value 3"}.example_string)
+type_map {
+  key: 52
+  value {
+    primitive: STRING
+  }
+}
+type_map {
+  key: 53
+  value {
+    primitive: STRING
+  }
+}
+type_map {
+  key: 54
+  value {
+    primitive: STRING
+  }
+}
+type_map {
+  key: 55
+  value {
+    primitive: STRING
+  }
+}
+type_map {
+  key: 56
+  value {
+    primitive: STRING
+  }
+}
+type_map {
+  key: 57
+  value {
+    primitive: STRING
+  }
+}
+type_map {
+  key: 58
+  value {
+    map_type {
+      key_type {
+        primitive: STRING
+      }
+      value_type {
+        primitive: STRING
+      }
+    }
+  }
+}
+type_map {
+  key: 62
+  value {
+    primitive: BOOL
+  }
+}
+expr {
+  id: 62
+  select_expr {
+    operand {
+      id: 58
+      struct_expr {
+        entries {
+          id: 59
+          map_key {
+            id: 52
+            const_expr {
+              string_value: "key 1"
+            }
+          }
+          value {
+            id: 53
+            const_expr {
+              string_value: "value 1"
+            }
+          }
+        }
+        entries {
+          id: 60
+          map_key {
+            id: 54
+            const_expr {
+              string_value: "key 2"
+            }
+          }
+          value {
+            id: 55
+            const_expr {
+              string_value: "value 2"
+            }
+          }
+        }
+        entries {
+          id: 61
+          map_key {
+            id: 56
+            const_expr {
+              string_value: "example_string"
+            }
+          }
+          value {
+            id: 57
+            const_expr {
+              string_value: "value 3"
+            }
+          }
+        }
+      }
+    }
+    field: "example_string"
+    test_only: true
+  }
+}
+source_info {
+  location: "<expression>"
+  line_offsets: 90
+  positions {
+    key: 52
+    value: 5
+  }
+  positions {
+    key: 53
+    value: 14
+  }
+  positions {
+    key: 54
+    value: 25
+  }
+  positions {
+    key: 55
+    value: 34
+  }
+  positions {
+    key: 56
+    value: 45
+  }
+  positions {
+    key: 57
+    value: 63
+  }
+  positions {
+    key: 58
+    value: 4
+  }
+  positions {
+    key: 59
+    value: 12
+  }
+  positions {
+    key: 60
+    value: 32
+  }
+  positions {
+    key: 61
+    value: 61
+  }
+  positions {
+    key: 62
+    value: 3
+  }
+  positions {
+    key: 63
+    value: 73
+  }
+}

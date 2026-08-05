@@ -1,0 +1,167 @@
+# proto-file: google/api/expr/checked.proto
+# proto-message: CheckedExpr
+# has({"key 1": "value 1", "key 2": "value 2", "example_string": "value 3"}.example_string)
+type_map {
+  key: 2
+  value {
+    map_type {
+      key_type {
+        primitive: STRING
+      }
+      value_type {
+        primitive: STRING
+      }
+    }
+  }
+}
+type_map {
+  key: 4
+  value {
+    primitive: STRING
+  }
+}
+type_map {
+  key: 5
+  value {
+    primitive: STRING
+  }
+}
+type_map {
+  key: 7
+  value {
+    primitive: STRING
+  }
+}
+type_map {
+  key: 8
+  value {
+    primitive: STRING
+  }
+}
+type_map {
+  key: 10
+  value {
+    primitive: STRING
+  }
+}
+type_map {
+  key: 11
+  value {
+    primitive: STRING
+  }
+}
+type_map {
+  key: 13
+  value {
+    primitive: BOOL
+  }
+}
+expr {
+  id: 13
+  select_expr {
+    operand {
+      id: 2
+      struct_expr {
+        entries {
+          id: 3
+          map_key {
+            id: 4
+            const_expr {
+              string_value: "key 1"
+            }
+          }
+          value {
+            id: 5
+            const_expr {
+              string_value: "value 1"
+            }
+          }
+        }
+        entries {
+          id: 6
+          map_key {
+            id: 7
+            const_expr {
+              string_value: "key 2"
+            }
+          }
+          value {
+            id: 8
+            const_expr {
+              string_value: "value 2"
+            }
+          }
+        }
+        entries {
+          id: 9
+          map_key {
+            id: 10
+            const_expr {
+              string_value: "example_string"
+            }
+          }
+          value {
+            id: 11
+            const_expr {
+              string_value: "value 3"
+            }
+          }
+        }
+      }
+    }
+    field: "example_string"
+    test_only: true
+  }
+}
+source_info {
+  location: "<expression>"
+  line_offsets: 90
+  positions {
+    key: 2
+    value: 4
+  }
+  positions {
+    key: 3
+    value: 12
+  }
+  positions {
+    key: 4
+    value: 5
+  }
+  positions {
+    key: 5
+    value: 14
+  }
+  positions {
+    key: 6
+    value: 32
+  }
+  positions {
+    key: 7
+    value: 25
+  }
+  positions {
+    key: 8
+    value: 34
+  }
+  positions {
+    key: 9
+    value: 61
+  }
+  positions {
+    key: 10
+    value: 45
+  }
+  positions {
+    key: 11
+    value: 63
+  }
+  positions {
+    key: 12
+    value: 73
+  }
+  positions {
+    key: 13
+    value: 3
+  }
+}
