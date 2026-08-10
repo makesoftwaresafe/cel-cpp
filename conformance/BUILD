@@ -170,9 +170,9 @@ _TESTS_TO_SKIP = [
 
     # Broken test cases which should be supported.
     # TODO(issues/97): Parse-only qualified variable lookup "x.y" with binding "x.y" or "y" within container "x" fails
-    "fields/qualified_identifier_resolution/qualified_ident,map_field_select,ident_with_longest_prefix_check,qualified_identifier_resolution_unchecked",
-    "namespace/qualified/self_eval_qualified_lookup",
-    "namespace/namespace/self_eval_container_lookup,self_eval_container_lookup_unchecked",
+    # NOTE: These tests have `disable_check: true` in their definition, making them force parse-only behavior even in checked mode test runs.
+    "fields/qualified_identifier_resolution/qualified_identifier_resolution_unchecked",
+    "namespace/namespace/self_eval_container_lookup_unchecked",
 
     # Skip until fixed.
     "fields/qualified_identifier_resolution/map_value_repeat_key_heterogeneous",
@@ -190,10 +190,18 @@ _TESTS_TO_SKIP = [
     # precision to preserve value. Not available on older compilers where we just use absl::Format.
     # We should probably update the spec to allow different formats that parse to the same value.
     "conversions/string/double_hard",
+]
 
-    # Recent changes
+_TESTS_TO_SKIP_PARSE_ONLY = [
+    # TODO(issues/97): Parse-only qualified variable lookup "x.y" with binding "x.y" or "y" within container "x" fails.
     "namespace/namespace_shadowing/basic",
     "namespace/namespace_shadowing/comprehension_shadowing_namespaced_selector_disambiguation",
+    "fields/qualified_identifier_resolution/qualified_ident",
+    "fields/qualified_identifier_resolution/map_field_select",
+    "fields/qualified_identifier_resolution/ident_with_longest_prefix_check",
+    "namespace/qualified/self_eval_qualified_lookup",
+    "namespace/namespace/self_eval_container_lookup",
+    "type_deductions",
 ]
 
 _TESTS_TO_SKIP_MODERN = _TESTS_TO_SKIP
@@ -238,14 +246,14 @@ gen_conformance_tests(
     name = "conformance_parse_only",
     data = _ALL_TESTS,
     modern = True,
-    skip_tests = _TESTS_TO_SKIP_MODERN + ["type_deductions"],
+    skip_tests = _TESTS_TO_SKIP_MODERN + _TESTS_TO_SKIP_PARSE_ONLY,
 )
 
 gen_conformance_tests(
     name = "conformance_legacy_parse_only",
     data = _ALL_TESTS,
     modern = False,
-    skip_tests = _TESTS_TO_SKIP_LEGACY + ["type_deductions"],
+    skip_tests = _TESTS_TO_SKIP_LEGACY + _TESTS_TO_SKIP_PARSE_ONLY,
 )
 
 gen_conformance_tests(

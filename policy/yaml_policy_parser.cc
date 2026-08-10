@@ -102,8 +102,7 @@ absl::Status YamlPolicyParser::ParsePolicy(CelPolicyParseContext& ctx) const {
     return absl::OkStatus();
   }
 
-  // TODO(b/542282964): Fold this mapping into cel::Source decoding happens
-  // once.
+  // TODO(b/542282964): Fold this mapping into cel::Source decoding.
   std::string text = source->content().ToString();
   std::vector<SourcePosition> mapping;
   mapping.resize(text.size() + 1, 0);
