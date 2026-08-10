@@ -86,7 +86,7 @@ TEST(LegacyRuntimeTypeProviderTest, FindStructTypeFieldByNameNotFound) {
   EXPECT_FALSE(field2.has_value());
 }
 
-TEST(LegacyRuntimeTypeProviderTest, NewValueBuilder) {
+TEST(LegacyRuntimeTypeProviderTest, NewValueBuilderMessage) {
   LegacyRuntimeTypeProvider provider(cel::internal::GetTestingDescriptorPool(),
                                      cel::internal::GetTestingMessageFactory());
   google::protobuf::Arena arena;
@@ -100,8 +100,31 @@ TEST(LegacyRuntimeTypeProviderTest, NewValueBuilder) {
                        builder->SetFieldByName("single_int64", IntValue(42)));
   EXPECT_FALSE(field_result.has_value());
 
+  ASSERT_OK_AND_ASSIGN(auto field_result2,
+                       builder->SetFieldByNumber(1, IntValue(100)));
+  EXPECT_FALSE(field_result2.has_value());
+
   ASSERT_OK_AND_ASSIGN(auto value, std::move(*builder).Build());
   EXPECT_TRUE(value.Is<StructValue>());
+}
+
+TEST(LegacyRuntimeTypeProviderTest, NewValueBuilderWellKnownType) {
+  LegacyRuntimeTypeProvider provider(cel::internal::GetTestingDescriptorPool(),
+                                     cel::internal::GetTestingMessageFactory());
+  google::protobuf::Arena arena;
+  ASSERT_OK_AND_ASSIGN(auto builder,
+                       provider.NewValueBuilder(
+                           "google.protobuf.Int64Value",
+                           cel::internal::GetTestingMessageFactory(), &arena));
+  ASSERT_NE(builder, nullptr);
+
+  ASSERT_OK_AND_ASSIGN(auto field_result,
+                       builder->SetFieldByName("value", IntValue(42)));
+  EXPECT_FALSE(field_result.has_value());
+
+  ASSERT_OK_AND_ASSIGN(auto value, std::move(*builder).Build());
+  ASSERT_TRUE(value.Is<IntValue>());
+  EXPECT_EQ(value.As<IntValue>()->NativeValue(), 42);
 }
 
 TEST(LegacyRuntimeTypeProviderTest, NewValueBuilderNotFound) {

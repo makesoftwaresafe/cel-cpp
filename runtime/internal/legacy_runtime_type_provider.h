@@ -37,8 +37,9 @@ class LegacyRuntimeTypeProvider final
   LegacyRuntimeTypeProvider(
       const google::protobuf::DescriptorPool* absl_nonnull descriptor_pool,
       google::protobuf::MessageFactory* absl_nullable message_factory)
-      : google::api::expr::runtime::ProtobufDescriptorProvider(
-            descriptor_pool, message_factory) {}
+      : google::api::expr::runtime::ProtobufDescriptorProvider(descriptor_pool,
+                                                               message_factory),
+        descriptor_pool_(descriptor_pool) {}
 
   absl::StatusOr<absl_nullable ValueBuilderPtr> NewValueBuilder(
       absl::string_view name,
@@ -51,6 +52,9 @@ class LegacyRuntimeTypeProvider final
 
   absl::StatusOr<std::optional<StructTypeField>> FindStructTypeFieldByNameImpl(
       absl::string_view type, absl::string_view name) const override;
+
+ private:
+  const google::protobuf::DescriptorPool* absl_nonnull descriptor_pool_;
 };
 
 }  // namespace cel::runtime_internal
