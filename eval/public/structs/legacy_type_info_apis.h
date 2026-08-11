@@ -27,7 +27,6 @@ namespace google::api::expr::runtime {
 
 // Forward declared to resolve cyclic dependency.
 class LegacyTypeAccessApis;
-class LegacyTypeMutationApis;
 
 // Forward declare permitted subclasses.
 class DucktypedMessageAdapter;
@@ -40,8 +39,8 @@ class TrivialTypeInfo;
 // Provides ability to obtain field access apis, type info, and debug
 // representation of a message.
 //
-// The message parameter may wrap a nullptr to request generic accessors /
-// mutators for the TypeInfo instance if it is available.
+// The message parameter may wrap a nullptr to request generic accessors for
+// the TypeInfo instance if it is available.
 //
 // This is implemented as a separate class from LegacyTypeAccessApis to resolve
 // cyclic dependency between CelValue (which needs to access these apis to
@@ -86,17 +85,6 @@ class LegacyTypeInfoApis {
   // is not defined for the type.
   virtual const LegacyTypeAccessApis* GetAccessApis(
       const MessageWrapper& wrapped_message) const = 0;
-
-  // Return a pointer to the wrapped message's mutation api implementation.
-  //
-  // The CEL interpreter assumes that the returned pointer is owned externally
-  // and will outlive any CelValues created by the interpreter.
-  //
-  // Nullptr signals that the value does not provide mutation apis.
-  virtual const LegacyTypeMutationApis* GetMutationApis(
-      const MessageWrapper& wrapped_message [[maybe_unused]]) const {
-    return nullptr;
-  }
 
   // Return a description of the underlying field if defined.
   //

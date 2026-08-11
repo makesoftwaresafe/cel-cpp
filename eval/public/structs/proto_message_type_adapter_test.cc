@@ -14,6 +14,7 @@
 
 #include "eval/public/structs/proto_message_type_adapter.h"
 
+#include <optional>
 #include <vector>
 
 #include "google/protobuf/wrappers.pb.h"
@@ -24,15 +25,12 @@
 #include "common/value.h"
 #include "common/value_testing.h"
 #include "eval/public/cel_value.h"
-#include "eval/public/containers/container_backed_list_impl.h"
-#include "eval/public/containers/container_backed_map_impl.h"
 #include "eval/public/message_wrapper.h"
 #include "eval/public/structs/legacy_type_adapter.h"
 #include "eval/public/structs/legacy_type_info_apis.h"
 #include "eval/public/testing/matchers.h"
 #include "eval/testutil/test_message.pb.h"
 #include "extensions/protobuf/memory_manager.h"
-#include "internal/proto_matchers.h"
 #include "internal/testing.h"
 #include "runtime/runtime_options.h"
 #include "google/protobuf/arena.h"
@@ -48,12 +46,9 @@ using ::absl_testing::IsOkAndHolds;
 using ::absl_testing::StatusIs;
 using ::cel::ProtoWrapperTypeOptions;
 using ::cel::extensions::ProtoMemoryManagerRef;
-using ::cel::internal::test::EqualsProto;
 using ::google::protobuf::Int64Value;
 using ::testing::_;
-using ::testing::AllOf;
 using ::testing::ElementsAre;
-using ::testing::Eq;
 using ::testing::Field;
 using ::testing::HasSubstr;
 using ::testing::Optional;
@@ -427,247 +422,6 @@ TEST(GetGenericProtoTypeInfoInstance, FallbackForNonMessage) {
   EXPECT_EQ(info_api.DebugString(null_message), "<unknown message>");
 }
 
-TEST(ProtoMessageTypeAdapter, NewInstance) {
-  google::protobuf::Arena arena;
-  ProtoMessageTypeAdapter adapter(
-      google::protobuf::DescriptorPool::generated_pool()->FindMessageTypeByName(
-          "google.api.expr.runtime.TestMessage"),
-      google::protobuf::MessageFactory::generated_factory());
-  auto manager = ProtoMemoryManagerRef(&arena);
-
-  ASSERT_OK_AND_ASSIGN(CelValue::MessageWrapper::Builder result,
-                       adapter.NewInstance(manager));
-  EXPECT_EQ(result.message_ptr()->SerializeAsString(), "");
-}
-
-TEST(ProtoMessageTypeAdapter, NewInstanceUnsupportedDescriptor) {
-  google::protobuf::Arena arena;
-
-  google::protobuf::DescriptorPool pool;
-  google::protobuf::FileDescriptorProto faked_file;
-  faked_file.set_name("faked.proto");
-  faked_file.set_syntax("proto3");
-  faked_file.set_package("google.api.expr.runtime");
-  auto msg_descriptor = faked_file.add_message_type();
-  msg_descriptor->set_name("FakeMessage");
-  pool.BuildFile(faked_file);
-
-  ProtoMessageTypeAdapter adapter(
-      pool.FindMessageTypeByName("google.api.expr.runtime.FakeMessage"),
-      google::protobuf::MessageFactory::generated_factory());
-  auto manager = ProtoMemoryManagerRef(&arena);
-
-  // Message factory doesn't know how to create our custom message, even though
-  // we provided a descriptor for it.
-  EXPECT_THAT(
-      adapter.NewInstance(manager),
-      StatusIs(absl::StatusCode::kInvalidArgument, HasSubstr("FakeMessage")));
-}
-
-TEST(ProtoMessageTypeAdapter, DefinesField) {
-  ProtoMessageTypeAdapter adapter(
-      google::protobuf::DescriptorPool::generated_pool()->FindMessageTypeByName(
-          "google.api.expr.runtime.TestMessage"),
-      google::protobuf::MessageFactory::generated_factory());
-
-  EXPECT_TRUE(adapter.DefinesField("int64_value"));
-  EXPECT_FALSE(adapter.DefinesField("not_a_field"));
-}
-
-TEST(ProtoMessageTypeAdapter, SetFieldSingular) {
-  google::protobuf::Arena arena;
-  ProtoMessageTypeAdapter adapter(
-      google::protobuf::DescriptorPool::generated_pool()->FindMessageTypeByName(
-          "google.api.expr.runtime.TestMessage"),
-      google::protobuf::MessageFactory::generated_factory());
-  auto manager = ProtoMemoryManagerRef(&arena);
-
-  ASSERT_OK_AND_ASSIGN(CelValue::MessageWrapper::Builder value,
-                       adapter.NewInstance(manager));
-
-  ASSERT_OK(adapter.SetField("int64_value", CelValue::CreateInt64(10), manager,
-                             value));
-
-  TestMessage message;
-  message.set_int64_value(10);
-  EXPECT_EQ(value.message_ptr()->SerializeAsString(),
-            message.SerializeAsString());
-
-  ASSERT_THAT(adapter.SetField("not_a_field", CelValue::CreateInt64(10),
-                               manager, value),
-              StatusIs(absl::StatusCode::kInvalidArgument,
-                       HasSubstr("field 'not_a_field': not found")));
-}
-
-TEST(ProtoMessageTypeAdapter, SetFieldRepeated) {
-  google::protobuf::Arena arena;
-  ProtoMessageTypeAdapter adapter(
-      google::protobuf::DescriptorPool::generated_pool()->FindMessageTypeByName(
-          "google.api.expr.runtime.TestMessage"),
-      google::protobuf::MessageFactory::generated_factory());
-  auto manager = ProtoMemoryManagerRef(&arena);
-
-  ContainerBackedListImpl list(
-      {CelValue::CreateInt64(1), CelValue::CreateInt64(2)});
-  CelValue value_to_set = CelValue::CreateList(&list);
-  ASSERT_OK_AND_ASSIGN(CelValue::MessageWrapper::Builder instance,
-                       adapter.NewInstance(manager));
-
-  ASSERT_OK(adapter.SetField("int64_list", value_to_set, manager, instance));
-
-  TestMessage message;
-  message.add_int64_list(1);
-  message.add_int64_list(2);
-
-  EXPECT_EQ(instance.message_ptr()->SerializeAsString(),
-            message.SerializeAsString());
-}
-
-TEST(ProtoMessageTypeAdapter, SetFieldNotAField) {
-  google::protobuf::Arena arena;
-  ProtoMessageTypeAdapter adapter(
-      google::protobuf::DescriptorPool::generated_pool()->FindMessageTypeByName(
-          "google.api.expr.runtime.TestMessage"),
-      google::protobuf::MessageFactory::generated_factory());
-  auto manager = ProtoMemoryManagerRef(&arena);
-
-  ASSERT_OK_AND_ASSIGN(CelValue::MessageWrapper::Builder instance,
-                       adapter.NewInstance(manager));
-
-  ASSERT_THAT(adapter.SetField("not_a_field", CelValue::CreateInt64(10),
-                               manager, instance),
-              StatusIs(absl::StatusCode::kInvalidArgument,
-                       HasSubstr("field 'not_a_field': not found")));
-}
-
-TEST(ProtoMesssageTypeAdapter, SetFieldWrongType) {
-  google::protobuf::Arena arena;
-  ProtoMessageTypeAdapter adapter(
-      google::protobuf::DescriptorPool::generated_pool()->FindMessageTypeByName(
-          "google.api.expr.runtime.TestMessage"),
-      google::protobuf::MessageFactory::generated_factory());
-  auto manager = ProtoMemoryManagerRef(&arena);
-
-  ContainerBackedListImpl list(
-      {CelValue::CreateInt64(1), CelValue::CreateInt64(2)});
-  CelValue list_value = CelValue::CreateList(&list);
-
-  CelMapBuilder builder;
-  ASSERT_OK(builder.Add(CelValue::CreateInt64(1), CelValue::CreateInt64(2)));
-  ASSERT_OK(builder.Add(CelValue::CreateInt64(2), CelValue::CreateInt64(4)));
-
-  CelValue map_value = CelValue::CreateMap(&builder);
-
-  CelValue int_value = CelValue::CreateInt64(42);
-
-  ASSERT_OK_AND_ASSIGN(CelValue::MessageWrapper::Builder instance,
-                       adapter.NewInstance(manager));
-
-  EXPECT_THAT(adapter.SetField("int64_value", map_value, manager, instance),
-              StatusIs(absl::StatusCode::kInvalidArgument));
-  EXPECT_THAT(adapter.SetField("int64_value", list_value, manager, instance),
-              StatusIs(absl::StatusCode::kInvalidArgument));
-
-  EXPECT_THAT(
-      adapter.SetField("int64_int32_map", list_value, manager, instance),
-      StatusIs(absl::StatusCode::kInvalidArgument));
-  EXPECT_THAT(adapter.SetField("int64_int32_map", int_value, manager, instance),
-              StatusIs(absl::StatusCode::kInvalidArgument));
-
-  EXPECT_THAT(adapter.SetField("int64_list", int_value, manager, instance),
-              StatusIs(absl::StatusCode::kInvalidArgument));
-  EXPECT_THAT(adapter.SetField("int64_list", map_value, manager, instance),
-              StatusIs(absl::StatusCode::kInvalidArgument));
-}
-
-TEST(ProtoMesssageTypeAdapter, SetFieldNotAMessage) {
-  google::protobuf::Arena arena;
-  ProtoMessageTypeAdapter adapter(
-      google::protobuf::DescriptorPool::generated_pool()->FindMessageTypeByName(
-          "google.api.expr.runtime.TestMessage"),
-      google::protobuf::MessageFactory::generated_factory());
-  auto manager = ProtoMemoryManagerRef(&arena);
-
-  CelValue int_value = CelValue::CreateInt64(42);
-  CelValue::MessageWrapper::Builder instance(
-      static_cast<google::protobuf::MessageLite*>(nullptr));
-
-  EXPECT_THAT(adapter.SetField("int64_value", int_value, manager, instance),
-              StatusIs(absl::StatusCode::kInternal));
-}
-
-TEST(ProtoMesssageTypeAdapter, SetFieldNullMessage) {
-  google::protobuf::Arena arena;
-  ProtoMessageTypeAdapter adapter(
-      google::protobuf::DescriptorPool::generated_pool()->FindMessageTypeByName(
-          "google.api.expr.runtime.TestMessage"),
-      google::protobuf::MessageFactory::generated_factory());
-  auto manager = ProtoMemoryManagerRef(&arena);
-
-  CelValue int_value = CelValue::CreateInt64(42);
-  CelValue::MessageWrapper::Builder instance(
-      static_cast<google::protobuf::Message*>(nullptr));
-
-  EXPECT_THAT(adapter.SetField("int64_value", int_value, manager, instance),
-              StatusIs(absl::StatusCode::kInternal));
-}
-
-TEST(ProtoMessageTypeAdapter, AdaptFromWellKnownType) {
-  google::protobuf::Arena arena;
-  ProtoMessageTypeAdapter adapter(
-      google::protobuf::DescriptorPool::generated_pool()->FindMessageTypeByName(
-          "google.protobuf.Int64Value"),
-      google::protobuf::MessageFactory::generated_factory());
-  auto manager = ProtoMemoryManagerRef(&arena);
-
-  ASSERT_OK_AND_ASSIGN(CelValue::MessageWrapper::Builder instance,
-                       adapter.NewInstance(manager));
-  ASSERT_OK(
-      adapter.SetField("value", CelValue::CreateInt64(42), manager, instance));
-
-  ASSERT_OK_AND_ASSIGN(CelValue value,
-                       adapter.AdaptFromWellKnownType(manager, instance));
-
-  EXPECT_THAT(value, test::IsCelInt64(42));
-}
-
-TEST(ProtoMessageTypeAdapter, AdaptFromWellKnownTypeUnspecial) {
-  google::protobuf::Arena arena;
-  ProtoMessageTypeAdapter adapter(
-      google::protobuf::DescriptorPool::generated_pool()->FindMessageTypeByName(
-          "google.api.expr.runtime.TestMessage"),
-      google::protobuf::MessageFactory::generated_factory());
-  auto manager = ProtoMemoryManagerRef(&arena);
-
-  ASSERT_OK_AND_ASSIGN(CelValue::MessageWrapper::Builder instance,
-                       adapter.NewInstance(manager));
-
-  ASSERT_OK(adapter.SetField("int64_value", CelValue::CreateInt64(42), manager,
-                             instance));
-  ASSERT_OK_AND_ASSIGN(CelValue value,
-                       adapter.AdaptFromWellKnownType(manager, instance));
-
-  // TestMessage should not be converted to a CEL primitive type.
-  EXPECT_THAT(value, test::IsCelMessage(EqualsProto("int64_value: 42")));
-}
-
-TEST(ProtoMessageTypeAdapter, AdaptFromWellKnownTypeNotAMessageError) {
-  google::protobuf::Arena arena;
-  ProtoMessageTypeAdapter adapter(
-      google::protobuf::DescriptorPool::generated_pool()->FindMessageTypeByName(
-          "google.api.expr.runtime.TestMessage"),
-      google::protobuf::MessageFactory::generated_factory());
-  auto manager = ProtoMemoryManagerRef(&arena);
-
-  CelValue::MessageWrapper::Builder instance(
-      static_cast<google::protobuf::MessageLite*>(nullptr));
-
-  // Interpreter guaranteed to call this with a message type, otherwise,
-  // something has broken.
-  EXPECT_THAT(adapter.AdaptFromWellKnownType(manager, instance),
-              StatusIs(absl::StatusCode::kInternal));
-}
-
 TEST(ProtoMesssageTypeAdapter, TypeInfoDebug) {
   ProtoMessageTypeAdapter adapter(
       google::protobuf::DescriptorPool::generated_pool()->FindMessageTypeByName(
@@ -714,23 +468,6 @@ TEST(ProtoMesssageTypeAdapter, FindFieldNotFound) {
       google::protobuf::MessageFactory::generated_factory());
 
   EXPECT_EQ(adapter.FindFieldByName("foo_not_a_field"), std::nullopt);
-}
-
-TEST(ProtoMesssageTypeAdapter, TypeInfoMutator) {
-  google::protobuf::Arena arena;
-  ProtoMessageTypeAdapter adapter(
-      google::protobuf::DescriptorPool::generated_pool()->FindMessageTypeByName(
-          "google.api.expr.runtime.TestMessage"),
-      google::protobuf::MessageFactory::generated_factory());
-  auto manager = ProtoMemoryManagerRef(&arena);
-
-  const LegacyTypeMutationApis* api = adapter.GetMutationApis(MessageWrapper());
-  ASSERT_NE(api, nullptr);
-
-  ASSERT_OK_AND_ASSIGN(MessageWrapper::Builder builder,
-                       api->NewInstance(manager));
-  EXPECT_NE(google::protobuf::DynamicCastMessage<TestMessage>(builder.message_ptr()),
-            nullptr);
 }
 
 TEST(ProtoMesssageTypeAdapter, TypeInfoAccesor) {

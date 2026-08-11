@@ -29,8 +29,7 @@ absl::optional<LegacyTypeAdapter> ProtobufDescriptorProvider::ProvideLegacyType(
   if (result == nullptr) {
     return std::nullopt;
   }
-  // ProtoMessageTypeAdapter provides apis for both access and mutation.
-  return LegacyTypeAdapter(result, result);
+  return LegacyTypeAdapter(result);
 }
 
 absl::optional<const LegacyTypeInfoApis*>

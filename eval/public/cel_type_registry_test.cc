@@ -36,7 +36,7 @@ class TestTypeProvider : public LegacyTypeProvider {
       absl::string_view name) const override {
     for (const auto& type : types_) {
       if (name == type) {
-        return LegacyTypeAdapter(/*access=*/nullptr, /*mutation=*/nullptr);
+        return LegacyTypeAdapter(/*access=*/nullptr);
       }
     }
     return std::nullopt;

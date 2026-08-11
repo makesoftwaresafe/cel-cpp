@@ -17,34 +17,25 @@
 #include <optional>
 
 #include "google/protobuf/wrappers.pb.h"
-#include "absl/status/status_matchers.h"
 #include "eval/public/cel_value.h"
 #include "eval/public/structs/legacy_type_info_apis.h"
-#include "eval/public/testing/matchers.h"
-#include "extensions/protobuf/memory_manager.h"
 #include "internal/testing.h"
-#include "google/protobuf/arena.h"
 #include "google/protobuf/descriptor.h"
 #include "google/protobuf/message.h"
 
 namespace google::api::expr::runtime {
 namespace {
 
-using ::absl_testing::IsOk;
-using ::cel::extensions::ProtoMemoryManager;
-
 TEST(ProtobufDescriptorProvider, Basic) {
   ProtobufDescriptorProvider provider(
       google::protobuf::DescriptorPool::generated_pool(),
       google::protobuf::MessageFactory::generated_factory());
-  google::protobuf::Arena arena;
-  auto manager = ProtoMemoryManager(&arena);
   auto type_adapter = provider.ProvideLegacyType("google.protobuf.Int64Value");
   std::optional<const LegacyTypeInfoApis*> type_info =
       provider.ProvideLegacyTypeInfo("google.protobuf.Int64Value");
 
   ASSERT_TRUE(type_adapter.has_value());
-  ASSERT_TRUE(type_adapter->mutation_apis() != nullptr);
+  ASSERT_TRUE(type_adapter->access_apis() != nullptr);
   ASSERT_TRUE(type_info.has_value());
   ASSERT_TRUE(type_info != nullptr);
 
@@ -52,20 +43,6 @@ TEST(ProtobufDescriptorProvider, Basic) {
   CelValue::MessageWrapper int64_cel_value(&int64_value, *type_info);
   EXPECT_EQ((*type_info)->GetTypename(int64_cel_value),
             "google.protobuf.Int64Value");
-
-  ASSERT_TRUE(type_adapter->mutation_apis()->DefinesField("value"));
-  ASSERT_OK_AND_ASSIGN(CelValue::MessageWrapper::Builder value,
-                       type_adapter->mutation_apis()->NewInstance(manager));
-
-  ASSERT_THAT(type_adapter->mutation_apis()->SetField(
-                  "value", CelValue::CreateInt64(10), manager, value),
-              IsOk());
-
-  ASSERT_OK_AND_ASSIGN(
-      CelValue adapted,
-      type_adapter->mutation_apis()->AdaptFromWellKnownType(manager, value));
-
-  EXPECT_THAT(adapted, test::IsCelInt64(10));
 }
 
 // This is an implementation detail, but testing for coverage.
@@ -76,12 +53,11 @@ TEST(ProtobufDescriptorProvider, MemoizesAdapters) {
   auto type_adapter = provider.ProvideLegacyType("google.protobuf.Int64Value");
 
   ASSERT_TRUE(type_adapter.has_value());
-  ASSERT_TRUE(type_adapter->mutation_apis() != nullptr);
+  ASSERT_TRUE(type_adapter->access_apis() != nullptr);
 
   auto type_adapter2 = provider.ProvideLegacyType("google.protobuf.Int64Value");
   ASSERT_TRUE(type_adapter2.has_value());
 
-  EXPECT_EQ(type_adapter->mutation_apis(), type_adapter2->mutation_apis());
   EXPECT_EQ(type_adapter->access_apis(), type_adapter2->access_apis());
 }
 

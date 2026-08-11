@@ -41,7 +41,7 @@ class LegacyTypeProviderTestImpl : public LegacyTypeProvider {
   absl::optional<LegacyTypeAdapter> ProvideLegacyType(
       absl::string_view name) const override {
     if (name == "test") {
-      return LegacyTypeAdapter(nullptr, nullptr);
+      return LegacyTypeAdapter(nullptr);
     }
     return std::nullopt;
   }

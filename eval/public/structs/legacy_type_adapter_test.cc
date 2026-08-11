@@ -23,10 +23,9 @@ namespace {
 
 TEST(LegacyTypeAdapter, Basic) {
   ProtoMessageTypeAdapter adapter(TestMessage::descriptor(), nullptr);
-  LegacyTypeAdapter type_adapter(&adapter, &adapter);
+  LegacyTypeAdapter type_adapter(&adapter);
 
   EXPECT_EQ(type_adapter.access_apis(), &adapter);
-  EXPECT_EQ(type_adapter.mutation_apis(), &adapter);
 }
 
 }  // namespace

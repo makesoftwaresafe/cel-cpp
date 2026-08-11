@@ -38,12 +38,12 @@ namespace google::api::expr::runtime {
 // generally the duck-typed instance to support the default behavior of
 // deferring to the protobuf reflection apis on the message instance.
 class ProtoMessageTypeAdapter : public LegacyTypeInfoApis,
-                                public LegacyTypeAccessApis,
-                                public LegacyTypeMutationApis {
+                                public LegacyTypeAccessApis {
  public:
-  ProtoMessageTypeAdapter(const google::protobuf::Descriptor* absl_nonnull descriptor,
-                          google::protobuf::MessageFactory* message_factory)
-      : message_factory_(message_factory), descriptor_(descriptor) {}
+  explicit ProtoMessageTypeAdapter(
+      const google::protobuf::Descriptor* absl_nonnull descriptor,
+      google::protobuf::MessageFactory* message_factory = nullptr)
+      : descriptor_(descriptor) {}
 
   ~ProtoMessageTypeAdapter() override = default;
 
@@ -61,31 +61,8 @@ class ProtoMessageTypeAdapter : public LegacyTypeInfoApis,
   const LegacyTypeAccessApis* GetAccessApis(
       const MessageWrapper& wrapped_message) const override;
 
-  const LegacyTypeMutationApis* GetMutationApis(
-      const MessageWrapper& wrapped_message) const override;
-
   absl::optional<LegacyTypeInfoApis::FieldDescription> FindFieldByName(
       absl::string_view field_name) const override;
-
-  // Implement LegacyTypeMutation APIs.
-  absl::StatusOr<CelValue::MessageWrapper::Builder> NewInstance(
-      cel::MemoryManagerRef memory_manager) const override;
-
-  bool DefinesField(absl::string_view field_name) const override;
-
-  absl::Status SetField(
-      absl::string_view field_name, const CelValue& value,
-      cel::MemoryManagerRef memory_manager,
-      CelValue::MessageWrapper::Builder& instance) const override;
-
-  absl::Status SetFieldByNumber(
-      int64_t field_number, const CelValue& value,
-      cel::MemoryManagerRef memory_manager,
-      CelValue::MessageWrapper::Builder& instance) const override;
-
-  absl::StatusOr<CelValue> AdaptFromWellKnownType(
-      cel::MemoryManagerRef memory_manager,
-      CelValue::MessageWrapper::Builder instance) const override;
 
   // Implement LegacyTypeAccessAPIs.
   absl::StatusOr<CelValue> GetField(
@@ -113,15 +90,6 @@ class ProtoMessageTypeAdapter : public LegacyTypeInfoApis,
   }
 
  private:
-  // Helper for standardizing error messages for SetField operation.
-  absl::Status ValidateSetFieldOp(bool assertion, absl::string_view field,
-                                  absl::string_view detail) const;
-
-  absl::Status SetField(const google::protobuf::FieldDescriptor* field,
-                        const CelValue& value, google::protobuf::Arena* arena,
-                        google::protobuf::Message* message) const;
-
-  google::protobuf::MessageFactory* message_factory_;
   const google::protobuf::Descriptor* absl_nonnull descriptor_;
 };
 

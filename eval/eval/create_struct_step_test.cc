@@ -58,7 +58,6 @@ namespace {
 
 using ::absl_testing::IsOk;
 using ::absl_testing::StatusIs;
-using ::cel::Expr;
 using ::cel::TypeProvider;
 using ::cel::internal::test::EqualsProto;
 using ::cel::runtime_internal::NewTestingRuntimeEnv;
@@ -200,7 +199,7 @@ TEST_P(CreateCreateStructStepTest, TestEmptyMessageCreation) {
 
   auto adapter = env_->legacy_type_registry.FindTypeAdapter(
       "google.api.expr.runtime.TestMessage");
-  ASSERT_TRUE(adapter.has_value() && adapter->mutation_apis() != nullptr);
+  ASSERT_TRUE(adapter.has_value() && adapter->access_apis() != nullptr);
 
   ASSERT_OK_AND_ASSIGN(auto maybe_type,
                        env_->type_registry.GetComposedTypeProvider().FindType(

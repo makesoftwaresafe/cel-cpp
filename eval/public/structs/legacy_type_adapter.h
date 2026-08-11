@@ -18,7 +18,7 @@
 #ifndef THIRD_PARTY_CEL_CPP_EVAL_PUBLIC_STRUCTS_LEGACY_TYPE_ADPATER_H_
 #define THIRD_PARTY_CEL_CPP_EVAL_PUBLIC_STRUCTS_LEGACY_TYPE_ADPATER_H_
 
-#include <cstdint>
+#include <cstddef>
 #include <vector>
 
 #include "absl/status/status.h"
@@ -35,54 +35,6 @@ namespace google::api::expr::runtime {
 // Forward declare permitted subclasses.
 class DucktypedMessageAdapter;
 class ProtoMessageTypeAdapter;
-
-// Interface for mutation apis.
-// Note: in the new type system, a type provider represents this by returning
-// a cel::Type and cel::ValueManager for the type.
-class LegacyTypeMutationApis {
- public:
-  virtual ~LegacyTypeMutationApis() = default;
-
-  // Return whether the type defines the given field.
-  // TODO(uncreated-issue/3): This is only used to eagerly fail during the planning
-  // phase. Check if it's safe to remove this behavior and fail at runtime.
-  virtual bool DefinesField(absl::string_view field_name) const = 0;
-
-  // Create a new empty instance of the type.
-  // May return a status if the type is not possible to create.
-  virtual absl::StatusOr<CelValue::MessageWrapper::Builder> NewInstance(
-      cel::MemoryManagerRef memory_manager) const = 0;
-
-  // Normalize special types to a native CEL value after building.
-  // The interpreter guarantees that instance is uniquely owned by the
-  // interpreter, and can be safely mutated.
-  virtual absl::StatusOr<CelValue> AdaptFromWellKnownType(
-      cel::MemoryManagerRef memory_manager,
-      CelValue::MessageWrapper::Builder instance) const = 0;
-
-  // Set field on instance to value.
-  // The interpreter guarantees that instance is uniquely owned by the
-  // interpreter, and can be safely mutated.
-  virtual absl::Status SetField(
-      absl::string_view field_name, const CelValue& value,
-      cel::MemoryManagerRef memory_manager,
-      CelValue::MessageWrapper::Builder& instance) const = 0;
-
-  virtual absl::Status SetFieldByNumber(
-      int64_t field_number [[maybe_unused]],
-      const CelValue& value [[maybe_unused]],
-      cel::MemoryManagerRef memory_manager [[maybe_unused]],
-      CelValue::MessageWrapper::Builder& instance [[maybe_unused]]) const {
-    return absl::UnimplementedError("SetFieldByNumber is not yet implemented");
-  }
-
- private:
-  // This class should only be implemented by CEL. Custom structs are only
-  // supported using the cel::Value APIs.
-  friend class ProtoMessageTypeAdapter;
-
-  LegacyTypeMutationApis() = default;
-};
 
 // Interface for access apis.
 // Note: in new type system this is integrated into the StructValue (via
@@ -162,9 +114,6 @@ class LegacyTypeAccessApis {
 // Type information about a legacy Struct type.
 // Provides methods to the interpreter for interacting with a custom type.
 //
-// mutation_apis() provide equivalent behavior to a cel::Type and
-// cel::ValueManager (resolved from a type name).
-//
 // access_apis() provide equivalent behavior to cel::StructValue accessors
 // (virtual dispatch to a concrete implementation for accessing underlying
 // values).
@@ -174,21 +123,18 @@ class LegacyTypeAccessApis {
 // the type provider that returned this object.
 class LegacyTypeAdapter {
  public:
-  LegacyTypeAdapter(const LegacyTypeAccessApis* access,
-                    const LegacyTypeMutationApis* mutation)
-      : access_apis_(access), mutation_apis_(mutation) {}
+  explicit LegacyTypeAdapter(const LegacyTypeAccessApis* access)
+      : access_apis_(access) {}
+  // Temporary constructor to support fakes in client tests.
+  LegacyTypeAdapter(const LegacyTypeAccessApis* access, std::nullptr_t)
+      : access_apis_(access) {}
 
   // Apis for access for the represented type.
   // If null, access is not supported (this is an opaque type).
-  const LegacyTypeAccessApis* access_apis() { return access_apis_; }
-
-  // Apis for mutation for the represented type.
-  // If null, mutation is not supported (this type cannot be created).
-  const LegacyTypeMutationApis* mutation_apis() { return mutation_apis_; }
+  const LegacyTypeAccessApis* access_apis() const { return access_apis_; }
 
  private:
   const LegacyTypeAccessApis* access_apis_;
-  const LegacyTypeMutationApis* mutation_apis_;
 };
 
 }  // namespace google::api::expr::runtime
