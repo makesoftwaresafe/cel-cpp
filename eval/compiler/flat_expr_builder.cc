@@ -2660,7 +2660,7 @@ absl::StatusOr<FlatExpression> FlatExprBuilder::CreateExpressionImpl(
 const cel::TypeProvider& FlatExprBuilder::GetTypeProvider() const {
   return use_legacy_type_provider_
              ? static_cast<const cel::TypeProvider&>(
-                   *GetLegacyRuntimeTypeProvider(type_registry_))
+                   GetLegacyRuntimeTypeProvider(type_registry_))
              : GetRuntimeTypeProvider(type_registry_);
 }
 

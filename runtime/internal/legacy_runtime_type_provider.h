@@ -23,23 +23,24 @@
 #include "common/type.h"
 #include "common/type_reflector.h"
 #include "common/value.h"
-#include "eval/public/structs/protobuf_descriptor_type_provider.h"
+#include "runtime/internal/runtime_type_provider.h"
 #include "google/protobuf/arena.h"
 #include "google/protobuf/descriptor.h"
 #include "google/protobuf/message.h"
 
 namespace cel::runtime_internal {
 
-class LegacyRuntimeTypeProvider final
-    : public google::api::expr::runtime::ProtobufDescriptorProvider,
-      public TypeReflector {
+// LegacyRuntimeTypeProvider is a TypeReflector that uses a RuntimeTypeProvider
+// internally to provide types with the google::api::expr::runtime::CelValue
+// APIs. It prefers to create wrapped legacy values but otherwise proxies to
+// the standard RuntimeTypeProvider.
+class LegacyRuntimeTypeProvider final : public TypeReflector {
  public:
   LegacyRuntimeTypeProvider(
       const google::protobuf::DescriptorPool* absl_nonnull descriptor_pool,
-      google::protobuf::MessageFactory* absl_nullable message_factory)
-      : google::api::expr::runtime::ProtobufDescriptorProvider(descriptor_pool,
-                                                               message_factory),
-        descriptor_pool_(descriptor_pool) {}
+      const RuntimeTypeProvider* absl_nonnull runtime_type_provider)
+      : descriptor_pool_(descriptor_pool),
+        runtime_type_provider_(runtime_type_provider) {}
 
   absl::StatusOr<absl_nullable ValueBuilderPtr> NewValueBuilder(
       absl::string_view name,
@@ -48,13 +49,18 @@ class LegacyRuntimeTypeProvider final
 
  protected:
   absl::StatusOr<std::optional<Type>> FindTypeImpl(
-      absl::string_view name) const override;
+      absl::string_view name) const override {
+    return runtime_type_provider_->FindType(name);
+  }
 
   absl::StatusOr<std::optional<StructTypeField>> FindStructTypeFieldByNameImpl(
-      absl::string_view type, absl::string_view name) const override;
+      absl::string_view type, absl::string_view name) const override {
+    return runtime_type_provider_->FindStructTypeFieldByName(type, name);
+  }
 
  private:
   const google::protobuf::DescriptorPool* absl_nonnull descriptor_pool_;
+  const RuntimeTypeProvider* absl_nonnull runtime_type_provider_;
 };
 
 }  // namespace cel::runtime_internal

@@ -20,6 +20,7 @@
 #include <utility>
 #include <vector>
 
+#include "absl/base/call_once.h"
 #include "absl/base/nullability.h"
 #include "absl/container/flat_hash_map.h"
 #include "absl/container/flat_hash_set.h"
@@ -28,6 +29,7 @@
 #include "base/type_provider.h"
 #include "eval/public/structs/legacy_type_adapter.h"
 #include "eval/public/structs/legacy_type_provider.h"
+#include "eval/public/structs/protobuf_descriptor_type_provider.h"
 #include "runtime/type_registry.h"
 #include "google/protobuf/descriptor.h"
 #include "google/protobuf/message.h"
@@ -60,7 +62,9 @@ class CelTypeRegistry {
 
   CelTypeRegistry(const google::protobuf::DescriptorPool* absl_nonnull descriptor_pool,
                   google::protobuf::MessageFactory* absl_nullable message_factory)
-      : modern_type_registry_(descriptor_pool, message_factory) {}
+      : descriptor_pool_(descriptor_pool),
+        message_factory_(message_factory),
+        modern_type_registry_(descriptor_pool, message_factory) {}
 
   ~CelTypeRegistry() = default;
 
@@ -77,8 +81,12 @@ class CelTypeRegistry {
 
   // Get the first registered type provider.
   std::shared_ptr<const LegacyTypeProvider> GetFirstTypeProvider() const {
-    return cel::runtime_internal::GetLegacyRuntimeTypeProvider(
-        modern_type_registry_);
+    absl::call_once(legacy_type_provider_once_, [&]() {
+      this->legacy_type_provider_ = std::make_shared<
+          google::api::expr::runtime::ProtobufDescriptorProvider>(
+          descriptor_pool_, message_factory_);
+    });
+    return legacy_type_provider_;
   }
 
   // Returns the effective type provider that has been configured with the
@@ -136,6 +144,13 @@ class CelTypeRegistry {
   }
 
  private:
+  const google::protobuf::DescriptorPool* absl_nonnull descriptor_pool_;
+  google::protobuf::MessageFactory* absl_nullable message_factory_;
+
+  // Legacy type provider. This is now disconnected from the actual type
+  // resolution, but preserved for legacy clients that used it directly.
+  mutable absl::once_flag legacy_type_provider_once_;
+  mutable std::shared_ptr<LegacyTypeProvider> legacy_type_provider_;
   // Internal modern registry.
   cel::TypeRegistry modern_type_registry_;
 };

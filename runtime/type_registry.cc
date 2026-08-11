@@ -35,9 +35,7 @@ TypeRegistry::TypeRegistry(
     const google::protobuf::DescriptorPool* absl_nonnull descriptor_pool,
     google::protobuf::MessageFactory* absl_nullable message_factory)
     : type_provider_(descriptor_pool),
-      legacy_type_provider_(
-          std::make_shared<runtime_internal::LegacyRuntimeTypeProvider>(
-              descriptor_pool, message_factory)) {
+      legacy_type_provider_(descriptor_pool, &type_provider_) {
   RegisterEnum("google.protobuf.NullValue", {{"NULL_VALUE", 0}});
 }
 

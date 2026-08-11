@@ -22,6 +22,7 @@
 #include "internal/testing.h"
 #include "internal/testing_descriptor_pool.h"
 #include "internal/testing_message_factory.h"
+#include "runtime/internal/runtime_type_provider.h"
 #include "cel/expr/conformance/proto3/test_all_types.pb.h"
 #include "google/protobuf/arena.h"
 #include "google/protobuf/descriptor.h"
@@ -33,8 +34,9 @@ namespace {
 using ::cel::expr::conformance::proto3::TestAllTypes;
 
 TEST(LegacyRuntimeTypeProviderTest, FindType) {
+  RuntimeTypeProvider type_provider(cel::internal::GetTestingDescriptorPool());
   LegacyRuntimeTypeProvider provider(cel::internal::GetTestingDescriptorPool(),
-                                     cel::internal::GetTestingMessageFactory());
+                                     &type_provider);
   ASSERT_OK_AND_ASSIGN(std::optional<Type> wrapper_type,
                        provider.FindType("google.protobuf.Int64Value"));
   ASSERT_TRUE(wrapper_type.has_value());
@@ -50,18 +52,18 @@ TEST(LegacyRuntimeTypeProviderTest, FindType) {
 }
 
 TEST(LegacyRuntimeTypeProviderTest, FindTypeNotFound) {
-  LegacyRuntimeTypeProvider provider(
-      google::protobuf::DescriptorPool::generated_pool(),
-      google::protobuf::MessageFactory::generated_factory());
+  RuntimeTypeProvider type_provider(google::protobuf::DescriptorPool::generated_pool());
+  LegacyRuntimeTypeProvider provider(google::protobuf::DescriptorPool::generated_pool(),
+                                     &type_provider);
   ASSERT_OK_AND_ASSIGN(std::optional<Type> type,
                        provider.FindType("UnknownType"));
   EXPECT_FALSE(type.has_value());
 }
 
 TEST(LegacyRuntimeTypeProviderTest, FindStructTypeFieldByName) {
-  LegacyRuntimeTypeProvider provider(
-      google::protobuf::DescriptorPool::generated_pool(),
-      google::protobuf::MessageFactory::generated_factory());
+  RuntimeTypeProvider type_provider(google::protobuf::DescriptorPool::generated_pool());
+  LegacyRuntimeTypeProvider provider(google::protobuf::DescriptorPool::generated_pool(),
+                                     &type_provider);
   ASSERT_OK_AND_ASSIGN(std::optional<StructTypeField> field,
                        provider.FindStructTypeFieldByName(
                            "google.protobuf.Int64Value", "value"));
@@ -72,9 +74,9 @@ TEST(LegacyRuntimeTypeProviderTest, FindStructTypeFieldByName) {
 }
 
 TEST(LegacyRuntimeTypeProviderTest, FindStructTypeFieldByNameNotFound) {
-  LegacyRuntimeTypeProvider provider(
-      google::protobuf::DescriptorPool::generated_pool(),
-      google::protobuf::MessageFactory::generated_factory());
+  RuntimeTypeProvider type_provider(google::protobuf::DescriptorPool::generated_pool());
+  LegacyRuntimeTypeProvider provider(google::protobuf::DescriptorPool::generated_pool(),
+                                     &type_provider);
   ASSERT_OK_AND_ASSIGN(std::optional<StructTypeField> field,
                        provider.FindStructTypeFieldByName(
                            "google.protobuf.Int64Value", "unknown_field"));
@@ -87,8 +89,9 @@ TEST(LegacyRuntimeTypeProviderTest, FindStructTypeFieldByNameNotFound) {
 }
 
 TEST(LegacyRuntimeTypeProviderTest, NewValueBuilderMessage) {
+  RuntimeTypeProvider type_provider(cel::internal::GetTestingDescriptorPool());
   LegacyRuntimeTypeProvider provider(cel::internal::GetTestingDescriptorPool(),
-                                     cel::internal::GetTestingMessageFactory());
+                                     &type_provider);
   google::protobuf::Arena arena;
   ASSERT_OK_AND_ASSIGN(auto builder,
                        provider.NewValueBuilder(
@@ -109,8 +112,9 @@ TEST(LegacyRuntimeTypeProviderTest, NewValueBuilderMessage) {
 }
 
 TEST(LegacyRuntimeTypeProviderTest, NewValueBuilderWellKnownType) {
+  RuntimeTypeProvider type_provider(cel::internal::GetTestingDescriptorPool());
   LegacyRuntimeTypeProvider provider(cel::internal::GetTestingDescriptorPool(),
-                                     cel::internal::GetTestingMessageFactory());
+                                     &type_provider);
   google::protobuf::Arena arena;
   ASSERT_OK_AND_ASSIGN(auto builder,
                        provider.NewValueBuilder(
@@ -128,9 +132,9 @@ TEST(LegacyRuntimeTypeProviderTest, NewValueBuilderWellKnownType) {
 }
 
 TEST(LegacyRuntimeTypeProviderTest, NewValueBuilderNotFound) {
-  LegacyRuntimeTypeProvider provider(
-      google::protobuf::DescriptorPool::generated_pool(),
-      google::protobuf::MessageFactory::generated_factory());
+  RuntimeTypeProvider type_provider(google::protobuf::DescriptorPool::generated_pool());
+  LegacyRuntimeTypeProvider provider(google::protobuf::DescriptorPool::generated_pool(),
+                                     &type_provider);
   google::protobuf::LinkMessageReflection<TestAllTypes>();
   google::protobuf::Arena arena;
   ASSERT_OK_AND_ASSIGN(

@@ -23,23 +23,15 @@
 #include "absl/status/statusor.h"
 #include "absl/strings/string_view.h"
 #include "common/legacy_value.h"
-#include "common/type.h"
-#include "common/type_introspector.h"
 #include "common/value.h"
 #include "common/values/value_builder.h"
-#include "eval/public/message_wrapper.h"
-#include "eval/public/structs/legacy_type_info_apis.h"
 #include "internal/status_macros.h"
 #include "google/protobuf/arena.h"
-#include "google/protobuf/descriptor.h"
 #include "google/protobuf/message.h"
 
 namespace cel::runtime_internal {
 
 namespace {
-
-using google::api::expr::runtime::LegacyTypeInfoApis;
-using google::api::expr::runtime::MessageWrapper;
 
 class LegacyValueBuilder final : public cel::ValueBuilder {
  public:
@@ -90,54 +82,6 @@ LegacyRuntimeTypeProvider::NewValueBuilder(
     return nullptr;
   }
   return std::make_unique<LegacyValueBuilder>(arena, std::move(builder));
-}
-
-absl::StatusOr<std::optional<Type>> LegacyRuntimeTypeProvider::FindTypeImpl(
-    absl::string_view name) const {
-  if (auto type = cel::FindWellKnownType(name); type.has_value()) {
-    return type;
-  }
-  if (auto type_info = ProvideLegacyTypeInfo(name); type_info.has_value()) {
-    const auto* descriptor = (*type_info)->GetDescriptor(MessageWrapper());
-    if (descriptor != nullptr) {
-      return cel::MessageType(descriptor);
-    }
-    return cel::common_internal::MakeBasicStructType(
-        (*type_info)->GetTypename(MessageWrapper()));
-  }
-  return std::nullopt;
-}
-
-absl::StatusOr<std::optional<StructTypeField>>
-LegacyRuntimeTypeProvider::FindStructTypeFieldByNameImpl(
-    absl::string_view type, absl::string_view name) const {
-  if (auto result = cel::FindWellKnownTypeFieldByName(type, name);
-      result.has_value()) {
-    return result;
-  }
-  std::optional<const LegacyTypeInfoApis*> type_info =
-      ProvideLegacyTypeInfo(type);
-  if (!type_info.has_value()) {
-    return std::nullopt;
-  }
-  if (const auto* descriptor = (*type_info)->GetDescriptor(MessageWrapper());
-      descriptor != nullptr) {
-    // If it's a normal proto, just use the descriptor to find the field.
-    // Allows us to get the same optimizations as the modern value in most
-    // cases.
-    const google::protobuf::FieldDescriptor* field = descriptor->FindFieldByName(name);
-    if (field != nullptr) {
-      return cel::StructTypeField(cel::MessageTypeField(field));
-    }
-  }
-
-  if (auto field_desc = (*type_info)->FindFieldByName(name);
-      field_desc.has_value()) {
-    return cel::common_internal::BasicStructTypeField(
-        field_desc->name, field_desc->number, cel::DynType{});
-  }
-
-  return std::nullopt;
 }
 
 }  // namespace cel::runtime_internal

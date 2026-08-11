@@ -813,6 +813,7 @@ cc_library(
         "//eval/public/structs:legacy_type_provider",
         "//eval/public/structs:protobuf_descriptor_type_provider",
         "//runtime:type_registry",
+        "@com_google_absl//absl/base",
         "@com_google_absl//absl/base:nullability",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/container:flat_hash_set",

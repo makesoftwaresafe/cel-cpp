@@ -41,8 +41,8 @@ class TypeRegistry;
 namespace runtime_internal {
 const RuntimeTypeProvider& GetRuntimeTypeProvider(
     const TypeRegistry& type_registry);
-const absl_nonnull std::shared_ptr<LegacyRuntimeTypeProvider>&
-GetLegacyRuntimeTypeProvider(const TypeRegistry& type_registry);
+const LegacyRuntimeTypeProvider& GetLegacyRuntimeTypeProvider(
+    const TypeRegistry& type_registry);
 
 // Returns a memoized table of fully qualified enum values.
 //
@@ -104,10 +104,9 @@ class TypeRegistry {
  private:
   friend const runtime_internal::RuntimeTypeProvider&
   runtime_internal::GetRuntimeTypeProvider(const TypeRegistry& type_registry);
-  friend const
-      absl_nonnull std::shared_ptr<runtime_internal::LegacyRuntimeTypeProvider>&
-      runtime_internal::GetLegacyRuntimeTypeProvider(
-          const TypeRegistry& type_registry);
+  friend const runtime_internal::LegacyRuntimeTypeProvider&
+  runtime_internal::GetLegacyRuntimeTypeProvider(
+      const TypeRegistry& type_registry);
 
   friend std::shared_ptr<const absl::flat_hash_map<std::string, Value>>
   runtime_internal::GetEnumValueTable(const TypeRegistry& type_registry);
@@ -116,8 +115,7 @@ class TypeRegistry {
   GetEnumValueTable() const;
 
   runtime_internal::RuntimeTypeProvider type_provider_;
-  absl_nonnull std::shared_ptr<runtime_internal::LegacyRuntimeTypeProvider>
-      legacy_type_provider_;
+  runtime_internal::LegacyRuntimeTypeProvider legacy_type_provider_;
   absl::flat_hash_map<std::string, Enumeration> enum_types_;
 
   // memoized fully qualified enumerator names.
@@ -139,8 +137,8 @@ inline const RuntimeTypeProvider& GetRuntimeTypeProvider(
     const TypeRegistry& type_registry) {
   return type_registry.type_provider_;
 }
-inline const absl_nonnull std::shared_ptr<LegacyRuntimeTypeProvider>&
-GetLegacyRuntimeTypeProvider(const TypeRegistry& type_registry) {
+inline const LegacyRuntimeTypeProvider& GetLegacyRuntimeTypeProvider(
+    const TypeRegistry& type_registry) {
   return type_registry.legacy_type_provider_;
 }
 inline std::shared_ptr<const absl::flat_hash_map<std::string, Value>>
