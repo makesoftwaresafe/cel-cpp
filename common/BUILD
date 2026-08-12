@@ -799,6 +799,7 @@ cc_library(
         "//eval/public/structs:legacy_type_adapter",
         "//eval/public/structs:legacy_type_info_apis",
         "//eval/public/structs:proto_message_type_adapter",
+        "//eval/public/structs:trivial_legacy_type_info_internal",
         "//extensions/protobuf/internal:map_reflection",
         "//extensions/protobuf/internal:qualify",
         "//internal:casts",

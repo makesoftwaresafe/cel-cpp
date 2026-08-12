@@ -23,6 +23,10 @@
 #include "eval/public/message_wrapper.h"
 #include "google/protobuf/descriptor.h"
 
+namespace cel::interop_internal {
+struct TrivialTypeInfo;
+}  // namespace cel::interop_internal
+
 namespace google::api::expr::runtime {
 
 // Forward declared to resolve cyclic dependency.
@@ -31,7 +35,6 @@ class LegacyTypeAccessApis;
 // Forward declare permitted subclasses.
 class DucktypedMessageAdapter;
 class ProtoMessageTypeAdapter;
-class TrivialTypeInfo;
 
 // Interface for providing type info from a user defined type (represented as a
 // message).
@@ -100,7 +103,7 @@ class LegacyTypeInfoApis {
   // supported using the cel::Value APIs.
   friend class DucktypedMessageAdapter;
   friend class ProtoMessageTypeAdapter;
-  friend class TrivialTypeInfo;
+  friend class cel::interop_internal::TrivialTypeInfo;
 
   LegacyTypeInfoApis() = default;
 };

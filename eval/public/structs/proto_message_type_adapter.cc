@@ -362,6 +362,10 @@ class DucktypedMessageAdapter : public LegacyTypeAccessApis,
     static absl::NoDestructor<DucktypedMessageAdapter> instance;
     return *instance;
   }
+
+ private:
+  friend class absl::NoDestructor<DucktypedMessageAdapter>;
+  DucktypedMessageAdapter() = default;
 };
 
 namespace {
@@ -487,5 +491,11 @@ std::vector<absl::string_view> ProtoMessageTypeAdapter::ListFields(
 const LegacyTypeInfoApis& GetGenericProtoTypeInfoInstance() {
   return DucktypedMessageAdapter::GetSingleton();
 }
+
+namespace internal {
+const LegacyTypeAccessApis& GetGenericProtoAccessApisInstance() {
+  return DucktypedMessageAdapter::GetSingleton();
+}
+}  // namespace internal
 
 }  // namespace google::api::expr::runtime

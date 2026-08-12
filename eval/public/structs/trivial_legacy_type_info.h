@@ -15,49 +15,14 @@
 #ifndef THIRD_PARTY_CEL_CPP_EVAL_PUBLIC_STRUCTS_TRIVIAL_LEGACY_TYPE_INFO_H_
 #define THIRD_PARTY_CEL_CPP_EVAL_PUBLIC_STRUCTS_TRIVIAL_LEGACY_TYPE_INFO_H_
 
-#include <string>
-
-#include "absl/base/no_destructor.h"
-#include "absl/base/nullability.h"
-#include "absl/strings/string_view.h"
-#include "eval/public/message_wrapper.h"
-#include "eval/public/structs/legacy_type_info_apis.h"
+#include "eval/public/structs/legacy_type_info_apis.h"  // IWYU pragma: keep
+#include "eval/public/structs/trivial_legacy_type_info_internal.h"
 
 namespace google::api::expr::runtime {
 
 // Implementation of type info APIs suitable for testing where no message
 // operations need to be supported.
-class TrivialTypeInfo : public LegacyTypeInfoApis {
- private:
-  struct Key {};
-
- public:
-  explicit TrivialTypeInfo(Key&) {}
-
-  absl::string_view GetTypename(const MessageWrapper& wrapper) const override {
-    return "opaque";
-  }
-
-  std::string DebugString(const MessageWrapper& wrapper) const override {
-    return "opaque";
-  }
-
-  const LegacyTypeAccessApis* GetAccessApis(
-      const MessageWrapper& wrapper) const override {
-    // Accessors unsupported -- caller should treat this as an opaque type (no
-    // fields defined, field access always results in a CEL error).
-    return nullptr;
-  }
-
-  static const TrivialTypeInfo* absl_nonnull GetInstance() {
-    static absl::NoDestructor<Key> kKey;
-    static absl::NoDestructor<TrivialTypeInfo> kInstance(*kKey);
-    return &*kInstance;
-  }
-
- private:
-  TrivialTypeInfo() = default;
-};
+using TrivialTypeInfo = cel::interop_internal::TrivialTypeInfo;
 
 }  // namespace google::api::expr::runtime
 

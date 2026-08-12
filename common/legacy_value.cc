@@ -55,6 +55,7 @@
 #include "eval/public/structs/legacy_type_adapter.h"
 #include "eval/public/structs/legacy_type_info_apis.h"
 #include "eval/public/structs/proto_message_type_adapter.h"
+#include "eval/public/structs/trivial_legacy_type_info_internal.h"
 #include "internal/json.h"
 #include "internal/status_macros.h"
 #include "internal/well_known_types.h"
@@ -71,6 +72,7 @@ namespace cel {
 
 namespace {
 
+using ::cel::interop_internal::TrivialTypeInfo;
 using ::google::api::expr::runtime::CelList;
 using ::google::api::expr::runtime::CelMap;
 using ::google::api::expr::runtime::CelValue;
@@ -80,6 +82,7 @@ using ::google::api::expr::runtime::FieldBackedMapImpl;
 using ::google::api::expr::runtime::GetGenericProtoTypeInfoInstance;
 using ::google::api::expr::runtime::LegacyTypeInfoApis;
 using ::google::api::expr::runtime::MessageWrapper;
+using ::google::api::expr::runtime::internal::GetGenericProtoAccessApisInstance;
 using ::google::api::expr::runtime::internal::MaybeWrapValueToMessage;
 
 absl::Status InvalidMapKeyTypeError(ValueKind kind) {
@@ -885,17 +888,16 @@ absl::Status LegacyStructValue::Equal(
   if (auto legacy_struct_value = common_internal::AsLegacyStructValue(other);
       legacy_struct_value.has_value()) {
     auto message_wrapper = AsMessageWrapper(message_ptr_, legacy_type_info_);
-    const auto* access_apis =
-        message_wrapper.legacy_type_info()->GetAccessApis(message_wrapper);
-    if (ABSL_PREDICT_FALSE(access_apis == nullptr)) {
+    if (ABSL_PREDICT_FALSE(legacy_type_info_ ==
+                           TrivialTypeInfo::GetInstance())) {
       return absl::UnimplementedError(
           absl::StrCat("legacy access APIs missing for ", GetTypeName()));
     }
     auto other_message_wrapper =
         AsMessageWrapper(legacy_struct_value->message_ptr(),
                          legacy_struct_value->legacy_type_info());
-    *result = BoolValue{
-        access_apis->IsEqualTo(message_wrapper, other_message_wrapper)};
+    *result = BoolValue{GetGenericProtoAccessApisInstance().IsEqualTo(
+        message_wrapper, other_message_wrapper)};
     return absl::OkStatus();
   }
   if (auto struct_value = other.AsStruct(); struct_value.has_value()) {
@@ -909,12 +911,12 @@ absl::Status LegacyStructValue::Equal(
 
 bool LegacyStructValue::IsZeroValue() const {
   auto message_wrapper = AsMessageWrapper(message_ptr_, legacy_type_info_);
-  const auto* access_apis =
-      message_wrapper.legacy_type_info()->GetAccessApis(message_wrapper);
-  if (ABSL_PREDICT_FALSE(access_apis == nullptr)) {
+  if (ABSL_PREDICT_FALSE(legacy_type_info_ == TrivialTypeInfo::GetInstance())) {
     return false;
   }
-  return access_apis->ListFields(message_wrapper).empty();
+  return GetGenericProtoAccessApisInstance()
+      .ListFields(message_wrapper)
+      .empty();
 }
 
 absl::Status LegacyStructValue::GetFieldByName(
@@ -923,16 +925,14 @@ absl::Status LegacyStructValue::GetFieldByName(
     google::protobuf::MessageFactory* absl_nonnull message_factory,
     google::protobuf::Arena* absl_nonnull arena, Value* absl_nonnull result) const {
   auto message_wrapper = AsMessageWrapper(message_ptr_, legacy_type_info_);
-  const auto* access_apis =
-      message_wrapper.legacy_type_info()->GetAccessApis(message_wrapper);
-  if (ABSL_PREDICT_FALSE(access_apis == nullptr)) {
+  if (ABSL_PREDICT_FALSE(legacy_type_info_ == TrivialTypeInfo::GetInstance())) {
     *result = NoSuchFieldError(name);
     return absl::OkStatus();
   }
-  CEL_ASSIGN_OR_RETURN(
-      auto cel_value,
-      access_apis->GetField(name, message_wrapper, unboxing_options,
-                            MemoryManagerRef::Pooling(arena)));
+  CEL_ASSIGN_OR_RETURN(auto cel_value,
+                       GetGenericProtoAccessApisInstance().GetField(
+                           name, message_wrapper, unboxing_options,
+                           MemoryManagerRef::Pooling(arena)));
   CEL_RETURN_IF_ERROR(ModernValue(arena, cel_value, *result));
   return absl::OkStatus();
 }
@@ -949,12 +949,10 @@ absl::Status LegacyStructValue::GetFieldByNumber(
 absl::StatusOr<bool> LegacyStructValue::HasFieldByName(
     absl::string_view name) const {
   auto message_wrapper = AsMessageWrapper(message_ptr_, legacy_type_info_);
-  const auto* access_apis =
-      message_wrapper.legacy_type_info()->GetAccessApis(message_wrapper);
-  if (ABSL_PREDICT_FALSE(access_apis == nullptr)) {
+  if (ABSL_PREDICT_FALSE(legacy_type_info_ == TrivialTypeInfo::GetInstance())) {
     return NoSuchFieldError(name).NativeValue();
   }
-  return access_apis->HasField(name, message_wrapper);
+  return GetGenericProtoAccessApisInstance().HasField(name, message_wrapper);
 }
 
 absl::StatusOr<bool> LegacyStructValue::HasFieldByNumber(int64_t number) const {
@@ -968,20 +966,19 @@ absl::Status LegacyStructValue::ForEachField(
     google::protobuf::MessageFactory* absl_nonnull message_factory,
     google::protobuf::Arena* absl_nonnull arena) const {
   auto message_wrapper = AsMessageWrapper(message_ptr_, legacy_type_info_);
-  const auto* access_apis =
-      message_wrapper.legacy_type_info()->GetAccessApis(message_wrapper);
-  if (ABSL_PREDICT_FALSE(access_apis == nullptr)) {
+  if (ABSL_PREDICT_FALSE(legacy_type_info_ == TrivialTypeInfo::GetInstance())) {
     return absl::UnimplementedError(
         absl::StrCat("legacy access APIs missing for ", GetTypeName()));
   }
-  auto field_names = access_apis->ListFields(message_wrapper);
+  const auto& access_apis = GetGenericProtoAccessApisInstance();
+  auto field_names = access_apis.ListFields(message_wrapper);
   Value value;
   for (const auto& field_name : field_names) {
     CEL_ASSIGN_OR_RETURN(
         auto cel_value,
-        access_apis->GetField(field_name, message_wrapper,
-                              ProtoWrapperTypeOptions::kUnsetNull,
-                              MemoryManagerRef::Pooling(arena)));
+        access_apis.GetField(field_name, message_wrapper,
+                             ProtoWrapperTypeOptions::kUnsetNull,
+                             MemoryManagerRef::Pooling(arena)));
     CEL_RETURN_IF_ERROR(ModernValue(arena, cel_value, value));
     CEL_ASSIGN_OR_RETURN(auto ok, callback(field_name, value));
     if (!ok) {
@@ -1001,9 +998,7 @@ absl::Status LegacyStructValue::Qualify(
     return absl::InvalidArgumentError("invalid select qualifier path.");
   }
   auto message_wrapper = AsMessageWrapper(message_ptr_, legacy_type_info_);
-  const auto* access_apis =
-      message_wrapper.legacy_type_info()->GetAccessApis(message_wrapper);
-  if (ABSL_PREDICT_FALSE(access_apis == nullptr)) {
+  if (ABSL_PREDICT_FALSE(legacy_type_info_ == TrivialTypeInfo::GetInstance())) {
     absl::string_view field_name = absl::visit(
         absl::Overload(
             [](const FieldSpecifier& field) -> absl::string_view {
@@ -1017,9 +1012,9 @@ absl::Status LegacyStructValue::Qualify(
     *count = -1;
     return absl::OkStatus();
   }
-  CEL_ASSIGN_OR_RETURN(
-      auto legacy_result,
-      access_apis->Qualify(qualifiers, message_wrapper, presence_test,
+  CEL_ASSIGN_OR_RETURN(auto legacy_result,
+                       GetGenericProtoAccessApisInstance().Qualify(
+                           qualifiers, message_wrapper, presence_test,
                            MemoryManager::Pooling(arena)));
   CEL_RETURN_IF_ERROR(ModernValue(arena, legacy_result.value, *result));
   *count = legacy_result.qualifier_count;

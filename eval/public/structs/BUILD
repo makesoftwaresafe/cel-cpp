@@ -367,15 +367,24 @@ cc_library(
 )
 
 cc_library(
-    name = "trivial_legacy_type_info",
-    testonly = True,
-    hdrs = ["trivial_legacy_type_info.h"],
+    name = "trivial_legacy_type_info_internal",
+    hdrs = ["trivial_legacy_type_info_internal.h"],
     deps = [
         ":legacy_type_info_apis",
         "//eval/public:message_wrapper",
         "@com_google_absl//absl/base:no_destructor",
         "@com_google_absl//absl/base:nullability",
         "@com_google_absl//absl/strings:string_view",
+    ],
+)
+
+cc_library(
+    name = "trivial_legacy_type_info",
+    testonly = True,
+    hdrs = ["trivial_legacy_type_info.h"],
+    deps = [
+        ":legacy_type_info_apis",
+        ":trivial_legacy_type_info_internal",
     ],
 )
 

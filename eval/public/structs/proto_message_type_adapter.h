@@ -21,6 +21,8 @@
 #include "absl/base/nullability.h"
 #include "absl/status/status.h"
 #include "absl/strings/string_view.h"
+#include "absl/types/span.h"
+#include "base/attribute.h"
 #include "common/memory.h"
 #include "eval/public/cel_options.h"
 #include "eval/public/cel_value.h"
@@ -104,6 +106,10 @@ absl::StatusOr<CelValue> CreateCelValueFromField(
 // This allows for the legacy duck-typed behavior of messages on field access
 // instead of expecting a particular message type given a TypeInfo.
 const LegacyTypeInfoApis& GetGenericProtoTypeInfoInstance();
+
+namespace internal {
+const LegacyTypeAccessApis& GetGenericProtoAccessApisInstance();
+}  // namespace internal
 
 }  // namespace google::api::expr::runtime
 
