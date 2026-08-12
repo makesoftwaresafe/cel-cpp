@@ -374,6 +374,7 @@ cc_library(
         ":legacy_type_info_apis",
         "//eval/public:message_wrapper",
         "@com_google_absl//absl/base:no_destructor",
+        "@com_google_absl//absl/base:nullability",
         "@com_google_absl//absl/strings:string_view",
     ],
 )

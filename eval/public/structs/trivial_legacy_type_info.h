@@ -18,6 +18,7 @@
 #include <string>
 
 #include "absl/base/no_destructor.h"
+#include "absl/base/nullability.h"
 #include "absl/strings/string_view.h"
 #include "eval/public/message_wrapper.h"
 #include "eval/public/structs/legacy_type_info_apis.h"
@@ -27,7 +28,12 @@ namespace google::api::expr::runtime {
 // Implementation of type info APIs suitable for testing where no message
 // operations need to be supported.
 class TrivialTypeInfo : public LegacyTypeInfoApis {
+ private:
+  struct Key {};
+
  public:
+  explicit TrivialTypeInfo(Key&) {}
+
   absl::string_view GetTypename(const MessageWrapper& wrapper) const override {
     return "opaque";
   }
@@ -43,10 +49,14 @@ class TrivialTypeInfo : public LegacyTypeInfoApis {
     return nullptr;
   }
 
-  static const TrivialTypeInfo* GetInstance() {
-    static absl::NoDestructor<TrivialTypeInfo> kInstance;
+  static const TrivialTypeInfo* absl_nonnull GetInstance() {
+    static absl::NoDestructor<Key> kKey;
+    static absl::NoDestructor<TrivialTypeInfo> kInstance(*kKey);
     return &*kInstance;
   }
+
+ private:
+  TrivialTypeInfo() = default;
 };
 
 }  // namespace google::api::expr::runtime

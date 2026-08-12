@@ -29,6 +29,13 @@ licenses(["notice"])
 
 exports_files(["LICENSE"])
 
+# No new users should depend on MessageWrapper using legacy APIs.
+# This was added as a temporary workaround for implementing custom reflection operations
+# on messages that were compiled with the LITE_RUNTIME (MessageLite) option.
+# Internally, we now assume legacy Message types are always normal (Message) protobuf messages with
+# standard reflection operations.
+# Custom structs (including MessageLite protos) should use the modern API (see
+# `cel::CustomStructValue`).
 cc_library(
     name = "message_wrapper",
     hdrs = [

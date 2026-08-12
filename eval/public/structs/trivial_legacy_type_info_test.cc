@@ -21,35 +21,27 @@ namespace google::api::expr::runtime {
 namespace {
 
 TEST(TrivialTypeInfo, GetTypename) {
-  TrivialTypeInfo info;
   MessageWrapper wrapper;
 
-  EXPECT_EQ(info.GetTypename(wrapper), "opaque");
   EXPECT_EQ(TrivialTypeInfo::GetInstance()->GetTypename(wrapper), "opaque");
 }
 
 TEST(TrivialTypeInfo, DebugString) {
-  TrivialTypeInfo info;
   MessageWrapper wrapper;
 
-  EXPECT_EQ(info.DebugString(wrapper), "opaque");
   EXPECT_EQ(TrivialTypeInfo::GetInstance()->DebugString(wrapper), "opaque");
 }
 
 TEST(TrivialTypeInfo, GetAccessApis) {
-  TrivialTypeInfo info;
   MessageWrapper wrapper;
 
-  EXPECT_EQ(info.GetAccessApis(wrapper), nullptr);
   EXPECT_EQ(TrivialTypeInfo::GetInstance()->GetAccessApis(wrapper), nullptr);
 }
 
 
 TEST(TrivialTypeInfo, FindFieldByName) {
-  TrivialTypeInfo info;
   MessageWrapper wrapper;
 
-  EXPECT_EQ(info.FindFieldByName("foo"), std::nullopt);
   EXPECT_EQ(TrivialTypeInfo::GetInstance()->FindFieldByName("foo"),
             std::nullopt);
 }
