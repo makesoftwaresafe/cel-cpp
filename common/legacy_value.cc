@@ -850,34 +850,30 @@ absl::Status LegacyStructValue::ConvertToJson(
     const google::protobuf::DescriptorPool* absl_nonnull descriptor_pool,
     google::protobuf::MessageFactory* absl_nonnull message_factory,
     google::protobuf::Message* absl_nonnull json) const {
+  ABSL_DCHECK(message_ptr_ != nullptr);
   ABSL_DCHECK(descriptor_pool != nullptr);
   ABSL_DCHECK(message_factory != nullptr);
   ABSL_DCHECK(json != nullptr);
   ABSL_DCHECK_EQ(json->GetDescriptor()->well_known_type(),
                  google::protobuf::Descriptor::WELLKNOWNTYPE_VALUE);
 
-  auto message_wrapper = AsMessageWrapper(message_ptr_, legacy_type_info_);
-
-  return internal::MessageToJson(
-      *google::protobuf::DownCastMessage<google::protobuf::Message>(message_wrapper.message_ptr()),
-      descriptor_pool, message_factory, json);
+  return internal::MessageToJson(*message_ptr_, descriptor_pool,
+                                 message_factory, json);
 }
 
 absl::Status LegacyStructValue::ConvertToJsonObject(
     const google::protobuf::DescriptorPool* absl_nonnull descriptor_pool,
     google::protobuf::MessageFactory* absl_nonnull message_factory,
     google::protobuf::Message* absl_nonnull json) const {
+  ABSL_DCHECK(message_ptr_ != nullptr);
   ABSL_DCHECK(descriptor_pool != nullptr);
   ABSL_DCHECK(message_factory != nullptr);
   ABSL_DCHECK(json != nullptr);
   ABSL_DCHECK_EQ(json->GetDescriptor()->well_known_type(),
                  google::protobuf::Descriptor::WELLKNOWNTYPE_STRUCT);
 
-  auto message_wrapper = AsMessageWrapper(message_ptr_, legacy_type_info_);
-
-  return internal::MessageToJson(
-      *google::protobuf::DownCastMessage<google::protobuf::Message>(message_wrapper.message_ptr()),
-      descriptor_pool, message_factory, json);
+  return internal::MessageToJson(*message_ptr_, descriptor_pool,
+                                 message_factory, json);
 }
 
 absl::Status LegacyStructValue::Equal(
@@ -885,38 +881,36 @@ absl::Status LegacyStructValue::Equal(
     const google::protobuf::DescriptorPool* absl_nonnull descriptor_pool,
     google::protobuf::MessageFactory* absl_nonnull message_factory,
     google::protobuf::Arena* absl_nonnull arena, Value* absl_nonnull result) const {
-  if (auto legacy_struct_value = common_internal::AsLegacyStructValue(other);
-      legacy_struct_value.has_value()) {
-    auto message_wrapper = AsMessageWrapper(message_ptr_, legacy_type_info_);
-    if (ABSL_PREDICT_FALSE(legacy_type_info_ ==
-                           TrivialTypeInfo::GetInstance())) {
-      return absl::UnimplementedError(
-          absl::StrCat("legacy access APIs missing for ", GetTypeName()));
+  ABSL_DCHECK(message_ptr_ != nullptr);
+  if (ABSL_PREDICT_FALSE(legacy_type_info_ == TrivialTypeInfo::GetInstance())) {
+    return absl::UnimplementedError(
+        absl::StrCat("legacy access APIs missing for ", GetTypeName()));
+  }
+  auto modern_value = UnsafeParsedMessageValue(message_ptr_);
+
+  // Unwrap the rhs if it's a legacy struct so the normal implementation
+  // doesn't hit the fallback abstract struct comparison.
+  if (auto other_legacy = common_internal::AsLegacyStructValue(other);
+      other_legacy) {
+    if (other_legacy->legacy_type_info_ == TrivialTypeInfo::GetInstance()) {
+      return absl::UnimplementedError(absl::StrCat(
+          "legacy access APIs missing for ", other_legacy->GetTypeName()));
     }
-    auto other_message_wrapper =
-        AsMessageWrapper(legacy_struct_value->message_ptr(),
-                         legacy_struct_value->legacy_type_info());
-    *result = BoolValue{GetGenericProtoAccessApisInstance().IsEqualTo(
-        message_wrapper, other_message_wrapper)};
-    return absl::OkStatus();
+    auto other_message = UnsafeParsedMessageValue(other_legacy->message_ptr_);
+    return modern_value.Equal(other_message, descriptor_pool, message_factory,
+                              arena, result);
   }
-  if (auto struct_value = other.AsStruct(); struct_value.has_value()) {
-    return common_internal::StructValueEqual(
-        common_internal::LegacyStructValue(message_ptr_, legacy_type_info_),
-        *struct_value, descriptor_pool, message_factory, arena, result);
-  }
-  *result = FalseValue();
-  return absl::OkStatus();
+
+  return modern_value.Equal(other, descriptor_pool, message_factory, arena,
+                            result);
 }
 
 bool LegacyStructValue::IsZeroValue() const {
-  auto message_wrapper = AsMessageWrapper(message_ptr_, legacy_type_info_);
+  ABSL_DCHECK(message_ptr_ != nullptr);
   if (ABSL_PREDICT_FALSE(legacy_type_info_ == TrivialTypeInfo::GetInstance())) {
     return false;
   }
-  return GetGenericProtoAccessApisInstance()
-      .ListFields(message_wrapper)
-      .empty();
+  return UnsafeParsedMessageValue(message_ptr_).IsZeroValue();
 }
 
 absl::Status LegacyStructValue::GetFieldByName(
@@ -948,16 +942,19 @@ absl::Status LegacyStructValue::GetFieldByNumber(
 
 absl::StatusOr<bool> LegacyStructValue::HasFieldByName(
     absl::string_view name) const {
-  auto message_wrapper = AsMessageWrapper(message_ptr_, legacy_type_info_);
+  ABSL_DCHECK(message_ptr_ != nullptr);
   if (ABSL_PREDICT_FALSE(legacy_type_info_ == TrivialTypeInfo::GetInstance())) {
-    return NoSuchFieldError(name).NativeValue();
+    return NoSuchFieldError(name).ToStatus();
   }
-  return GetGenericProtoAccessApisInstance().HasField(name, message_wrapper);
+  return UnsafeParsedMessageValue(message_ptr_).HasFieldByName(name);
 }
 
 absl::StatusOr<bool> LegacyStructValue::HasFieldByNumber(int64_t number) const {
-  return absl::UnimplementedError(
-      "access to fields by numbers is not available for legacy structs");
+  ABSL_DCHECK(message_ptr_ != nullptr);
+  if (ABSL_PREDICT_FALSE(legacy_type_info_ == TrivialTypeInfo::GetInstance())) {
+    return NoSuchFieldError(absl::StrCat(number)).ToStatus();
+  }
+  return UnsafeParsedMessageValue(message_ptr_).HasFieldByNumber(number);
 }
 
 absl::Status LegacyStructValue::ForEachField(
@@ -965,27 +962,13 @@ absl::Status LegacyStructValue::ForEachField(
     const google::protobuf::DescriptorPool* absl_nonnull descriptor_pool,
     google::protobuf::MessageFactory* absl_nonnull message_factory,
     google::protobuf::Arena* absl_nonnull arena) const {
-  auto message_wrapper = AsMessageWrapper(message_ptr_, legacy_type_info_);
+  ABSL_DCHECK(message_ptr_ != nullptr);
   if (ABSL_PREDICT_FALSE(legacy_type_info_ == TrivialTypeInfo::GetInstance())) {
     return absl::UnimplementedError(
         absl::StrCat("legacy access APIs missing for ", GetTypeName()));
   }
-  const auto& access_apis = GetGenericProtoAccessApisInstance();
-  auto field_names = access_apis.ListFields(message_wrapper);
-  Value value;
-  for (const auto& field_name : field_names) {
-    CEL_ASSIGN_OR_RETURN(
-        auto cel_value,
-        access_apis.GetField(field_name, message_wrapper,
-                             ProtoWrapperTypeOptions::kUnsetNull,
-                             MemoryManagerRef::Pooling(arena)));
-    CEL_RETURN_IF_ERROR(ModernValue(arena, cel_value, value));
-    CEL_ASSIGN_OR_RETURN(auto ok, callback(field_name, value));
-    if (!ok) {
-      break;
-    }
-  }
-  return absl::OkStatus();
+  return UnsafeParsedMessageValue(message_ptr_)
+      .ForEachField(callback, descriptor_pool, message_factory, arena);
 }
 
 absl::Status LegacyStructValue::Qualify(
@@ -1291,12 +1274,12 @@ const google::protobuf::Message* absl_nullable GetLegacyMessage(const Value& val
 
   auto legacy = common_internal::GetLegacyStructValue(value);
   const auto* legacy_type_info = legacy.legacy_type_info();
-  if (legacy_type_info == nullptr) {
+  if (legacy_type_info == nullptr ||
+      legacy_type_info == TrivialTypeInfo::GetInstance()) {
     return nullptr;
   }
-  if (legacy_type_info != &GetGenericProtoTypeInfoInstance()) {
-    return nullptr;
-  }
+  // This should not be possible using the normal public APIs, but possible
+  // if someone used the MessageWrapper class directly.
   if (IsWellKnownMessageType(legacy.message_ptr()->GetDescriptor())) {
     return nullptr;
   }

@@ -305,6 +305,7 @@ cc_test(
         ":legacy_type_adapter",
         ":legacy_type_info_apis",
         ":proto_message_type_adapter",
+        ":trivial_legacy_type_info",
         "//base:attributes",
         "//common:value",
         "//common:value_testing",

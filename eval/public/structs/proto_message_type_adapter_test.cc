@@ -28,6 +28,7 @@
 #include "eval/public/message_wrapper.h"
 #include "eval/public/structs/legacy_type_adapter.h"
 #include "eval/public/structs/legacy_type_info_apis.h"
+#include "eval/public/structs/trivial_legacy_type_info.h"
 #include "eval/public/testing/matchers.h"
 #include "eval/testutil/test_message.pb.h"
 #include "extensions/protobuf/memory_manager.h"
@@ -1147,17 +1148,13 @@ TEST(ProtoMesssageTypeAdapter, QualifyMapIndexLeafWrongType) {
                                      HasSubstr("Invalid map key type"))))));
 }
 
-TEST(ProtoMesssageTypeAdapter, InteropUnwrappingNotGeneric) {
+TEST(ProtoMesssageTypeAdapter, InteropUnwrappingNotTestInstance) {
   google::protobuf::Arena arena;
-  ProtoMessageTypeAdapter adapter(
-      google::protobuf::DescriptorPool::generated_pool()->FindMessageTypeByName(
-          "google.api.expr.runtime.TestMessage"),
-      google::protobuf::MessageFactory::generated_factory());
 
   TestMessage message;
   message.set_string_value("hello");
   auto legacy_value = CelValue::CreateMessageWrapper(
-      CelValue::MessageWrapper(&message, &adapter));
+      CelValue::MessageWrapper(&message, TrivialTypeInfo::GetInstance()));
   cel::Value modern_value;
   ASSERT_THAT(cel::ModernValue(&arena, legacy_value, modern_value), IsOk());
   auto unwrapped = cel::interop_internal::GetLegacyMessage(modern_value);
