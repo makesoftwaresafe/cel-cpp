@@ -47,6 +47,7 @@ cc_library(
         "//extensions:comprehensions_v2_functions",
         "//extensions:comprehensions_v2_macros",
         "//extensions:encoders",
+        "//extensions:lists_functions",
         "//extensions:math_ext",
         "//extensions:math_ext_decls",
         "//extensions:math_ext_macros",
@@ -143,6 +144,7 @@ _ALL_TESTS = [
     "@com_google_cel_spec//tests/simple:testdata/fp_math.textproto",
     "@com_google_cel_spec//tests/simple:testdata/integer_math.textproto",
     "@com_google_cel_spec//tests/simple:testdata/lists.textproto",
+    "@com_google_cel_spec//tests/simple:testdata/lists_ext.textproto",
     "@com_google_cel_spec//tests/simple:testdata/logic.textproto",
     "@com_google_cel_spec//tests/simple:testdata/macros.textproto",
     "@com_google_cel_spec//tests/simple:testdata/macros2.textproto",
@@ -228,6 +230,9 @@ _TESTS_TO_SKIP_LEGACY = _TESTS_TO_SKIP + [
     "block_ext/basic/optional_map",
     "block_ext/basic/optional_map_chained",
     "block_ext/basic/optional_message",
+
+    # lists_ext not implemented for legacy evaluator
+    "lists_ext",
 ]
 
 _TESTS_TO_SKIP_LEGACY_DASHBOARD = [

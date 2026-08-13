@@ -60,6 +60,7 @@
 #include "extensions/comprehensions_v2_functions.h"
 #include "extensions/comprehensions_v2_macros.h"
 #include "extensions/encoders.h"
+#include "extensions/lists_functions.h"
 #include "extensions/math_ext.h"
 #include "extensions/math_ext_decls.h"
 #include "extensions/math_ext_macros.h"
@@ -147,6 +148,7 @@ absl::Status LegacyParse(const conformance::v1alpha1::ParseRequest& request,
   CEL_RETURN_IF_ERROR(cel::extensions::RegisterBindingsMacros(macros, options));
   CEL_RETURN_IF_ERROR(cel::extensions::RegisterMathMacros(macros, options));
   CEL_RETURN_IF_ERROR(cel::extensions::RegisterProtoMacros(macros, options));
+  CEL_RETURN_IF_ERROR(cel::extensions::RegisterListsMacros(macros, options));
   CEL_RETURN_IF_ERROR(cel::test::RegisterTestMacros(macros));
   CEL_ASSIGN_OR_RETURN(auto source, cel::NewSource(request.cel_source(),
                                                    request.source_location()));
@@ -192,6 +194,8 @@ absl::Status CheckImpl(google::protobuf::Arena* arena,
         builder->AddLibrary(cel::extensions::EncodersCheckerLibrary()));
     CEL_RETURN_IF_ERROR(
         builder->AddLibrary(cel::extensions::ComprehensionsV2CheckerLibrary()));
+    CEL_RETURN_IF_ERROR(
+        builder->AddLibrary(cel::extensions::ListsCheckerLibrary()));
   }
 
   for (const auto& decl : request.type_env()) {
@@ -201,7 +205,7 @@ absl::Status CheckImpl(google::protobuf::Arena* arena,
           auto fn_decl, cel::FunctionDeclFromV1Alpha1Proto(
                             name, decl.function(),
                             google::protobuf::DescriptorPool::generated_pool(), arena));
-      CEL_RETURN_IF_ERROR(builder->AddFunction(std::move(fn_decl)));
+      CEL_RETURN_IF_ERROR(builder->MergeFunction(std::move(fn_decl)));
     } else if (decl.has_ident()) {
       CEL_ASSIGN_OR_RETURN(
           auto var_decl, cel::VariableDeclFromV1Alpha1Proto(
@@ -535,6 +539,8 @@ class ModernConformanceServiceImpl : public ConformanceServiceInterface {
     CEL_RETURN_IF_ERROR(cel::extensions::RegisterStringsFunctions(
         builder.function_registry(), options));
     CEL_RETURN_IF_ERROR(cel::extensions::RegisterMathExtensionFunctions(
+        builder.function_registry(), options));
+    CEL_RETURN_IF_ERROR(cel::extensions::RegisterListsFunctions(
         builder.function_registry(), options));
 
     return std::move(builder).Build();
