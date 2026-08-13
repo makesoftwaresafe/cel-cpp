@@ -51,10 +51,15 @@ namespace cel::parser_internal {
 class ParserWorker {
  public:
   ParserWorker(const cel::Source& source, const cel::ParserOptions& options,
-               std::vector<cel::ParseIssue>* absl_nullable parse_issues);
+               std::vector<cel::ParseIssue>* absl_nullable parse_issues,
+               bool track_node_ranges = false);
 
   const absl::flat_hash_map<int64_t, int32_t>& GetNodePositions() const {
     return positions_;
+  }
+  const absl::flat_hash_map<int64_t, std::pair<int32_t, int32_t>>&
+  GetNodeRanges() const {
+    return node_ranges_;
   }
   absl::Span<const int32_t> GetLineOffsets() const {
     return source_.line_offsets();
@@ -75,11 +80,25 @@ class ParserWorker {
 
   // ID and Position tracking
   int64_t NextId(int32_t position);
-  int64_t NextId(const Token& token) { return NextId(token.start); }
+  int64_t NextId(const Token& token) {
+    int64_t id = NextId(token.start);
+    if (ABSL_PREDICT_FALSE(track_node_ranges_)) {
+      if (token.start >= 0 && token.end > token.start) {
+        node_ranges_[id] = {token.start, token.end - 1};
+      }
+    }
+    return id;
+  }
   int64_t NextId();
-  bool NodeLimitExceeded();
   int64_t CopyId(int64_t id);
   void EraseId(int64_t id);
+  void SetNodeRange(int64_t id, int32_t begin, int32_t end) {
+    if (ABSL_PREDICT_FALSE(track_node_ranges_)) {
+      if (id != 0 && begin >= 0 && end >= begin) {
+        node_ranges_[id] = {begin, end};
+      }
+    }
+  }
 
   // Error reporting and recovery
   bool is_recovery_limit_exceeded() const {
@@ -100,10 +119,12 @@ class ParserWorker {
   int64_t next_id_ = 1;
   bool node_limit_exceeded_ = false;
   absl::flat_hash_map<int64_t, int32_t> positions_;
+  absl::flat_hash_map<int64_t, std::pair<int32_t, int32_t>> node_ranges_;
   std::vector<cel::ParseIssue>* absl_nullable parse_issues_;
   int error_count_ = 0;
   bool lexer_error_reported_ = false;
   bool recursion_limit_exceeded_ = false;
+  bool track_node_ranges_ = false;
 };
 
 struct BinaryOpInfo {
@@ -131,8 +152,10 @@ class PrattParserWorker : public ParserWorker {
   explicit PrattParserWorker(
       const cel::Source& source, const cel::ParserOptions& options,
       std::vector<cel::ParseIssue>* absl_nullable parse_issues,
-      AstFactoryInterface<ExprNode>& ast_factory)
-      : ParserWorker(source, options, parse_issues), ast_factory_(ast_factory) {
+      AstFactoryInterface<ExprNode>& ast_factory,
+      bool track_node_ranges = false)
+      : ParserWorker(source, options, parse_issues, track_node_ranges),
+        ast_factory_(ast_factory) {
     this->InitTokenStream();
   }
 
@@ -696,7 +719,9 @@ ExprNode PrattParserWorker<ExprNode>::ParseList() {
       break;
     }
   }
-  Expect(TokenType::kRightBracket, "expected ']'");
+  if (Expect(TokenType::kRightBracket, "expected ']'")) {
+    SetNodeRange(list_id, open_tok.start, current_token_.end - 1);
+  }
   return builder.Build();
 }
 
@@ -732,7 +757,9 @@ ExprNode PrattParserWorker<ExprNode>::ParseMap() {
       break;
     }
   }
-  Expect(TokenType::kRightBrace, "expected '}'");
+  if (Expect(TokenType::kRightBrace, "expected '}'")) {
+    SetNodeRange(map_id, open_tok.start, current_token_.end - 1);
+  }
   return builder.Build();
 }
 
@@ -774,7 +801,14 @@ ExprNode PrattParserWorker<ExprNode>::ParseStruct(
       break;
     }
   }
-  Expect(TokenType::kRightBrace, "expected '}'");
+  if (Expect(TokenType::kRightBrace, "expected '}'")) {
+    int32_t start_pos = open_tok.start;
+    auto it = positions_.find(obj_id);
+    if (it != positions_.end()) {
+      start_pos = it->second;
+    }
+    SetNodeRange(obj_id, start_pos, current_token_.end - 1);
+  }
   return builder.Build();
 }
 
@@ -1052,7 +1086,7 @@ std::optional<ExprNode> PrattParserWorker<ExprNode>::TryExpandMacro(
   if (!expander) {
     return std::nullopt;
   }
-  if (NodeLimitExceeded()) {
+  if (node_limit_exceeded_) {
     ReportError(expr_id,
                 "could not expand macro: expression node limit exceeded");
     return std::nullopt;

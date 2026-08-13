@@ -23,7 +23,6 @@
 #include <functional>
 #include <iterator>
 #include <limits>
-#include <map>
 #include <memory>
 #include <optional>
 #include <string>
@@ -1445,7 +1444,8 @@ cel::SourceInfo ParserVisitor::GetSourceInfo() {
 }
 
 EnrichedSourceInfo ParserVisitor::enriched_source_info() const {
-  std::map<int64_t, std::pair<int32_t, int32_t>> offsets;
+  absl::flat_hash_map<int64_t, std::pair<int32_t, int32_t>> offsets;
+  offsets.reserve(factory_.positions().size());
   for (const auto& positions : factory_.positions()) {
     offsets.insert(
         std::pair{positions.first,
@@ -1951,14 +1951,17 @@ absl::StatusOr<VerboseParsedExpr> EnrichedParse(
     const ParserOptions& options) {
   ParsedExpr parsed_expr;
   if (options.enable_pratt_parser) {
-    CEL_ASSIGN_OR_RETURN(
-        std::unique_ptr<cel::Ast> ast,
-        cel::parser_internal::PrattParseImpl(source, registry, options));
+    EnrichedSourceInfo enriched_source_info;
+    CEL_ASSIGN_OR_RETURN(std::unique_ptr<cel::Ast> ast,
+                         cel::parser_internal::PrattParseImpl(
+                             source, registry, options,
+                             /*parse_issues=*/nullptr, &enriched_source_info));
     CEL_RETURN_IF_ERROR(cel::ast_internal::ExprToProto(
         ast->root_expr(), parsed_expr.mutable_expr()));
     CEL_RETURN_IF_ERROR(cel::ast_internal::SourceInfoToProto(
         ast->source_info(), parsed_expr.mutable_source_info()));
-    return VerboseParsedExpr(std::move(parsed_expr), EnrichedSourceInfo());
+    return VerboseParsedExpr(std::move(parsed_expr),
+                             std::move(enriched_source_info));
   }
   CEL_ASSIGN_OR_RETURN(ParseResult parse_result,
                        ParseImpl(source, registry, options));

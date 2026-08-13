@@ -1650,8 +1650,13 @@ class LocationAdorner : public cel::ExpressionAdorner {
 
 std::string ConvertEnrichedSourceInfoToString(
     const EnrichedSourceInfo& enriched_source_info) {
+  std::vector<std::pair<int64_t, std::pair<int32_t, int32_t>>> sorted_offsets(
+      enriched_source_info.offsets().begin(),
+      enriched_source_info.offsets().end());
+  absl::c_sort(sorted_offsets);
   std::vector<std::string> offsets;
-  for (const auto& offset : enriched_source_info.offsets()) {
+  offsets.reserve(sorted_offsets.size());
+  for (const auto& offset : sorted_offsets) {
     offsets.push_back(absl::StrFormat(
         "[%d,%d,%d]", offset.first, offset.second.first, offset.second.second));
   }
@@ -1747,24 +1752,23 @@ TEST_P(ExpressionTest, Parse) {
   }
 }
 
-TEST(ExpressionTest, CompositeExpressionOffsets) {
-  ParserOptions options;
+TEST_P(ExpressionTest, CompositeExpressionOffsets) {
   std::vector<Macro> macros = Macro::AllMacros();
 
   std::string list_expr = "[1, 2]";
-  auto list_result = EnrichedParse(list_expr, macros, "<input>", options);
+  auto list_result = EnrichedParse(list_expr, macros, "<input>", options_);
   ASSERT_THAT(list_result, IsOk());
   auto list_offsets = list_result->enriched_source_info().offsets();
   EXPECT_EQ(list_offsets.at(1), std::make_pair(0, 5));
 
   std::string map_expr = "{'a': 1}";
-  auto map_result = EnrichedParse(map_expr, macros, "<input>", options);
+  auto map_result = EnrichedParse(map_expr, macros, "<input>", options_);
   ASSERT_THAT(map_result, IsOk());
   auto map_offsets = map_result->enriched_source_info().offsets();
   EXPECT_EQ(map_offsets.at(1), std::make_pair(0, 7));
 
   std::string msg_expr = "Msg{f: 1}";
-  auto msg_result = EnrichedParse(msg_expr, macros, "<input>", options);
+  auto msg_result = EnrichedParse(msg_expr, macros, "<input>", options_);
   ASSERT_THAT(msg_result, IsOk());
   auto msg_offsets = msg_result->enriched_source_info().offsets();
   EXPECT_EQ(msg_offsets.at(1), std::make_pair(0, 8));

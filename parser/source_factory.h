@@ -16,15 +16,16 @@
 #define THIRD_PARTY_CEL_CPP_PARSER_SOURCE_FACTORY_H_
 
 #include <cstdint>
-#include <map>
 #include <utility>
 
-namespace google::api::expr::parser {
+#include "absl/container/flat_hash_map.h"
+
+namespace cel {
 
 class EnrichedSourceInfo {
  public:
   explicit EnrichedSourceInfo(
-      std::map<int64_t, std::pair<int32_t, int32_t>> offsets)
+      absl::flat_hash_map<int64_t, std::pair<int32_t, int32_t>> offsets)
       : offsets_(std::move(offsets)) {}
 
   EnrichedSourceInfo() = default;
@@ -33,14 +34,21 @@ class EnrichedSourceInfo {
   EnrichedSourceInfo(EnrichedSourceInfo&& other) = default;
   EnrichedSourceInfo& operator=(EnrichedSourceInfo&& other) = default;
 
-  const std::map<int64_t, std::pair<int32_t, int32_t>>& offsets() const {
+  const absl::flat_hash_map<int64_t, std::pair<int32_t, int32_t>>& offsets()
+      const {
     return offsets_;
   }
 
  private:
   // A map between node_id and pair of start position and end position
-  std::map<int64_t, std::pair<int32_t, int32_t>> offsets_;
+  absl::flat_hash_map<int64_t, std::pair<int32_t, int32_t>> offsets_;
 };
+
+}  // namespace cel
+
+namespace google::api::expr::parser {
+
+using EnrichedSourceInfo = ::cel::EnrichedSourceInfo;
 
 }  // namespace google::api::expr::parser
 

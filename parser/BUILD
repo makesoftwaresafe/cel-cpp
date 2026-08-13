@@ -164,6 +164,9 @@ cc_library(
     hdrs = [
         "source_factory.h",
     ],
+    deps = [
+        "@com_google_absl//absl/container:flat_hash_map",
+    ],
 )
 
 cc_library(

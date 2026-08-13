@@ -44,6 +44,7 @@
 #include "parser/macro_registry.h"
 #include "parser/options.h"
 #include "parser/parser_interface.h"
+#include "parser/source_factory.h"
 
 namespace cel::parser_internal {
 
@@ -173,7 +174,8 @@ absl::StatusOr<std::unique_ptr<cel::Source>> PrattParserImpl::PrepareSourceImpl(
 
 absl::StatusOr<std::unique_ptr<cel::Ast>> PrattParseImpl(
     const cel::Source& source, const cel::MacroRegistry& registry,
-    const ParserOptions& options, std::vector<cel::ParseIssue>* parse_issues) {
+    const ParserOptions& options, std::vector<cel::ParseIssue>* parse_issues,
+    cel::EnrichedSourceInfo* enriched_source_info) {
   if (source.content().size() > options.expression_size_codepoint_limit) {
     return absl::InvalidArgumentError(absl::StrFormat(
         "expression size exceeds codepoint limit. input size: %zu, limit: %d",
@@ -181,7 +183,9 @@ absl::StatusOr<std::unique_ptr<cel::Ast>> PrattParseImpl(
   }
   std::vector<cel::ParseIssue> issues;
   AstFactory factory(&registry);
-  PrattParserWorker<cel::Expr> worker(source, options, &issues, factory);
+  PrattParserWorker<cel::Expr> worker(
+      source, options, &issues, factory,
+      /*track_node_ranges=*/enriched_source_info != nullptr);
   Expr expr = worker.Parse();
   if (worker.is_recursion_limit_exceeded()) {
     return absl::CancelledError(
@@ -201,6 +205,10 @@ absl::StatusOr<std::unique_ptr<cel::Ast>> PrattParseImpl(
       parse_issues->swap(issues);
     }
     return absl::InvalidArgumentError(err_msg);
+  }
+
+  if (enriched_source_info != nullptr) {
+    *enriched_source_info = cel::EnrichedSourceInfo(worker.GetNodeRanges());
   }
 
   cel::SourceInfo source_info;

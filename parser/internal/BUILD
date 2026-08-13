@@ -117,6 +117,7 @@ cc_library(
         "//parser:macro_registry",
         "//parser:options",
         "//parser:parser_interface",
+        "//parser:source_factory",
         "@com_google_absl//absl/algorithm:container",
         "@com_google_absl//absl/base:nullability",
         "@com_google_absl//absl/cleanup",

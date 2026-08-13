@@ -19,6 +19,7 @@
 #include <vector>
 
 #include "absl/base/nullability.h"
+#include "absl/base/optimization.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_format.h"
 #include "absl/strings/string_view.h"
@@ -101,11 +102,13 @@ const BinaryOpInfo& GetBinaryOpInfo(TokenType type) {
 
 ParserWorker::ParserWorker(
     const cel::Source& source, const cel::ParserOptions& options,
-    std::vector<cel::ParseIssue>* absl_nullable parse_issues)
+    std::vector<cel::ParseIssue>* absl_nullable parse_issues,
+    bool track_node_ranges)
     : source_(source),
       options_(options),
       lexer_(source_),
-      parse_issues_(parse_issues) {}
+      parse_issues_(parse_issues),
+      track_node_ranges_(track_node_ranges) {}
 
 void ParserWorker::InitTokenStream() {
   current_token_ = Token{.type = TokenType::kError, .start = 0, .end = 0};
@@ -204,13 +207,14 @@ int64_t ParserWorker::NextId(int32_t position) {
   }
   if (position >= 0) {
     positions_.insert({id, position});
+    if (ABSL_PREDICT_FALSE(track_node_ranges_)) {
+      node_ranges_.insert({id, {position, position}});
+    }
   }
   return id;
 }
 
 int64_t ParserWorker::NextId() { return NextId(-1); }
-
-bool ParserWorker::NodeLimitExceeded() { return node_limit_exceeded_; }
 
 int64_t ParserWorker::CopyId(int64_t id) {
   if (id == 0) {
@@ -220,11 +224,20 @@ int64_t ParserWorker::CopyId(int64_t id) {
   if (auto it = positions_.find(id); it != positions_.end()) {
     pos = it->second;
   }
-  return NextId(pos);
+  int64_t new_id = NextId(pos);
+  if (ABSL_PREDICT_FALSE(track_node_ranges_)) {
+    if (auto it = node_ranges_.find(id); it != node_ranges_.end()) {
+      node_ranges_[new_id] = it->second;
+    }
+  }
+  return new_id;
 }
 
 void ParserWorker::EraseId(int64_t id) {
   positions_.erase(id);
+  if (ABSL_PREDICT_FALSE(track_node_ranges_)) {
+    node_ranges_.erase(id);
+  }
   if (next_id_ == id + 1) {
     --next_id_;
   }
