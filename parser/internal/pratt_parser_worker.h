@@ -223,7 +223,7 @@ class PrattParserWorker : public ParserWorker {
 
   // Parses ternary conditional expressions (`condition ? true_expr :
   // false_expr`).
-  ExprNode ParseTernary(ExprNode lhs);
+  void ParseTernary(ExprNode& lhs);
 
   // Helper method for parsing a contiguous chain of same-precedence logical
   // operators (`&&` or `||`) iteratively into a list of terms and operator IDs.
@@ -234,7 +234,7 @@ class PrattParserWorker : public ParserWorker {
   // Example (`a && b && c && d`): Iteratively collects terms `[a, b, c, d]` and
   // builds `((a && b) && c) && d` without ascending/descending C++ stack
   // frames for each term.
-  ExprNode ParseBalancedLogicalChain(ExprNode lhs, const BinaryOpInfo& op_info);
+  void ParseBalancedLogicalChain(ExprNode& lhs, const BinaryOpInfo& op_info);
 
   // Parses prefix unary operators (`!`, `-`) and trailing postfix
   // member/indexing operations (`.field`, `[index]`, `.method(args)`). First
@@ -252,7 +252,7 @@ class PrattParserWorker : public ParserWorker {
   // `Type{field: val}`).
   //
   // Processes continuous postfix operation chains iteratively.
-  ExprNode ParseSelectorChainTail(ExprNode lhs);
+  void ParseSelectorChainTail(ExprNode& lhs);
 
   // Parses prefix unary operators (logical NOT `!` and negation `-`). If a
   // numeric literal immediately follows `-`, folds it directly into a negative
@@ -265,6 +265,9 @@ class PrattParserWorker : public ParserWorker {
   // Example (`!has(x.y)`): Consumes `!` and creates a `LOGICAL_NOT` call node
   // wrapping `has(x.y)`.
   ExprNode ParseUnary();
+
+  // Parses unary operators (`!`, `-`).
+  ExprNode ParseUnaryOps();
 
   // Parses unary operator chains (`!`, `-`).
   ExprNode ParseUnaryOpsChain(Token first_op);
@@ -284,7 +287,7 @@ class PrattParserWorker : public ParserWorker {
   // Example (`(a + b)`): Consumes `(`, recurses to `ParseExpr()`, and expects
   // `)`. Example (`has(x.y)`): Consumes `has`, parses arguments `(x.y)`, and
   // expands the `has` macro.
-  ABSL_ATTRIBUTE_ALWAYS_INLINE inline ExprNode ParsePrimary();
+  ExprNode ParsePrimary();
 
   ExprNode ParseList();
   ExprNode ParseMap();
@@ -297,8 +300,8 @@ class PrattParserWorker : public ParserWorker {
   ExprNode ParseNegativeDoubleLiteral(int64_t node_id);
   ExprNode ParseStringLiteral();
   ExprNode ParseBytesLiteral();
-  ExprNode BuildBinaryCall(int64_t op_id, absl::string_view op_name,
-                           ExprNode lhs, ExprNode rhs);
+  void BuildBinaryCall(int64_t op_id, absl::string_view op_name, ExprNode& lhs,
+                       ExprNode rhs);
   ExprNode ParseIdentOrCall();
   std::string NormalizeIdent(const Token& tok, bool allow_quoted);
   std::optional<std::string> ExtractStructName(const ExprNode& expr);
@@ -353,12 +356,12 @@ ExprNode PrattParserWorker<ExprNode>::ParseExpr() {
 }
 
 template <typename ExprNode>
-ExprNode PrattParserWorker<ExprNode>::ParseTernary(ExprNode lhs) {
+void PrattParserWorker<ExprNode>::ParseTernary(ExprNode& lhs) {
   NextToken();
   int64_t op_id = NextId();
   ExprNode true_expr = ParseBinaryAndTernary(1);
   if (!Expect(TokenType::kColon, "expected ':' in conditional expression")) {
-    return lhs;
+    return;
   }
   ExprNode false_expr = ParseBinaryAndTernary(0);
   std::vector<ExprNode> args;
@@ -366,21 +369,20 @@ ExprNode PrattParserWorker<ExprNode>::ParseTernary(ExprNode lhs) {
   args.push_back(std::move(lhs));
   args.push_back(std::move(true_expr));
   args.push_back(std::move(false_expr));
-  return ast_factory_.NewCall(op_id, CelOperator::CONDITIONAL, std::move(args));
+  lhs = ast_factory_.NewCall(op_id, CelOperator::CONDITIONAL, std::move(args));
 }
 
 const BinaryOpInfo& GetBinaryOpInfo(TokenType type);
 
 template <typename ExprNode>
-ExprNode PrattParserWorker<ExprNode>::BuildBinaryCall(int64_t op_id,
-                                                      absl::string_view op_name,
-                                                      ExprNode lhs,
-                                                      ExprNode rhs) {
+void PrattParserWorker<ExprNode>::BuildBinaryCall(int64_t op_id,
+                                                  absl::string_view op_name,
+                                                  ExprNode& lhs, ExprNode rhs) {
   std::vector<ExprNode> args;
   args.reserve(2);
   args.push_back(std::move(lhs));
   args.push_back(std::move(rhs));
-  return ast_factory_.NewCall(op_id, std::string(op_name), std::move(args));
+  lhs = ast_factory_.NewCall(op_id, std::string(op_name), std::move(args));
 }
 
 // Parses binary operator expressions and ternary conditional expressions
@@ -391,7 +393,7 @@ ExprNode PrattParserWorker<ExprNode>::ParseBinaryAndTernary(int min_prec) {
   while (true) {
     TokenType tok = peek_token_.type;
     if (tok == TokenType::kQuestion && min_prec <= 0) {
-      lhs = ParseTernary(std::move(lhs));
+      ParseTernary(lhs);
       continue;
     }
 
@@ -399,14 +401,14 @@ ExprNode PrattParserWorker<ExprNode>::ParseBinaryAndTernary(int min_prec) {
     if (op_info.precedence < min_prec || op_info.precedence == 0) break;
 
     if (op_info.is_logical) {
-      lhs = ParseBalancedLogicalChain(std::move(lhs), op_info);
+      ParseBalancedLogicalChain(lhs, op_info);
       continue;
     }
 
     Token op_tok = NextToken();
     int64_t op_id = NextId(op_tok);
-    ExprNode rhs = ParseBinaryAndTernary(op_info.precedence + 1);
-    lhs = BuildBinaryCall(op_id, op_info.name, std::move(lhs), std::move(rhs));
+    BuildBinaryCall(op_id, op_info.name, lhs,
+                    ParseBinaryAndTernary(op_info.precedence + 1));
   }
   return lhs;
 }
@@ -414,8 +416,8 @@ ExprNode PrattParserWorker<ExprNode>::ParseBinaryAndTernary(int min_prec) {
 // Parses continuous chains of logical operators (`&&`, `||`) iteratively
 // (e.g., `a && b && c`) and constructs a balanced or variadic AST.
 template <typename ExprNode>
-ExprNode PrattParserWorker<ExprNode>::ParseBalancedLogicalChain(
-    ExprNode lhs, const BinaryOpInfo& op_info) {
+void PrattParserWorker<ExprNode>::ParseBalancedLogicalChain(
+    ExprNode& lhs, const BinaryOpInfo& op_info) {
   std::vector<ExprNode> terms;
   std::vector<int64_t> ops;
   terms.push_back(std::move(lhs));
@@ -425,8 +427,8 @@ ExprNode PrattParserWorker<ExprNode>::ParseBalancedLogicalChain(
     ops.push_back(NextId(op_tok));
     terms.push_back(std::move(rhs));
   }
-  return BalanceLogical(op_info.name, std::move(terms), std::move(ops),
-                        options_.enable_variadic_logical_operators);
+  lhs = BalanceLogical(op_info.name, std::move(terms), std::move(ops),
+                       options_.enable_variadic_logical_operators);
 }
 
 template <typename ExprNode>
@@ -435,7 +437,7 @@ ExprNode PrattParserWorker<ExprNode>::ParseSelectorChain() {
   TokenType tok = peek_token_.type;
   if (tok == TokenType::kDot || tok == TokenType::kLeftBracket ||
       tok == TokenType::kLeftBrace) {
-    return ParseSelectorChainTail(std::move(lhs));
+    ParseSelectorChainTail(lhs);
   }
   return lhs;
 }
@@ -443,7 +445,7 @@ ExprNode PrattParserWorker<ExprNode>::ParseSelectorChain() {
 // Parses prefix and postfix member/indexing operations iteratively
 // (e.g., `!a.b[0].c(x)`).
 template <typename ExprNode>
-ExprNode PrattParserWorker<ExprNode>::ParseSelectorChainTail(ExprNode lhs) {
+void PrattParserWorker<ExprNode>::ParseSelectorChainTail(ExprNode& lhs) {
   while (true) {
     TokenType tok = peek_token_.type;
     if (tok == TokenType::kDot) {
@@ -463,7 +465,7 @@ ExprNode PrattParserWorker<ExprNode>::ParseSelectorChainTail(ExprNode lhs) {
           ReportError(id_tok, "expected identifier after '.'");
         }
         SynchronizeOnDelimiter();
-        return lhs;
+        return;
       }
       bool is_member_call = peek_token_.type == TokenType::kLeftParen;
       std::string id_text =
@@ -475,7 +477,8 @@ ExprNode PrattParserWorker<ExprNode>::ParseSelectorChainTail(ExprNode lhs) {
         args.push_back(std::move(lhs));
         args.push_back(
             ast_factory_.NewStringConst(NextId(id_tok), std::move(id_text)));
-        lhs = ast_factory_.NewCall(op_id, "_?._", std::move(args));
+        lhs = ast_factory_.NewCall(op_id, CelOperator::OPT_SELECT,
+                                   std::move(args));
       } else if (peek_token_.type == TokenType::kLeftParen) {
         Token lparen = NextToken();
         int64_t call_id = NextId(lparen);
@@ -508,8 +511,9 @@ ExprNode PrattParserWorker<ExprNode>::ParseSelectorChainTail(ExprNode lhs) {
       args.reserve(2);
       args.push_back(std::move(lhs));
       args.push_back(std::move(index));
-      lhs = ast_factory_.NewCall(op_id, optional ? "_[?_]" : CelOperator::INDEX,
-                                 std::move(args));
+      lhs = ast_factory_.NewCall(
+          op_id, optional ? CelOperator::OPT_INDEX : CelOperator::INDEX,
+          std::move(args));
     } else if (tok == TokenType::kLeftBrace) {
       int32_t struct_pos = GetLeftmostPosition(lhs);
       if (auto struct_name = ExtractStructName(lhs); struct_name.has_value()) {
@@ -521,7 +525,6 @@ ExprNode PrattParserWorker<ExprNode>::ParseSelectorChainTail(ExprNode lhs) {
       break;
     }
   }
-  return lhs;
 }
 
 template <typename ExprNode>
@@ -574,10 +577,14 @@ ExprNode PrattParserWorker<ExprNode>::ParseUnaryOpsChain(Token first_op) {
 template <typename ExprNode>
 ExprNode PrattParserWorker<ExprNode>::ParseUnary() {
   TokenType tok = peek_token_.type;
-  if (tok != TokenType::kExclamation && tok != TokenType::kMinus) {
-    return ParsePrimary();
+  if (tok == TokenType::kExclamation || tok == TokenType::kMinus) {
+    return ParseUnaryOps();
   }
+  return ParsePrimary();
+}
 
+template <typename ExprNode>
+ExprNode PrattParserWorker<ExprNode>::ParseUnaryOps() {
   Token op = NextToken();
   TokenType op_type = op.type;
   if (peek_token_.type == TokenType::kExclamation ||
@@ -650,57 +657,59 @@ ExprNode PrattParserWorker<ExprNode>::ParseIdentOrCall() {
 // (`[...]`, `{...}`), and identifiers/global function calls (`foo`,
 // `has(x.y)`).
 template <typename ExprNode>
-ABSL_ATTRIBUTE_ALWAYS_INLINE inline ExprNode
-PrattParserWorker<ExprNode>::ParsePrimary() {
-  ExprNode expr;
-  TokenType tok_type = peek_token_.type;
-  if (tok_type == TokenType::kLeftParen) {
-    int grouping_paren_count = CountGroupingParentheses();
-    for (int i = 0; i < grouping_paren_count; ++i) {
-      NextToken();
-    }
-    expr = ParseExpr();
-    for (int i = 0; i < grouping_paren_count; ++i) {
-      Expect(TokenType::kRightParen);
-    }
-  } else if (tok_type == TokenType::kNull) {
-    Token tok = NextToken();
-    expr = ast_factory_.NewNullConst(NextId(tok));
-  } else if (tok_type == TokenType::kTrue || tok_type == TokenType::kFalse) {
-    Token tok = NextToken();
-    expr = ast_factory_.NewBoolConst(NextId(tok), tok_type == TokenType::kTrue);
-  } else if (tok_type == TokenType::kInt) {
-    expr = ParseIntLiteral();
-  } else if (tok_type == TokenType::kUint) {
-    expr = ParseUintLiteral();
-  } else if (tok_type == TokenType::kFloat) {
-    expr = ParseDoubleLiteral();
-  } else if (tok_type == TokenType::kString) {
-    expr = ParseStringLiteral();
-  } else if (tok_type == TokenType::kBytes) {
-    expr = ParseBytesLiteral();
-  } else if (tok_type == TokenType::kLeftBracket) {
-    expr = ParseList();
-  } else if (tok_type == TokenType::kLeftBrace) {
-    expr = ParseMap();
-  } else if (tok_type == TokenType::kDot || tok_type == TokenType::kIdent ||
-             tok_type == TokenType::kReservedWord) {
-    expr = ParseIdentOrCall();
-  } else {
-    Token bad_tok = NextToken();
-    if (bad_tok.type != TokenType::kError) {
-      if (bad_tok.type == TokenType::kEnd) {
-        ReportError(
-            bad_tok,
-            "Syntax error: mismatched input '<EOF>' expecting expression");
-      } else {
-        ReportError(bad_tok, "unexpected token");
+ExprNode PrattParserWorker<ExprNode>::ParsePrimary() {
+  switch (peek_token_.type) {
+    case TokenType::kLeftParen: {
+      int grouping_paren_count = CountGroupingParentheses();
+      for (int i = 0; i < grouping_paren_count; ++i) {
+        NextToken();
       }
+      ExprNode expr = ParseExpr();
+      for (int i = 0; i < grouping_paren_count; ++i) {
+        Expect(TokenType::kRightParen);
+      }
+      return expr;
     }
-    expr = ast_factory_.NewUnspecified(NextId(bad_tok));
+    case TokenType::kNull:
+      return ast_factory_.NewNullConst(NextId(NextToken()));
+    case TokenType::kTrue:
+    case TokenType::kFalse: {
+      Token tok = NextToken();
+      return ast_factory_.NewBoolConst(NextId(tok),
+                                       tok.type == TokenType::kTrue);
+    }
+    case TokenType::kInt:
+      return ParseIntLiteral();
+    case TokenType::kUint:
+      return ParseUintLiteral();
+    case TokenType::kFloat:
+      return ParseDoubleLiteral();
+    case TokenType::kString:
+      return ParseStringLiteral();
+    case TokenType::kBytes:
+      return ParseBytesLiteral();
+    case TokenType::kLeftBracket:
+      return ParseList();
+    case TokenType::kLeftBrace:
+      return ParseMap();
+    case TokenType::kDot:
+    case TokenType::kIdent:
+    case TokenType::kReservedWord:
+      return ParseIdentOrCall();
+    default: {
+      Token bad_tok = NextToken();
+      if (bad_tok.type != TokenType::kError) {
+        if (bad_tok.type == TokenType::kEnd) {
+          ReportError(
+              bad_tok,
+              "Syntax error: mismatched input '<EOF>' expecting expression");
+        } else {
+          ReportError(bad_tok, "unexpected token");
+        }
+      }
+      return ast_factory_.NewUnspecified(NextId(bad_tok));
+    }
   }
-
-  return expr;
 }
 
 // Parses list creation literals (e.g., `[1, 2, ?3]`).
@@ -719,8 +728,7 @@ ExprNode PrattParserWorker<ExprNode>::ParseList() {
         ReportError(q, "unsupported syntax '?'");
       }
     }
-    ExprNode elem = ParseExpr();
-    builder.Add(std::move(elem), optional);
+    builder.Add(ParseExpr(), optional);
     if (peek_token_.type == TokenType::kComma) {
       NextToken();
     } else {
@@ -757,8 +765,7 @@ ExprNode PrattParserWorker<ExprNode>::ParseMap() {
       break;
     }
     int64_t entry_id = NextId(colon);
-    ExprNode val = ParseExpr();
-    builder.Add(entry_id, std::move(key), std::move(val), optional);
+    builder.Add(entry_id, std::move(key), ParseExpr(), optional);
     if (peek_token_.type == TokenType::kComma) {
       NextToken();
     } else {
@@ -801,8 +808,7 @@ ExprNode PrattParserWorker<ExprNode>::ParseStruct(
       break;
     }
     int64_t field_id = NextId(colon);
-    ExprNode val = ParseExpr();
-    builder.Add(field_id, std::move(field_name), std::move(val), optional);
+    builder.Add(field_id, std::move(field_name), ParseExpr(), optional);
     if (peek_token_.type == TokenType::kComma) {
       NextToken();
     } else {
