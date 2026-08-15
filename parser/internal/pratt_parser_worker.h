@@ -27,6 +27,7 @@
 #include "absl/base/attributes.h"
 #include "absl/base/nullability.h"
 #include "absl/base/optimization.h"
+#include "absl/cleanup/cleanup.h"
 #include "absl/container/flat_hash_map.h"
 #include "absl/status/statusor.h"
 #include "absl/strings/ascii.h"
@@ -72,7 +73,7 @@ class ParserWorker {
   const cel::ParserOptions& options() const { return options_; }
   // Token stream management
   void InitTokenStream();
-  Token NextSignificantToken();
+  Token NextSignificantToken(bool report_error = true);
   Token NextToken();
   bool Expect(TokenType type, absl::string_view msg = "");
   std::string GetTokenText(const Token& tok) const;
@@ -316,6 +317,8 @@ class PrattParserWorker : public ParserWorker {
   void RecordMacroCall(int64_t macro_id, absl::string_view function,
                        std::optional<ExprNode> target,
                        std::vector<ExprNode> arguments);
+
+  int CountGroupingParentheses();
 
   AstFactoryInterface<ExprNode>& ast_factory_;
   absl::flat_hash_map<int64_t, ExprNode> macro_calls_;
@@ -652,9 +655,14 @@ PrattParserWorker<ExprNode>::ParsePrimary() {
   ExprNode expr;
   TokenType tok_type = peek_token_.type;
   if (tok_type == TokenType::kLeftParen) {
-    NextToken();
+    int grouping_paren_count = CountGroupingParentheses();
+    for (int i = 0; i < grouping_paren_count; ++i) {
+      NextToken();
+    }
     expr = ParseExpr();
-    Expect(TokenType::kRightParen);
+    for (int i = 0; i < grouping_paren_count; ++i) {
+      Expect(TokenType::kRightParen);
+    }
   } else if (tok_type == TokenType::kNull) {
     Token tok = NextToken();
     expr = ast_factory_.NewNullConst(NextId(tok));
@@ -1170,6 +1178,75 @@ void PrattParserWorker<ExprNode>::RecordMacroCall(
         ast_factory_.NewCall(0, std::string(function), std::move(arguments));
   }
   macro_calls_.insert({macro_id, std::move(call_expr)});
+}
+
+// Scans ahead in the token stream to detect contiguous grouping
+// parentheses (e.g., `((((expr))))`). By determining the number of outermost
+// parentheses that enclose the exact same expression and close contiguously,
+// the parser unnests them in a single C++ stack frame, avoiding deep recursive
+// descent.
+template <typename ExprNode>
+int PrattParserWorker<ExprNode>::CountGroupingParentheses() {
+  if (peek_token_.type != TokenType::kLeftParen) {
+    return 0;
+  }
+
+  // Save lexer position to restore after scanning ahead.
+  const Lexer::Position saved_pos = lexer_.SavePosition();
+  auto restore_lexer = absl::MakeCleanup(
+      [this, saved_pos] { lexer_.RestorePosition(saved_pos); });
+
+  int leading_open_parens = 1;
+  Token tok = this->NextSignificantToken(/*report_error=*/false);
+  while (tok.type == TokenType::kLeftParen) {
+    leading_open_parens++;
+    tok = this->NextSignificantToken(/*report_error=*/false);
+  }
+  if (leading_open_parens == 1) {
+    return 1;
+  }
+
+  int open_parens = leading_open_parens;
+  int consecutive_leading_closed = 0;
+
+  while (open_parens > 0) {
+    if (tok.type == TokenType::kEnd || tok.type == TokenType::kError) {
+      // Return 1 to ensure the parser consumes '(' and standard error handling
+      // catches incomplete expressions like `(ident`.
+      return 1;
+    }
+
+    if (tok.type == TokenType::kLeftParen) {
+      // An inner parenthesis opens within the expression
+      // (e.g. `(x` in `((1 + (x) ))`).
+      open_parens++;
+      consecutive_leading_closed = 0;
+    } else if (tok.type == TokenType::kRightParen) {
+      if (leading_open_parens == open_parens) {
+        // All inner parentheses are balanced, so this ')' closes one of the
+        // initial leading '(' parentheses (e.g. trailing ')' in `(((expr)))`).
+        leading_open_parens--;
+        consecutive_leading_closed++;
+      } else {
+        // This ')' closes an inner nested parenthesis (e.g. `(1 + 2)` in
+        // `((1 + 2) * 3)`), not one of the outermost leading parentheses.
+        consecutive_leading_closed = 0;
+      }
+      open_parens--;
+    } else {
+      // Non-parenthesis token (identifier, operator, literal, etc.). Any
+      // preceding ')' did not close the entire expression, so reset the
+      // contiguous outer closing count.
+      consecutive_leading_closed = 0;
+    }
+
+    if (open_parens > 0) {
+      tok = this->NextSignificantToken(/*report_error=*/false);
+    }
+  }
+
+  // Return at least 1 to make sure we catch unclosed expressions like `(ident`.
+  return std::max(1, consecutive_leading_closed);
 }
 
 }  // namespace cel::parser_internal

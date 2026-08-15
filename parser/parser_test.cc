@@ -1836,8 +1836,9 @@ TEST_P(ExpressionImplTest, RecursionDepthLongArgList) {
   EXPECT_THAT(Parse("[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]", "", options_), IsOk());
 }
 
-TEST(ExpressionTest, RecursionDepthExceeded) {
+TEST(ExpressionTest, RecursionDepthExceeded_AntlrOnly) {
   ParserOptions options;
+  options.enable_pratt_parser = false;
   // AST visitor will recurse a variable amount depending on the terms used in
   // the expression. This check occurs in the business logic converting the raw
   // Antlr parse tree into an Expr. There is a separate check (via a custom
@@ -1877,10 +1878,9 @@ TEST_P(ExpressionImplTest, DisableStandardMacros) {
       << adorned_string;
 }
 
-TEST(ExpressionTest, RecursionDepthIgnoresParentheses) {
-  ParserOptions options;
-  options.max_recursion_depth = 6;
-  auto result = Parse("(((1 + 2 + 3 + 4 + (5 + 6))))", "", options);
+TEST_P(ExpressionImplTest, RecursionDepthIgnoresParentheses) {
+  options_.max_recursion_depth = options_.enable_pratt_parser ? 2 : 6;
+  auto result = Parse("(((1 + 2 + 3 + 4 + (5 + 6))))", "", options_);
 
   EXPECT_THAT(result, IsOk());
 }
