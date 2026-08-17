@@ -59,6 +59,8 @@ class Env {
 
   void SetConfig(const Config& config) { config_ = config; }
 
+  CompilerOptions& GetCompilerOptions() { return compiler_options_; }
+
   absl::StatusOr<std::unique_ptr<CompilerBuilder>> NewCompilerBuilder();
 
   // Shortcut for NewCompilerBuilder() followed by Build().
