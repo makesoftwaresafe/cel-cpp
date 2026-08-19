@@ -782,6 +782,50 @@ TEST_P(ViewTypesMemorySafetyTest, UnsafeWrappedMessageDifferentArena) {
   EXPECT_THAT(result_msg, IsSameInstance(&proto));
 }
 
+TEST_P(ViewTypesMemorySafetyTest, UnsafeWrappedMessageDifferentExplicitArena) {
+  // Arrange: create the runtime and expression.
+  ASSERT_OK_AND_ASSIGN(std::unique_ptr<Runtime> runtime,
+                       ConfigureRuntimeImpl(false, EvaluationOptions()));
+  constexpr absl::string_view kProtoValue = R"pb(
+    child { payload { repeated_int32: [ 1, 2, 3 ] } }
+    payload { repeated_string: [ "foo", "bar", "baz" ] }
+  )pb";
+
+  ASSERT_OK_AND_ASSIGN(
+      ValidationResult validation,
+      GetCompiler().Compile(
+          "condition ? nested_test_all_types : NestedTestAllTypes{}"));
+  ASSERT_TRUE(validation.IsValid()) << validation.FormatError();
+  ASSERT_OK_AND_ASSIGN(auto ast, validation.ReleaseAst());
+  ASSERT_OK_AND_ASSIGN(std::unique_ptr<Program> program,
+                       runtime->CreateProgram(std::move(ast)));
+
+  // Act: wrap the message and evaluate the expression.
+  // The unsafe version will alias the input message, so caller must ensure
+  // the input outlives the use of the `Value` rather than assuming it
+  // is managed by the evaluation arena.
+  google::protobuf::Arena arena;
+  google::protobuf::Arena other_arena;
+  auto* proto = google::protobuf::Arena::Create<NestedTestAllTypes>(&other_arena);
+  ASSERT_TRUE(google::protobuf::TextFormat::ParseFromString(kProtoValue, proto));
+  Activation activation;
+  activation.InsertOrAssignValue("condition", BoolValue(true));
+  activation.InsertOrAssignValue(
+      "nested_test_all_types",
+      Value::WrapMessageUnsafe(proto, google::protobuf::DescriptorPool::generated_pool(),
+                               google::protobuf::MessageFactory::generated_factory(),
+                               &arena));
+  ASSERT_OK_AND_ASSIGN(Value result, program->Evaluate(&arena, activation));
+
+  // Assert: the result is an alias of the input message.
+  ASSERT_TRUE(result.IsParsedMessage());
+  const ParsedMessageValue& result_msg = result.GetParsedMessage();
+  EXPECT_THAT(result_msg,
+              test::StructValueIs(ParsedProtoStructEquals(kProtoValue)));
+  EXPECT_EQ(result_msg->GetArena(), &other_arena);
+  EXPECT_THAT(result_msg, IsSameInstance(proto));
+}
+
 TEST_P(ViewTypesMemorySafetyTest, UnsafeWrappedMessageFields) {
   // Arrange: create the runtime and expression.
   ASSERT_OK_AND_ASSIGN(std::unique_ptr<Runtime> runtime,
