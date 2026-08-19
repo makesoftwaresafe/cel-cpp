@@ -22,6 +22,7 @@
 #include <string>
 #include <type_traits>
 #include <utility>
+#include <variant>
 
 #include "google/protobuf/struct.pb.h"
 #include "absl/base/attributes.h"
@@ -1520,9 +1521,6 @@ Value WrapFieldImpl(
                      message->GetDescriptor()->full_name())));
   }
   if (field->is_map()) {
-    if (reflection->FieldSize(*message, field) == 0) {
-      return MapValue();
-    }
     if constexpr (Unsafe::value) {
       return UnsafeParsedMapFieldValue(message, field);
     } else {
@@ -1531,9 +1529,6 @@ Value WrapFieldImpl(
     }
   }
   if (field->is_repeated()) {
-    if (reflection->FieldSize(*message, field) == 0) {
-      return ListValue();
-    }
     if constexpr (Unsafe::value) {
       return UnsafeParsedRepeatedFieldValue(message, field);
     } else {

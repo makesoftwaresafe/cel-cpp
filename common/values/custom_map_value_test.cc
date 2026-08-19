@@ -139,6 +139,9 @@ class CustomMapValueInterfaceTest final : public CustomMapValueInterface {
         *result = IntValue(1);
         return true;
       }
+      if (*string_key == "error") {
+        return absl::InvalidArgumentError("custom error");
+      }
     }
     return false;
   }
@@ -154,6 +157,9 @@ class CustomMapValueInterfaceTest final : public CustomMapValueInterface {
       }
       if (*string_key == "bar") {
         return true;
+      }
+      if (*string_key == "error") {
+        return absl::InvalidArgumentError("custom error");
       }
     }
     return false;
@@ -254,6 +260,9 @@ class CustomMapValueTest : public common_internal::ValueTest<> {
             *result = IntValue(1);
             return true;
           }
+          if (*string_key == "error") {
+            return absl::InvalidArgumentError("custom error");
+          }
         }
         return false;
       },
@@ -268,6 +277,9 @@ class CustomMapValueTest : public common_internal::ValueTest<> {
           }
           if (*string_key == "bar") {
             return true;
+          }
+          if (*string_key == "error") {
+            return absl::InvalidArgumentError("custom error");
           }
         }
         return false;
@@ -496,6 +508,150 @@ TEST_F(CustomMapValueTest, Interface_Find) {
               IsOkAndHolds(Eq(std::nullopt)));
 }
 
+TEST_F(CustomMapValueTest, Dispatcher_Find_Error) {
+  CustomMapValue map = MakeDispatcher();
+  Value result;
+  ASSERT_THAT(map.Find(StringValue("error"), descriptor_pool(),
+                       message_factory(), arena(), &result),
+              IsOkAndHolds(false));
+  EXPECT_THAT(result, ErrorValueIs(StatusIs(absl::StatusCode::kInvalidArgument,
+                                            "custom error")));
+  ASSERT_THAT(map.Get(StringValue("error"), descriptor_pool(),
+                      message_factory(), arena(), &result),
+              IsOk());
+  EXPECT_THAT(result, ErrorValueIs(StatusIs(absl::StatusCode::kInvalidArgument,
+                                            "custom error")));
+  EXPECT_THAT(map.Get(StringValue("error"), descriptor_pool(),
+                      message_factory(), arena()),
+              IsOkAndHolds(ErrorValueIs(StatusIs(
+                  absl::StatusCode::kInvalidArgument, "custom error"))));
+  EXPECT_THAT(map.Find(StringValue("error"), descriptor_pool(),
+                       message_factory(), arena()),
+              IsOkAndHolds(Eq(std::nullopt)));
+}
+
+TEST_F(CustomMapValueTest, Interface_Find_Error) {
+  CustomMapValue map = MakeInterface();
+  Value result;
+  ASSERT_THAT(map.Find(StringValue("error"), descriptor_pool(),
+                       message_factory(), arena(), &result),
+              IsOkAndHolds(false));
+  EXPECT_THAT(result, ErrorValueIs(StatusIs(absl::StatusCode::kInvalidArgument,
+                                            "custom error")));
+  ASSERT_THAT(map.Get(StringValue("error"), descriptor_pool(),
+                      message_factory(), arena(), &result),
+              IsOk());
+  EXPECT_THAT(result, ErrorValueIs(StatusIs(absl::StatusCode::kInvalidArgument,
+                                            "custom error")));
+  EXPECT_THAT(map.Get(StringValue("error"), descriptor_pool(),
+                      message_factory(), arena()),
+              IsOkAndHolds(ErrorValueIs(StatusIs(
+                  absl::StatusCode::kInvalidArgument, "custom error"))));
+  EXPECT_THAT(map.Find(StringValue("error"), descriptor_pool(),
+                       message_factory(), arena()),
+              IsOkAndHolds(Eq(std::nullopt)));
+}
+
+TEST_F(CustomMapValueTest, Dispatcher_Find_InvalidKeyType) {
+  CustomMapValue map = MakeDispatcher();
+  Value result;
+  ASSERT_THAT(map.Find(DoubleValue(1.0), descriptor_pool(), message_factory(),
+                       arena(), &result),
+              IsOkAndHolds(false));
+  EXPECT_THAT(result,
+              ErrorValueIs(StatusIs(absl::StatusCode::kInvalidArgument)));
+  ASSERT_THAT(map.Get(DoubleValue(1.0), descriptor_pool(), message_factory(),
+                      arena(), &result),
+              IsOk());
+  EXPECT_THAT(result,
+              ErrorValueIs(StatusIs(absl::StatusCode::kInvalidArgument)));
+  EXPECT_THAT(
+      map.Get(DoubleValue(1.0), descriptor_pool(), message_factory(), arena()),
+      IsOkAndHolds(ErrorValueIs(StatusIs(absl::StatusCode::kInvalidArgument))));
+}
+
+TEST_F(CustomMapValueTest, Interface_Find_InvalidKeyType) {
+  CustomMapValue map = MakeInterface();
+  Value result;
+  ASSERT_THAT(map.Find(DoubleValue(1.0), descriptor_pool(), message_factory(),
+                       arena(), &result),
+              IsOkAndHolds(false));
+  EXPECT_THAT(result,
+              ErrorValueIs(StatusIs(absl::StatusCode::kInvalidArgument)));
+  ASSERT_THAT(map.Get(DoubleValue(1.0), descriptor_pool(), message_factory(),
+                      arena(), &result),
+              IsOk());
+  EXPECT_THAT(result,
+              ErrorValueIs(StatusIs(absl::StatusCode::kInvalidArgument)));
+  EXPECT_THAT(
+      map.Get(DoubleValue(1.0), descriptor_pool(), message_factory(), arena()),
+      IsOkAndHolds(ErrorValueIs(StatusIs(absl::StatusCode::kInvalidArgument))));
+}
+
+TEST_F(CustomMapValueTest, Dispatcher_Find_SpecialKeys) {
+  CustomMapValue map = MakeDispatcher();
+  Value result;
+  ErrorValue error_key(absl::CancelledError("cancelled"));
+  ASSERT_THAT(map.Find(error_key, descriptor_pool(), message_factory(), arena(),
+                       &result),
+              IsOkAndHolds(false));
+  EXPECT_THAT(result, ErrorValueIs(
+                          StatusIs(absl::StatusCode::kCancelled, "cancelled")));
+  ASSERT_THAT(map.Get(error_key, descriptor_pool(), message_factory(), arena(),
+                      &result),
+              IsOk());
+  EXPECT_THAT(result, ErrorValueIs(
+                          StatusIs(absl::StatusCode::kCancelled, "cancelled")));
+  EXPECT_THAT(map.Get(error_key, descriptor_pool(), message_factory(), arena()),
+              IsOkAndHolds(ErrorValueIs(
+                  StatusIs(absl::StatusCode::kCancelled, "cancelled"))));
+
+  UnknownValue unknown_key;
+  ASSERT_THAT(map.Find(unknown_key, descriptor_pool(), message_factory(),
+                       arena(), &result),
+              IsOkAndHolds(false));
+  EXPECT_TRUE(result.IsUnknown());
+  ASSERT_THAT(map.Get(unknown_key, descriptor_pool(), message_factory(),
+                      arena(), &result),
+              IsOk());
+  EXPECT_TRUE(result.IsUnknown());
+  ASSERT_OK_AND_ASSIGN(auto get_result, map.Get(unknown_key, descriptor_pool(),
+                                                message_factory(), arena()));
+  EXPECT_TRUE(get_result.IsUnknown());
+}
+
+TEST_F(CustomMapValueTest, Interface_Find_SpecialKeys) {
+  CustomMapValue map = MakeInterface();
+  Value result;
+  ErrorValue error_key(absl::CancelledError("cancelled"));
+  ASSERT_THAT(map.Find(error_key, descriptor_pool(), message_factory(), arena(),
+                       &result),
+              IsOkAndHolds(false));
+  EXPECT_THAT(result, ErrorValueIs(
+                          StatusIs(absl::StatusCode::kCancelled, "cancelled")));
+  ASSERT_THAT(map.Get(error_key, descriptor_pool(), message_factory(), arena(),
+                      &result),
+              IsOk());
+  EXPECT_THAT(result, ErrorValueIs(
+                          StatusIs(absl::StatusCode::kCancelled, "cancelled")));
+  EXPECT_THAT(map.Get(error_key, descriptor_pool(), message_factory(), arena()),
+              IsOkAndHolds(ErrorValueIs(
+                  StatusIs(absl::StatusCode::kCancelled, "cancelled"))));
+
+  UnknownValue unknown_key;
+  ASSERT_THAT(map.Find(unknown_key, descriptor_pool(), message_factory(),
+                       arena(), &result),
+              IsOkAndHolds(false));
+  EXPECT_TRUE(result.IsUnknown());
+  ASSERT_THAT(map.Get(unknown_key, descriptor_pool(), message_factory(),
+                      arena(), &result),
+              IsOk());
+  EXPECT_TRUE(result.IsUnknown());
+  ASSERT_OK_AND_ASSIGN(auto get_result, map.Get(unknown_key, descriptor_pool(),
+                                                message_factory(), arena()));
+  EXPECT_TRUE(get_result.IsUnknown());
+}
+
 TEST_F(CustomMapValueTest, Dispatcher_Has) {
   CustomMapValue map = MakeDispatcher();
   ASSERT_THAT(map.Has(StringValue("foo"), descriptor_pool(), message_factory(),
@@ -520,6 +676,106 @@ TEST_F(CustomMapValueTest, Interface_Has) {
   ASSERT_THAT(map.Has(StringValue("baz"), descriptor_pool(), message_factory(),
                       arena()),
               IsOkAndHolds(BoolValueIs(false)));
+}
+
+TEST_F(CustomMapValueTest, Dispatcher_Has_Error) {
+  CustomMapValue map = MakeDispatcher();
+  Value result;
+  ASSERT_THAT(map.Has(StringValue("error"), descriptor_pool(),
+                      message_factory(), arena(), &result),
+              IsOk());
+  EXPECT_THAT(result, ErrorValueIs(StatusIs(absl::StatusCode::kInvalidArgument,
+                                            "custom error")));
+  EXPECT_THAT(map.Has(StringValue("error"), descriptor_pool(),
+                      message_factory(), arena()),
+              IsOkAndHolds(ErrorValueIs(StatusIs(
+                  absl::StatusCode::kInvalidArgument, "custom error"))));
+}
+
+TEST_F(CustomMapValueTest, Interface_Has_Error) {
+  CustomMapValue map = MakeInterface();
+  Value result;
+  ASSERT_THAT(map.Has(StringValue("error"), descriptor_pool(),
+                      message_factory(), arena(), &result),
+              IsOk());
+  EXPECT_THAT(result, ErrorValueIs(StatusIs(absl::StatusCode::kInvalidArgument,
+                                            "custom error")));
+  EXPECT_THAT(map.Has(StringValue("error"), descriptor_pool(),
+                      message_factory(), arena()),
+              IsOkAndHolds(ErrorValueIs(StatusIs(
+                  absl::StatusCode::kInvalidArgument, "custom error"))));
+}
+
+TEST_F(CustomMapValueTest, Dispatcher_Has_InvalidKeyType) {
+  CustomMapValue map = MakeDispatcher();
+  Value result;
+  ASSERT_THAT(map.Has(DoubleValue(1.0), descriptor_pool(), message_factory(),
+                      arena(), &result),
+              IsOk());
+  EXPECT_THAT(result,
+              ErrorValueIs(StatusIs(absl::StatusCode::kInvalidArgument)));
+  EXPECT_THAT(
+      map.Has(DoubleValue(1.0), descriptor_pool(), message_factory(), arena()),
+      IsOkAndHolds(ErrorValueIs(StatusIs(absl::StatusCode::kInvalidArgument))));
+}
+
+TEST_F(CustomMapValueTest, Interface_Has_InvalidKeyType) {
+  CustomMapValue map = MakeInterface();
+  Value result;
+  ASSERT_THAT(map.Has(DoubleValue(1.0), descriptor_pool(), message_factory(),
+                      arena(), &result),
+              IsOk());
+  EXPECT_THAT(result,
+              ErrorValueIs(StatusIs(absl::StatusCode::kInvalidArgument)));
+  EXPECT_THAT(
+      map.Has(DoubleValue(1.0), descriptor_pool(), message_factory(), arena()),
+      IsOkAndHolds(ErrorValueIs(StatusIs(absl::StatusCode::kInvalidArgument))));
+}
+
+TEST_F(CustomMapValueTest, Dispatcher_Has_SpecialKeys) {
+  CustomMapValue map = MakeDispatcher();
+  Value result;
+  ErrorValue error_key(absl::CancelledError("cancelled"));
+  ASSERT_THAT(map.Has(error_key, descriptor_pool(), message_factory(), arena(),
+                      &result),
+              IsOk());
+  EXPECT_THAT(result, ErrorValueIs(
+                          StatusIs(absl::StatusCode::kCancelled, "cancelled")));
+  EXPECT_THAT(map.Has(error_key, descriptor_pool(), message_factory(), arena()),
+              IsOkAndHolds(ErrorValueIs(
+                  StatusIs(absl::StatusCode::kCancelled, "cancelled"))));
+
+  UnknownValue unknown_key;
+  ASSERT_THAT(map.Has(unknown_key, descriptor_pool(), message_factory(),
+                      arena(), &result),
+              IsOk());
+  EXPECT_TRUE(result.IsUnknown());
+  ASSERT_OK_AND_ASSIGN(auto has_result, map.Has(unknown_key, descriptor_pool(),
+                                                message_factory(), arena()));
+  EXPECT_TRUE(has_result.IsUnknown());
+}
+
+TEST_F(CustomMapValueTest, Interface_Has_SpecialKeys) {
+  CustomMapValue map = MakeInterface();
+  Value result;
+  ErrorValue error_key(absl::CancelledError("cancelled"));
+  ASSERT_THAT(map.Has(error_key, descriptor_pool(), message_factory(), arena(),
+                      &result),
+              IsOk());
+  EXPECT_THAT(result, ErrorValueIs(
+                          StatusIs(absl::StatusCode::kCancelled, "cancelled")));
+  EXPECT_THAT(map.Has(error_key, descriptor_pool(), message_factory(), arena()),
+              IsOkAndHolds(ErrorValueIs(
+                  StatusIs(absl::StatusCode::kCancelled, "cancelled"))));
+
+  UnknownValue unknown_key;
+  ASSERT_THAT(map.Has(unknown_key, descriptor_pool(), message_factory(),
+                      arena(), &result),
+              IsOk());
+  EXPECT_TRUE(result.IsUnknown());
+  ASSERT_OK_AND_ASSIGN(auto has_result, map.Has(unknown_key, descriptor_pool(),
+                                                message_factory(), arena()));
+  EXPECT_TRUE(has_result.IsUnknown());
 }
 
 TEST_F(CustomMapValueTest, Dispatcher_ForEach) {

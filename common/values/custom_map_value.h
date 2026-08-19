@@ -54,6 +54,12 @@ class CustomMapValueInterfaceKeysIterator;
 class CustomMapValue;
 using CustomMapValueContent = CustomValueContent;
 
+// Dispatch table for `CustomMapValue`.
+//
+// See the documentation for `CustomMapValueInterface` for more details on
+// composite functions.
+//
+// See documentation for `UnsafeCustomMapValue` on how to use this class.
 struct CustomMapValueDispatcher {
   using GetTypeId =
       NativeTypeId (*)(const CustomMapValueDispatcher* absl_nonnull dispatcher,
@@ -247,12 +253,21 @@ class CustomMapValueInterface {
 
   virtual CustomMapValue Clone(google::protobuf::Arena* absl_nonnull arena) const = 0;
 
+  // Tests whether the map contains the given key. If it does, the value
+  // associated with the key is written to `result` and the function returns
+  // true. Otherwise, the function returns false and `result` is set to
+  // `NullValue`.
+  //
+  // A non-ok status is converted to an ErrorValue (e.g. wrong key type).
   virtual absl::StatusOr<bool> Find(
       const Value& key,
       const google::protobuf::DescriptorPool* absl_nonnull descriptor_pool,
       google::protobuf::MessageFactory* absl_nonnull message_factory,
       google::protobuf::Arena* absl_nonnull arena, Value* absl_nonnull result) const = 0;
 
+  // Whether the map has the given key.
+  //
+  // A non-ok status is converted to an ErrorValue (e.g. wrong key type).
   virtual absl::StatusOr<bool> Has(
       const Value& key,
       const google::protobuf::DescriptorPool* absl_nonnull descriptor_pool,

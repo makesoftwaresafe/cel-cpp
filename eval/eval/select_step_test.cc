@@ -13,6 +13,7 @@
 #include "absl/status/status_matchers.h"
 #include "absl/status/statusor.h"
 #include "absl/strings/string_view.h"
+#include "absl/types/span.h"
 #include "base/attribute.h"
 #include "base/attribute_set.h"
 #include "base/type_provider.h"
@@ -311,7 +312,7 @@ TEST_F(SelectStepTest, MapPresenseIsErrorTest) {
                          CelProtoWrapper::CreateMessage(&message, &arena_));
 
   ASSERT_OK_AND_ASSIGN(CelValue result, cel_expr.Evaluate(activation, &arena_));
-  EXPECT_TRUE(result.IsError());
+  ASSERT_TRUE(result.IsError());
   EXPECT_EQ(result.ErrorOrDie()->code(), absl::StatusCode::kInvalidArgument);
 }
 

@@ -14,7 +14,9 @@
 
 #include <cstddef>
 #include <memory>
+#include <optional>
 #include <string>
+#include <utility>
 
 #include "absl/base/attributes.h"
 #include "absl/base/no_destructor.h"
@@ -673,24 +675,34 @@ absl::StatusOr<bool> CustomMapValue::Find(
       return false;
   }
 
-  bool ok;
   if (dispatcher_ == nullptr) {
     CustomMapValueInterface::Content content =
         content_.To<CustomMapValueInterface::Content>();
     ABSL_DCHECK(content.interface != nullptr);
-    CEL_ASSIGN_OR_RETURN(
-        ok, content.interface->Find(key, descriptor_pool, message_factory,
-                                    arena, result));
-  } else {
-    CEL_ASSIGN_OR_RETURN(
-        ok, dispatcher_->find(dispatcher_, content_, key, descriptor_pool,
-                              message_factory, arena, result));
-  }
-  if (ok) {
+    auto status_or_found = content.interface->Find(
+        key, descriptor_pool, message_factory, arena, result);
+    if (!status_or_found.ok()) {
+      *result = ErrorValue(std::move(status_or_found).status());
+      return false;
+    }
+    if (!*status_or_found) {
+      *result = NullValue();
+      return false;
+    }
     return true;
   }
-  *result = NullValue{};
-  return false;
+  auto status_or_found =
+      dispatcher_->find(dispatcher_, content_, key, descriptor_pool,
+                        message_factory, arena, result);
+  if (!status_or_found.ok()) {
+    *result = ErrorValue(std::move(status_or_found).status());
+    return false;
+  }
+  if (!*status_or_found) {
+    *result = NullValue();
+    return false;
+  }
+  return true;
 }
 
 absl::Status CustomMapValue::Has(
@@ -721,19 +733,26 @@ absl::Status CustomMapValue::Has(
       *result = ErrorValue(InvalidMapKeyTypeError(key.kind()));
       return absl::OkStatus();
   }
-  bool has;
   if (dispatcher_ == nullptr) {
     CustomMapValueInterface::Content content =
         content_.To<CustomMapValueInterface::Content>();
     ABSL_DCHECK(content.interface != nullptr);
-    CEL_ASSIGN_OR_RETURN(has, content.interface->Has(key, descriptor_pool,
-                                                     message_factory, arena));
-  } else {
-    CEL_ASSIGN_OR_RETURN(
-        has, dispatcher_->has(dispatcher_, content_, key, descriptor_pool,
-                              message_factory, arena));
+    auto status_or_has =
+        content.interface->Has(key, descriptor_pool, message_factory, arena);
+    if (!status_or_has.ok()) {
+      *result = ErrorValue(std::move(status_or_has).status());
+      return absl::OkStatus();
+    }
+    *result = BoolValue(*status_or_has);
+    return absl::OkStatus();
   }
-  *result = BoolValue(has);
+  auto status_or_has = dispatcher_->has(
+      dispatcher_, content_, key, descriptor_pool, message_factory, arena);
+  if (!status_or_has.ok()) {
+    *result = ErrorValue(std::move(status_or_has).status());
+    return absl::OkStatus();
+  }
+  *result = BoolValue(*status_or_has);
   return absl::OkStatus();
 }
 
