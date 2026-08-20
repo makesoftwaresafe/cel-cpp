@@ -102,7 +102,7 @@ TEST_F(ParsedMapFieldValueTest, IsZeroValue) {
   EXPECT_TRUE(value.IsZeroValue());
 }
 
-TEST_F(ParsedMapFieldValueTest, SerializeTo) {
+TEST_F(ParsedMapFieldValueTest, SerializeToEmpty) {
   ParsedMapFieldValue value(
       DynamicParseTextProto<TestAllTypesProto3>(R"pb()pb"),
       DynamicGetField<TestAllTypesProto3>("map_int64_int64"), arena());
@@ -110,6 +110,23 @@ TEST_F(ParsedMapFieldValueTest, SerializeTo) {
   EXPECT_THAT(value.SerializeTo(descriptor_pool(), message_factory(), &output),
               IsOk());
   EXPECT_THAT(std::move(output).Consume(), IsEmpty());
+}
+
+TEST_F(ParsedMapFieldValueTest, SerializeTo) {
+  ParsedMapFieldValue value(
+      DynamicParseTextProto<TestAllTypesProto3>(
+          R"pb(map_string_string { key: "foo" value: "bar" })pb"),
+      DynamicGetField<TestAllTypesProto3>("map_string_string"), arena());
+  google::protobuf::io::CordOutputStream output;
+  EXPECT_THAT(value.SerializeTo(descriptor_pool(), message_factory(), &output),
+              IsOk());
+  google::protobuf::Struct actual;
+  EXPECT_TRUE(actual.ParsePartialFromCord(std::move(output).Consume()));
+  EXPECT_THAT(actual, EqualsTextProto<google::protobuf::Struct>(
+                          R"pb(fields {
+                                 key: "foo"
+                                 value { string_value: "bar" }
+                               })pb"));
 }
 
 TEST_F(ParsedMapFieldValueTest, ConvertToJson) {
