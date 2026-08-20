@@ -9,6 +9,10 @@ namespace api {
 namespace expr {
 namespace runtime {
 
+// Reference implementation of CelMap backed by a flatbuffer table.
+//
+// To avoid taking a dependency on flatbuffers, this is not included in the
+// bazel module or built by public CI.
 class FlatBuffersMapImpl : public CelMap {
  public:
   FlatBuffersMapImpl(const flatbuffers::Table& table,

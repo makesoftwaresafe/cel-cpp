@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-load("@com_github_google_flatbuffers//:build_defs.bzl", "flatbuffer_library_public")
 load("@com_google_protobuf//bazel:cc_proto_library.bzl", "cc_proto_library")
 load("@com_google_protobuf//bazel:proto_library.bzl", "proto_library")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
@@ -21,29 +20,12 @@ licenses(["notice"])
 
 package(default_visibility = ["//visibility:public"])
 
-flatbuffer_library_public(
-    name = "flatbuffers_test",
-    srcs = ["flatbuffers.fbs"],
-    outs = ["flatbuffers_generated.h"],
-    language_flag = "-c",
-    reflection_name = "flatbuffers_reflection",
-)
-
 filegroup(
     name = "coverage_testdata",
     srcs = [
         "coverage_example.textproto",
         "exists_macro.textproto",
     ],
-)
-
-cc_library(
-    name = "flatbuffers_test_cc",
-    srcs = [":flatbuffers_test"],
-    hdrs = [":flatbuffers_test"],
-    features = ["-parse_headers"],
-    linkstatic = True,
-    deps = ["@com_github_google_flatbuffers//:runtime_cc"],
 )
 
 proto_library(
