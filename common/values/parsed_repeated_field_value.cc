@@ -15,6 +15,7 @@
 #include "common/values/parsed_repeated_field_value.h"
 
 #include <cstddef>
+#include <cstdint>
 #include <limits>
 #include <memory>
 #include <string>
@@ -147,24 +148,79 @@ absl::Status ParsedRepeatedFieldValue::Equal(
 
 bool ParsedRepeatedFieldValue::IsZeroValue() const { return IsEmpty(); }
 
+namespace {
+
+template <typename T>
+void CopyRepeatedFieldImpl(const google::protobuf::Reflection* absl_nonnull reflection,
+                           const google::protobuf::Message& src_message,
+                           google::protobuf::Message* absl_nonnull dst_message,
+                           const google::protobuf::FieldDescriptor* absl_nonnull field) {
+  auto src_field = reflection->GetRepeatedFieldRef<T>(src_message, field);
+  auto dst_field =
+      reflection->GetMutableRepeatedFieldRef<T>(dst_message, field);
+  dst_field.CopyFrom(src_field);
+}
+
+void CopyRepeatedField(const google::protobuf::Reflection* absl_nonnull reflection,
+                       const google::protobuf::Message& src_message,
+                       google::protobuf::Message* absl_nonnull dst_message,
+                       const google::protobuf::FieldDescriptor* absl_nonnull field) {
+  switch (field->cpp_type()) {
+    case google::protobuf::FieldDescriptor::CPPTYPE_INT32:
+      CopyRepeatedFieldImpl<int32_t>(reflection, src_message, dst_message,
+                                     field);
+      break;
+    case google::protobuf::FieldDescriptor::CPPTYPE_INT64:
+      CopyRepeatedFieldImpl<int64_t>(reflection, src_message, dst_message,
+                                     field);
+      break;
+    case google::protobuf::FieldDescriptor::CPPTYPE_UINT32:
+      CopyRepeatedFieldImpl<uint32_t>(reflection, src_message, dst_message,
+                                      field);
+      break;
+    case google::protobuf::FieldDescriptor::CPPTYPE_UINT64:
+      CopyRepeatedFieldImpl<uint64_t>(reflection, src_message, dst_message,
+                                      field);
+      break;
+    case google::protobuf::FieldDescriptor::CPPTYPE_DOUBLE:
+      CopyRepeatedFieldImpl<double>(reflection, src_message, dst_message,
+                                    field);
+      break;
+    case google::protobuf::FieldDescriptor::CPPTYPE_FLOAT:
+      CopyRepeatedFieldImpl<float>(reflection, src_message, dst_message, field);
+      break;
+    case google::protobuf::FieldDescriptor::CPPTYPE_BOOL:
+      CopyRepeatedFieldImpl<bool>(reflection, src_message, dst_message, field);
+      break;
+    case google::protobuf::FieldDescriptor::CPPTYPE_ENUM:
+      CopyRepeatedFieldImpl<int32_t>(reflection, src_message, dst_message,
+                                     field);
+      break;
+    case google::protobuf::FieldDescriptor::CPPTYPE_STRING:
+      CopyRepeatedFieldImpl<std::string>(reflection, src_message, dst_message,
+                                         field);
+      break;
+    case google::protobuf::FieldDescriptor::CPPTYPE_MESSAGE:
+      CopyRepeatedFieldImpl<google::protobuf::Message>(reflection, src_message,
+                                             dst_message, field);
+      break;
+  }
+}
+
+}  // namespace
+
 ParsedRepeatedFieldValue ParsedRepeatedFieldValue::Clone(
     google::protobuf::Arena* absl_nonnull arena) const {
   ABSL_DCHECK(arena != nullptr);
-  ABSL_DCHECK(*this);
 
-  if (ABSL_PREDICT_FALSE(field_ == nullptr)) {
+  if (ABSL_PREDICT_FALSE(!*this)) {
     return ParsedRepeatedFieldValue();
   }
   if (arena_ == arena) {
     return *this;
   }
-  auto field = message_->GetReflection()->GetRepeatedFieldRef<google::protobuf::Message>(
-      *message_, field_);
   auto* cloned_message = message_->New(arena);
-  auto cloned_field =
-      cloned_message->GetReflection()
-          ->GetMutableRepeatedFieldRef<google::protobuf::Message>(cloned_message, field_);
-  cloned_field.CopyFrom(field);
+  CopyRepeatedField(GetReflection(), *message_, cloned_message, field_);
   return ParsedRepeatedFieldValue(cloned_message, field_, arena);
 }
 

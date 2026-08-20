@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include <cstddef>
+#include <optional>
 #include <utility>
 #include <vector>
 
@@ -21,14 +22,15 @@
 #include "absl/status/status_matchers.h"
 #include "absl/status/statusor.h"
 #include "absl/strings/string_view.h"
-#include "absl/types/optional.h"
 #include "common/memory.h"
 #include "common/type.h"
 #include "common/value.h"
 #include "common/value_kind.h"
 #include "common/value_testing.h"
+#include "internal/parse_text_proto.h"
 #include "internal/testing.h"
 #include "cel/expr/conformance/proto3/test_all_types.pb.h"
+#include "google/protobuf/arena.h"
 #include "google/protobuf/io/zero_copy_stream_impl_lite.h"
 
 namespace cel {
@@ -282,6 +284,42 @@ TEST_F(ParsedJsonListValueTest, Contains_Dynamic) {
       IsOkAndHolds(BoolValueIs(false)));
   EXPECT_THAT(valid_value.Contains(MapValue(), descriptor_pool(),
                                    message_factory(), arena()),
+              IsOkAndHolds(BoolValueIs(true)));
+}
+
+TEST_F(ParsedJsonListValueTest, CloneDefault) {
+  ParsedJsonListValue value;
+  EXPECT_FALSE(value.Clone(arena()));
+}
+
+TEST_F(ParsedJsonListValueTest, CloneSameArena) {
+  ParsedJsonListValue value(DynamicParseTextProto<google::protobuf::ListValue>(
+                                R"pb(values { null_value: NULL_VALUE }
+                                     values { bool_value: true })pb"),
+                            arena());
+  auto cloned = value.Clone(arena());
+  EXPECT_THAT(
+      cloned.Equal(value, descriptor_pool(), message_factory(), arena()),
+      IsOkAndHolds(BoolValueIs(true)));
+}
+
+TEST_F(ParsedJsonListValueTest, CloneDifferentArena) {
+  google::protobuf::Arena other_arena;
+  ParsedJsonListValue value(
+      ::cel::internal::DynamicParseTextProto<google::protobuf::ListValue>(
+          &other_arena,
+          R"pb(values { null_value: NULL_VALUE }
+               values { bool_value: true })pb",
+          descriptor_pool(), message_factory()),
+      &other_arena);
+  auto cloned = value.Clone(arena());
+  EXPECT_THAT(
+      cloned.Equal(value, descriptor_pool(), message_factory(), arena()),
+      IsOkAndHolds(BoolValueIs(true)));
+  EXPECT_EQ(cloned.Size(), 2);
+  EXPECT_THAT(cloned.Get(0, descriptor_pool(), message_factory(), arena()),
+              IsOkAndHolds(IsNullValue()));
+  EXPECT_THAT(cloned.Get(1, descriptor_pool(), message_factory(), arena()),
               IsOkAndHolds(BoolValueIs(true)));
 }
 

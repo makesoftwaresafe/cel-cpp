@@ -336,5 +336,56 @@ TEST_F(ParsedJsonMapValueTest, NewIterator2) {
               IsOkAndHolds(Eq(std::nullopt)));
 }
 
+TEST_F(ParsedJsonMapValueTest, CloneDefault) {
+  ParsedJsonMapValue value;
+  EXPECT_FALSE(value.Clone(arena()));
+}
+
+TEST_F(ParsedJsonMapValueTest, CloneSameArena) {
+  ParsedJsonMapValue value(DynamicParseTextProto<google::protobuf::Struct>(R"pb(
+                             fields {
+                               key: "foo"
+                               value: { null_value: NULL_VALUE }
+                             }
+                             fields {
+                               key: "bar"
+                               value: { bool_value: true }
+                             })pb"),
+                           arena());
+  auto cloned = value.Clone(arena());
+  EXPECT_THAT(
+      cloned.Equal(value, descriptor_pool(), message_factory(), arena()),
+      IsOkAndHolds(BoolValueIs(true)));
+}
+
+TEST_F(ParsedJsonMapValueTest, CloneDifferentArena) {
+  google::protobuf::Arena other_arena;
+  ParsedJsonMapValue value(
+      ::cel::internal::DynamicParseTextProto<google::protobuf::Struct>(
+          &other_arena,
+          R"pb(
+            fields {
+              key: "foo"
+              value: { null_value: NULL_VALUE }
+            }
+            fields {
+              key: "bar"
+              value: { bool_value: true }
+            })pb",
+          descriptor_pool(), message_factory()),
+      &other_arena);
+  auto cloned = value.Clone(arena());
+  EXPECT_THAT(
+      cloned.Equal(value, descriptor_pool(), message_factory(), arena()),
+      IsOkAndHolds(BoolValueIs(true)));
+  EXPECT_EQ(cloned.Size(), 2);
+  EXPECT_THAT(cloned.Get(StringValue("foo"), descriptor_pool(),
+                         message_factory(), arena()),
+              IsOkAndHolds(IsNullValue()));
+  EXPECT_THAT(cloned.Get(StringValue("bar"), descriptor_pool(),
+                         message_factory(), arena()),
+              IsOkAndHolds(BoolValueIs(true)));
+}
+
 }  // namespace
 }  // namespace cel

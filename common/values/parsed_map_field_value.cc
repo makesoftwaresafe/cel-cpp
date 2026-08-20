@@ -157,9 +157,8 @@ bool ParsedMapFieldValue::IsZeroValue() const { return IsEmpty(); }
 ParsedMapFieldValue ParsedMapFieldValue::Clone(
     google::protobuf::Arena* absl_nonnull arena) const {
   ABSL_DCHECK(arena != nullptr);
-  ABSL_DCHECK(*this);
 
-  if (ABSL_PREDICT_FALSE(field_ == nullptr)) {
+  if (ABSL_PREDICT_FALSE(!*this)) {
     return ParsedMapFieldValue();
   }
   if (arena_ == arena) {

@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include <cstddef>
+#include <optional>
 #include <utility>
 #include <vector>
 
@@ -22,14 +23,15 @@
 #include "absl/status/statusor.h"
 #include "absl/strings/string_view.h"
 #include "absl/time/time.h"
-#include "absl/types/optional.h"
 #include "common/memory.h"
 #include "common/type.h"
 #include "common/value.h"
 #include "common/value_kind.h"
 #include "common/value_testing.h"
+#include "internal/parse_text_proto.h"
 #include "internal/testing.h"
 #include "cel/expr/conformance/proto3/test_all_types.pb.h"
+#include "google/protobuf/arena.h"
 #include "google/protobuf/io/zero_copy_stream_impl_lite.h"
 
 namespace cel {
@@ -45,6 +47,7 @@ using ::cel::test::DurationValueIs;
 using ::cel::test::ErrorValueIs;
 using ::cel::test::IntValueIs;
 using ::cel::test::IsNullValue;
+using ::cel::test::StringValueIs;
 using ::cel::test::UintValueIs;
 using ::testing::_;
 using ::testing::ElementsAre;
@@ -444,6 +447,75 @@ TEST_F(ParsedRepeatedFieldValueTest, Contains) {
   EXPECT_THAT(
       value.Contains(MapValue(), descriptor_pool(), message_factory(), arena()),
       IsOkAndHolds(BoolValueIs(false)));
+}
+
+TEST_F(ParsedRepeatedFieldValueTest, CloneDefault) {
+  ParsedRepeatedFieldValue value;
+  EXPECT_FALSE(value.Clone(arena()));
+}
+
+TEST_F(ParsedRepeatedFieldValueTest, CloneSameArena) {
+  ParsedRepeatedFieldValue value(
+      DynamicParseTextProto<TestAllTypesProto3>(R"pb(repeated_int64: 1
+                                                     repeated_int64: 2)pb"),
+      DynamicGetField<TestAllTypesProto3>("repeated_int64"), arena());
+  auto cloned = value.Clone(arena());
+  EXPECT_THAT(
+      cloned.Equal(value, descriptor_pool(), message_factory(), arena()),
+      IsOkAndHolds(BoolValueIs(true)));
+}
+
+TEST_F(ParsedRepeatedFieldValueTest, CloneDifferentArenaInt64) {
+  google::protobuf::Arena other_arena;
+  ParsedRepeatedFieldValue value(
+      ::cel::internal::DynamicParseTextProto<TestAllTypesProto3>(
+          &other_arena, R"pb(repeated_int64: 1 repeated_int64: 2)pb",
+          descriptor_pool(), message_factory()),
+      DynamicGetField<TestAllTypesProto3>("repeated_int64"), &other_arena);
+  auto cloned = value.Clone(arena());
+  EXPECT_THAT(
+      cloned.Equal(value, descriptor_pool(), message_factory(), arena()),
+      IsOkAndHolds(BoolValueIs(true)));
+  EXPECT_EQ(cloned.Size(), 2);
+  EXPECT_THAT(cloned.Get(0, descriptor_pool(), message_factory(), arena()),
+              IsOkAndHolds(IntValueIs(1)));
+  EXPECT_THAT(cloned.Get(1, descriptor_pool(), message_factory(), arena()),
+              IsOkAndHolds(IntValueIs(2)));
+}
+
+TEST_F(ParsedRepeatedFieldValueTest, CloneDifferentArenaString) {
+  google::protobuf::Arena other_arena;
+  ParsedRepeatedFieldValue value(
+      ::cel::internal::DynamicParseTextProto<TestAllTypesProto3>(
+          &other_arena, R"pb(repeated_string: "foo" repeated_string: "bar")pb",
+          descriptor_pool(), message_factory()),
+      DynamicGetField<TestAllTypesProto3>("repeated_string"), &other_arena);
+  auto cloned = value.Clone(arena());
+  EXPECT_THAT(
+      cloned.Equal(value, descriptor_pool(), message_factory(), arena()),
+      IsOkAndHolds(BoolValueIs(true)));
+  EXPECT_EQ(cloned.Size(), 2);
+  EXPECT_THAT(cloned.Get(0, descriptor_pool(), message_factory(), arena()),
+              IsOkAndHolds(StringValueIs("foo")));
+  EXPECT_THAT(cloned.Get(1, descriptor_pool(), message_factory(), arena()),
+              IsOkAndHolds(StringValueIs("bar")));
+}
+
+TEST_F(ParsedRepeatedFieldValueTest, CloneDifferentArenaMessage) {
+  google::protobuf::Arena other_arena;
+  ParsedRepeatedFieldValue value(
+      ::cel::internal::DynamicParseTextProto<TestAllTypesProto3>(
+          &other_arena,
+          R"pb(repeated_nested_message: { bb: 1 }
+               repeated_nested_message: { bb: 2 })pb",
+          descriptor_pool(), message_factory()),
+      DynamicGetField<TestAllTypesProto3>("repeated_nested_message"),
+      &other_arena);
+  auto cloned = value.Clone(arena());
+  EXPECT_THAT(
+      cloned.Equal(value, descriptor_pool(), message_factory(), arena()),
+      IsOkAndHolds(BoolValueIs(true)));
+  EXPECT_EQ(cloned.Size(), 2);
 }
 
 }  // namespace

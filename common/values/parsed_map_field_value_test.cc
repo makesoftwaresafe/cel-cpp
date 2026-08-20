@@ -640,5 +640,47 @@ TEST_F(ParsedMapFieldValueTest, NewIterator2) {
               IsOkAndHolds(Eq(std::nullopt)));
 }
 
+TEST_F(ParsedMapFieldValueTest, CloneDefault) {
+  ParsedMapFieldValue value;
+  EXPECT_FALSE(value.Clone(arena()));
+}
+
+TEST_F(ParsedMapFieldValueTest, CloneSameArena) {
+  ParsedMapFieldValue value(
+      DynamicParseTextProto<TestAllTypesProto3>(R"pb(
+        map_string_string { key: "foo" value: "bar" }
+        map_string_string { key: "bar" value: "foo" }
+      )pb"),
+      DynamicGetField<TestAllTypesProto3>("map_string_string"), arena());
+  auto cloned = value.Clone(arena());
+  EXPECT_THAT(
+      cloned.Equal(value, descriptor_pool(), message_factory(), arena()),
+      IsOkAndHolds(BoolValueIs(true)));
+}
+
+TEST_F(ParsedMapFieldValueTest, CloneDifferentArena) {
+  google::protobuf::Arena other_arena;
+  ParsedMapFieldValue value(
+      ::cel::internal::DynamicParseTextProto<TestAllTypesProto3>(
+          &other_arena,
+          R"pb(
+            map_string_string { key: "foo" value: "bar" }
+            map_string_string { key: "bar" value: "foo" }
+          )pb",
+          descriptor_pool(), message_factory()),
+      DynamicGetField<TestAllTypesProto3>("map_string_string"), &other_arena);
+  auto cloned = value.Clone(arena());
+  EXPECT_THAT(
+      cloned.Equal(value, descriptor_pool(), message_factory(), arena()),
+      IsOkAndHolds(BoolValueIs(true)));
+  EXPECT_EQ(cloned.Size(), 2);
+  EXPECT_THAT(cloned.Get(StringValue("foo"), descriptor_pool(),
+                         message_factory(), arena()),
+              IsOkAndHolds(StringValueIs("bar")));
+  EXPECT_THAT(cloned.Get(StringValue("bar"), descriptor_pool(),
+                         message_factory(), arena()),
+              IsOkAndHolds(StringValueIs("foo")));
+}
+
 }  // namespace
 }  // namespace cel
