@@ -62,10 +62,14 @@ class EnvRuntime {
 
   RuntimeOptions& mutable_runtime_options() { return runtime_options_; }
 
-  absl::StatusOr<RuntimeBuilder> CreateRuntimeBuilder();
+  absl::StatusOr<RuntimeBuilder> CreateRuntimeBuilder() const;
+  absl::StatusOr<RuntimeBuilder> CreateRuntimeBuilder(
+      const RuntimeOptions& options) const;
 
   // Shortcut for CreateRuntimeBuilder() followed by Build().
-  absl::StatusOr<std::unique_ptr<Runtime>> NewRuntime();
+  absl::StatusOr<std::unique_ptr<Runtime>> NewRuntime() const;
+  absl::StatusOr<std::unique_ptr<Runtime>> NewRuntime(
+      const RuntimeOptions& options) const;
 
  private:
   cel::env_internal::RuntimeExtensionRegistry& GetRuntimeExtensionRegistry() {

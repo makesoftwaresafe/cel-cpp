@@ -61,10 +61,10 @@ class Env {
 
   CompilerOptions& GetCompilerOptions() { return compiler_options_; }
 
-  absl::StatusOr<std::unique_ptr<CompilerBuilder>> NewCompilerBuilder();
+  absl::StatusOr<std::unique_ptr<CompilerBuilder>> NewCompilerBuilder() const;
 
   // Shortcut for NewCompilerBuilder() followed by Build().
-  absl::StatusOr<std::unique_ptr<Compiler>> NewCompiler();
+  absl::StatusOr<std::unique_ptr<Compiler>> NewCompiler() const;
 
  private:
   cel::env_internal::ExtensionRegistry extension_registry_;

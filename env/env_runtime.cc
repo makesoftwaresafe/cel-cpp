@@ -41,32 +41,38 @@ void EnvRuntime::RegisterExtensionFunctions(
       name, alias, version, std::move(function_registration_callback));
 }
 
-absl::StatusOr<RuntimeBuilder> EnvRuntime::CreateRuntimeBuilder() {
+absl::StatusOr<RuntimeBuilder> EnvRuntime::CreateRuntimeBuilder() const {
+  return CreateRuntimeBuilder(runtime_options_);
+}
+
+absl::StatusOr<RuntimeBuilder> EnvRuntime::CreateRuntimeBuilder(
+    const RuntimeOptions& options) const {
+  RuntimeOptions runtime_options = options;
   const std::vector<Config::ExtensionConfig>& extension_configs =
       config_.GetExtensionConfigs();
   const Config::ExtensionConfig* optional_extension_config = nullptr;
   for (const Config::ExtensionConfig& extension_config : extension_configs) {
     if (extension_config.name == "optional") {
       optional_extension_config = &extension_config;
-      runtime_options_.enable_qualified_type_identifiers = true;
+      runtime_options.enable_qualified_type_identifiers = true;
       break;
     }
   }
 
   CEL_ASSIGN_OR_RETURN(
       RuntimeBuilder runtime_builder,
-      cel::CreateRuntimeBuilder(descriptor_pool_, runtime_options_));
+      cel::CreateRuntimeBuilder(descriptor_pool_, runtime_options));
 
   if (!config_.GetStandardLibraryConfig().disable) {
     CEL_RETURN_IF_ERROR(RegisterStandardFunctions(
-        runtime_builder.function_registry(), runtime_options_));
+        runtime_builder.function_registry(), runtime_options));
   }
 
   // Register optional extension functions first, because other extensions
   // depend on it (e.g. regex).
   if (optional_extension_config != nullptr) {
     CEL_RETURN_IF_ERROR(extension_registry_.RegisterExtensionFunctions(
-        runtime_builder, runtime_options_, optional_extension_config->name,
+        runtime_builder, runtime_options, optional_extension_config->name,
         optional_extension_config->version));
   }
 
@@ -75,14 +81,20 @@ absl::StatusOr<RuntimeBuilder> EnvRuntime::CreateRuntimeBuilder() {
       continue;
     }
     CEL_RETURN_IF_ERROR(extension_registry_.RegisterExtensionFunctions(
-        runtime_builder, runtime_options_, extension_config.name,
+        runtime_builder, runtime_options, extension_config.name,
         extension_config.version));
   }
   return runtime_builder;
 }
 
-absl::StatusOr<std::unique_ptr<Runtime>> EnvRuntime::NewRuntime() {
-  CEL_ASSIGN_OR_RETURN(RuntimeBuilder runtime_builder, CreateRuntimeBuilder());
+absl::StatusOr<std::unique_ptr<Runtime>> EnvRuntime::NewRuntime() const {
+  return NewRuntime(runtime_options_);
+}
+
+absl::StatusOr<std::unique_ptr<Runtime>> EnvRuntime::NewRuntime(
+    const RuntimeOptions& options) const {
+  CEL_ASSIGN_OR_RETURN(RuntimeBuilder runtime_builder,
+                       CreateRuntimeBuilder(options));
   return std::move(runtime_builder).Build();
 }
 

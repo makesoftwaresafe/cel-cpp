@@ -149,7 +149,8 @@ Env::Env() {
   compiler_options_.adapt_parser_errors = true;
 }
 
-absl::StatusOr<std::unique_ptr<CompilerBuilder>> Env::NewCompilerBuilder() {
+absl::StatusOr<std::unique_ptr<CompilerBuilder>> Env::NewCompilerBuilder()
+    const {
   CEL_ASSIGN_OR_RETURN(
       std::unique_ptr<CompilerBuilder> compiler_builder,
       cel::NewCompilerBuilder(descriptor_pool_, compiler_options_));
@@ -214,7 +215,7 @@ absl::StatusOr<std::unique_ptr<CompilerBuilder>> Env::NewCompilerBuilder() {
   return compiler_builder;
 }
 
-absl::StatusOr<std::unique_ptr<Compiler>> Env::NewCompiler() {
+absl::StatusOr<std::unique_ptr<Compiler>> Env::NewCompiler() const {
   CEL_ASSIGN_OR_RETURN(std::unique_ptr<CompilerBuilder> compiler_builder,
                        NewCompilerBuilder());
   return compiler_builder->Build();
