@@ -85,6 +85,22 @@ struct ParserOptions final {
   // early testing of the Pratt parser.
   // TODO(b/527638023): Remove this option once the ANTLR parser is removed.
   bool enable_pratt_parser = false;
+
+  // Folds repeated unary operators (!, -).
+  //
+  // If the operator appears repeatedly, the parser will ignore every contiguous
+  // pair.
+  //
+  // This makes it possible to parse some semantically invalid expressions as
+  // valid ones, though they are not particularly harmful.
+  //
+  // Examples that parse to the same AST:
+  //
+  // `---1` : `-(1)`
+  // `!!!!!true` : !`true`
+  // `--0u` : `0u`
+  // `!!"hello"` : `"hello"`).
+  bool fold_unary_operators = true;
 };
 
 }  // namespace cel

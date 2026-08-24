@@ -544,7 +544,15 @@ ExprNode PrattParserWorker<ExprNode>::ParseUnaryOpsChain(Token first_op) {
 
   ExprNode operand;
   if (!ops.empty() && ops.back().type == TokenType::kMinus) {
-    if (peek_token_.type == TokenType::kInt) {
+    if (options_.fold_unary_operators && ops.size() > 1 &&
+        ops[ops.size() - 2].type == TokenType::kMinus) {
+      // Match the ANTLR parser behavior where `-(-)+` prefers to match as
+      // repeated negate operators instead of a negation of an int literal.
+      // ---9223372036854775808 will fail to parse.
+      ops.pop_back();
+      ops.pop_back();
+      operand = ParseSelectorChain();
+    } else if (peek_token_.type == TokenType::kInt) {
       int64_t op_id = ops.back().id;
       ops.pop_back();
       operand = ParseNegativeIntLiteral(op_id);
@@ -561,6 +569,13 @@ ExprNode PrattParserWorker<ExprNode>::ParseUnaryOpsChain(Token first_op) {
 
   for (int i = static_cast<int>(ops.size()) - 1; i >= 0; --i) {
     std::vector<ExprNode> args;
+    if (options_.fold_unary_operators && i > 0) {
+      if (ops[i - 1].type == ops[i].type) {
+        i--;
+        continue;
+      }
+    }
+
     args.push_back(std::move(operand));
     absl::string_view op_name = (ops[i].type == TokenType::kExclamation)
                                     ? CelOperator::LOGICAL_NOT

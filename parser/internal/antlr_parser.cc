@@ -615,7 +615,8 @@ class ParserVisitor final : public CelBaseVisitor,
                 bool add_macro_calls = false,
                 bool enable_optional_syntax = false,
                 bool enable_quoted_identifiers = false,
-                bool enable_variadic_logical_operators = false)
+                bool enable_variadic_logical_operators = false,
+                bool fold_unary_operators = false)
       : source_(source),
         factory_(source_, max_expression_node_count),
         macro_registry_(macro_registry),
@@ -624,7 +625,8 @@ class ParserVisitor final : public CelBaseVisitor,
         add_macro_calls_(add_macro_calls),
         enable_optional_syntax_(enable_optional_syntax),
         enable_quoted_identifiers_(enable_quoted_identifiers),
-        enable_variadic_logical_operators_(enable_variadic_logical_operators) {}
+        enable_variadic_logical_operators_(enable_variadic_logical_operators),
+        fold_unary_operators_(fold_unary_operators) {}
 
   ~ParserVisitor() override = default;
 
@@ -700,6 +702,9 @@ class ParserVisitor final : public CelBaseVisitor,
                                    const Expr& e);
 
   std::string NormalizeIdentifier(CelParser::EscapeIdentContext* ctx);
+  std::any VisitUnaryOps(const std::vector<antlr4::Token*>& ops,
+                         CelParser::MemberContext* member,
+                         absl::string_view op_name);
   // Attempt to unnest parse context.
   //
   // Walk the parse tree to the first complex term to reduce recursive depth in
@@ -716,6 +721,7 @@ class ParserVisitor final : public CelBaseVisitor,
   const bool enable_optional_syntax_;
   const bool enable_quoted_identifiers_;
   const bool enable_variadic_logical_operators_;
+  const bool fold_unary_operators_;
 };
 
 template <typename T, typename = std::enable_if_t<
@@ -989,24 +995,37 @@ std::any ParserVisitor::visitUnary(CelParser::UnaryContext* ctx) {
       factory_.NextId(SourceRangeFromParserRuleContext(ctx)), "<<error>>"));
 }
 
-std::any ParserVisitor::visitLogicalNot(CelParser::LogicalNotContext* ctx) {
-  if (ctx->ops.size() % 2 == 0) {
-    return visit(ctx->member());
+std::any ParserVisitor::VisitUnaryOps(const std::vector<antlr4::Token*>& ops,
+                                      CelParser::MemberContext* member,
+                                      absl::string_view op_name) {
+  if (fold_unary_operators_) {
+    if (ops.size() % 2 == 0) {
+      return visit(member);
+    }
+    int64_t op_id = factory_.NextId(SourceRangeFromToken(ops[0]));
+    auto target = ExprFromAny(visit(member));
+    return ExprToAny(GlobalCallOrMacro(op_id, op_name, std::move(target)));
   }
-  int64_t op_id = factory_.NextId(SourceRangeFromToken(ctx->ops[0]));
-  auto target = ExprFromAny(visit(ctx->member()));
-  return ExprToAny(
-      GlobalCallOrMacro(op_id, CelOperator::LOGICAL_NOT, std::move(target)));
+
+  std::vector<int64_t> op_ids;
+  op_ids.reserve(ops.size());
+  for (const auto* op : ops) {
+    op_ids.push_back(factory_.NextId(SourceRangeFromToken(op)));
+  }
+
+  auto target = ExprFromAny(visit(member));
+  for (int i = static_cast<int>(op_ids.size()) - 1; i >= 0; --i) {
+    target = GlobalCallOrMacro(op_ids[i], op_name, std::move(target));
+  }
+  return ExprToAny(std::move(target));
+}
+
+std::any ParserVisitor::visitLogicalNot(CelParser::LogicalNotContext* ctx) {
+  return VisitUnaryOps(ctx->ops, ctx->member(), CelOperator::LOGICAL_NOT);
 }
 
 std::any ParserVisitor::visitNegate(CelParser::NegateContext* ctx) {
-  if (ctx->ops.size() % 2 == 0) {
-    return visit(ctx->member());
-  }
-  int64_t op_id = factory_.NextId(SourceRangeFromToken(ctx->ops[0]));
-  auto target = ExprFromAny(visit(ctx->member()));
-  return ExprToAny(
-      GlobalCallOrMacro(op_id, CelOperator::NEGATE, std::move(target)));
+  return VisitUnaryOps(ctx->ops, ctx->member(), CelOperator::NEGATE);
 }
 
 std::string ParserVisitor::NormalizeIdentifier(
@@ -1684,7 +1703,8 @@ absl::StatusOr<std::unique_ptr<cel::Ast>> AntlrParseImpl(
         source, options.max_recursion_depth, options.expression_node_limit,
         registry, options.add_macro_calls, options.enable_optional_syntax,
         options.enable_quoted_identifiers,
-        options.enable_variadic_logical_operators);
+        options.enable_variadic_logical_operators,
+        options.fold_unary_operators);
 
     lexer.removeErrorListeners();
     parser.removeErrorListeners();

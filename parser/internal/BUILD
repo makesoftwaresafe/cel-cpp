@@ -117,6 +117,7 @@ cc_test(
     deps = [
         ":antlr_parser",
         "//common:ast",
+        "//common:navigable_ast",
         "//common:source",
         "//internal:status_macros",
         "//internal:testing",

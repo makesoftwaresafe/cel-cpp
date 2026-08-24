@@ -23,6 +23,7 @@
 #include "absl/status/statusor.h"
 #include "absl/strings/string_view.h"
 #include "common/ast.h"
+#include "common/navigable_ast.h"
 #include "common/source.h"
 #include "internal/status_macros.h"
 #include "internal/testing.h"
@@ -70,6 +71,21 @@ TEST(AntlrParserTest, RecursionDepthExceeded) {
   EXPECT_THAT(result, Not(IsOk()));
   EXPECT_THAT(result.status().message(),
               HasSubstr("Exceeded max recursion depth of 6 when parsing."));
+}
+
+TEST(AntlrParserTest, UnaryOperatorsUnfoldedOption) {
+  ParserOptions options;
+  options.fold_unary_operators = false;
+
+  ASSERT_OK_AND_ASSIGN(auto ast, Parse("---a", "", options));
+  auto nav_ast = cel::NavigableAst::Build(ast->root_expr());
+  EXPECT_EQ(nav_ast.Root().height(), 4);
+
+  for (const auto& node : nav_ast.Root().DescendantsPostorder()) {
+    if (node.node_kind() == cel::NodeKind::kCall) {
+      EXPECT_EQ(node.expr()->call_expr().function(), "-_");
+    }
+  }
 }
 
 }  // namespace

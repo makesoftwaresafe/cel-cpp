@@ -820,11 +820,7 @@ std::vector<TestInfo> test_cases = {
      "", "", "", "",
      // PRATT PARSER AST
      "-_(\n"
-     "  -_(\n"
-     "    -_(\n"
-     "      a^#4:Expr.Ident#\n"
-     "    )^#3:Expr.Call#\n"
-     "  )^#2:Expr.Call#\n"
+     "  a^#4:Expr.Ident#\n"
      ")^#1:Expr.Call#"},
     {"1 + +", "",
      "ERROR: <input>:1:5: Syntax error: mismatched input '+' expecting {'[', "

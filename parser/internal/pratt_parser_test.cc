@@ -434,9 +434,7 @@ std::vector<TestCase> GetParserTestCases() {
       TestCase{
           .source = "- -1",
           .expected_ast = R"(
-              -_(
-                -1^#2:int64#
-              )^#1:Expr.Call#
+              1^#3:int64#
             )",
       },
       TestCase{
@@ -454,11 +452,7 @@ std::vector<TestCase> GetParserTestCases() {
           .source = "---a",
           .expected_ast = R"(
               -_(
-                -_(
-                  -_(
-                    a^#4:Expr.Ident#
-                  )^#3:Expr.Call#
-                )^#2:Expr.Call#
+                a^#4:Expr.Ident#
               )^#1:Expr.Call#
             )",
       },
