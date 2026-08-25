@@ -94,7 +94,7 @@ struct CheckerOptions {
   //
   // Temporary flag to allow rolling out the change. No functional changes to
   // evaluation behavior in either mode.
-  bool enable_function_name_in_reference = true;
+  bool enable_function_name_in_reference = false;
 
   // If true, the checker will use the proto json field names for protobuf
   // messages. Unlike protojson parsers, it will not accept the standard proto
