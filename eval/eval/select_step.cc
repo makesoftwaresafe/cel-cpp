@@ -2,9 +2,11 @@
 
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 
+#include "absl/base/nullability.h"
 #include "absl/log/absl_check.h"
 #include "absl/log/absl_log.h"
 #include "absl/status/status.h"
@@ -12,6 +14,7 @@
 #include "absl/strings/string_view.h"
 #include "absl/types/optional.h"
 #include "common/legacy_value.h"
+#include "common/memory.h"
 #include "common/type.h"
 #include "common/value.h"
 #include "common/value_kind.h"
@@ -19,6 +22,8 @@
 #include "eval/eval/direct_expression_step.h"
 #include "eval/eval/evaluator_core.h"
 #include "eval/eval/expression_step_base.h"
+#include "eval/public/cel_value.h"
+#include "eval/public/structs/proto_message_type_adapter.h"
 #include "internal/status_macros.h"
 #include "runtime/runtime_options.h"
 #include "google/protobuf/arena.h"
@@ -74,6 +79,29 @@ absl::optional<Value> CheckForMarkedAttributes(const AttributeTrail& trail,
   return std::nullopt;
 }
 
+// Helper for StructValue::GetFieldByName. Used for opting out of old reflection
+// implementation.
+absl::Status WrappedStructGet(
+    const Value& target, absl::string_view field,
+    ProtoWrapperTypeOptions unboxing_option,
+    const google::protobuf::DescriptorPool* absl_nonnull descriptor_pool,
+    google::protobuf::MessageFactory* absl_nonnull message_factory,
+    google::protobuf::Arena* absl_nonnull arena, Value* absl_nonnull result) {
+  if (const google::protobuf::Message* message =
+          cel::interop_internal::GetLegacyMessage(target);
+      message != nullptr) {
+    CelValue::MessageWrapper message_wrapper(
+        message, &GetGenericProtoTypeInfoInstance());
+    CEL_ASSIGN_OR_RETURN(CelValue cel_value,
+                         internal::GetGenericProtoAccessApisInstance().GetField(
+                             field, message_wrapper, unboxing_option,
+                             cel::MemoryManagerRef::Pooling(arena)));
+    return cel::ModernValue(arena, cel_value, *result);
+  }
+  return target.GetStruct().GetFieldByName(
+      field, unboxing_option, descriptor_pool, message_factory, arena, result);
+}
+
 absl::Status PerformHas(const Value& target, absl::string_view field,
                         const StringValue& field_value,
                         const google::protobuf::DescriptorPool* descriptor_pool,
@@ -115,9 +143,9 @@ absl::Status PerformGet(const Value& target, absl::string_view field,
       return absl::OkStatus();
     }
     case ValueKind::kStruct: {
-      auto status = target.GetStruct().GetFieldByName(
-          field, unboxing_option, descriptor_pool, message_factory, arena,
-          &result);
+      auto status =
+          WrappedStructGet(target, field, unboxing_option, descriptor_pool,
+                           message_factory, arena, &result);
       if (!status.ok()) {
         result = ErrorValue(std::move(status));
       }
@@ -154,9 +182,9 @@ absl::Status PerformOptionalGet(const Value& target, absl::string_view field,
         result = OptionalValue::None();
         return absl::OkStatus();
       }
-      CEL_RETURN_IF_ERROR(target.GetStruct().GetFieldByName(
-          field, unboxing_option, descriptor_pool, message_factory, arena,
-          &result));
+      CEL_RETURN_IF_ERROR(WrappedStructGet(target, field, unboxing_option,
+                                           descriptor_pool, message_factory,
+                                           arena, &result));
 
       ABSL_DCHECK(!result.IsUnknown());
       result = OptionalValue::Of(std::move(result), arena);
