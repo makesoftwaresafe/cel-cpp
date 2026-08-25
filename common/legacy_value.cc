@@ -43,22 +43,20 @@
 #include "common/unknown.h"
 #include "common/value.h"
 #include "common/value_kind.h"
+#include "common/values/legacy_list_value.h"
+#include "common/values/legacy_map_value.h"
 #include "common/values/list_value_builder.h"
 #include "common/values/map_value_builder.h"
 #include "common/values/values.h"
 #include "eval/internal/cel_value_equal.h"
 #include "eval/public/cel_value.h"
-#include "eval/public/containers/field_backed_list_impl.h"
-#include "eval/public/containers/field_backed_map_impl.h"
 #include "eval/public/message_wrapper.h"
 #include "eval/public/structs/cel_proto_wrap_util.h"
-#include "eval/public/structs/legacy_type_adapter.h"
 #include "eval/public/structs/legacy_type_info_apis.h"
 #include "eval/public/structs/proto_message_type_adapter.h"
 #include "eval/public/structs/trivial_legacy_type_info_internal.h"
 #include "internal/json.h"
 #include "internal/status_macros.h"
-#include "internal/well_known_types.h"
 #include "runtime/runtime_options.h"
 #include "google/protobuf/arena.h"
 #include "google/protobuf/descriptor.h"
@@ -77,8 +75,6 @@ using ::google::api::expr::runtime::CelList;
 using ::google::api::expr::runtime::CelMap;
 using ::google::api::expr::runtime::CelValue;
 using ::google::api::expr::runtime::CreateCelValueFromField;
-using ::google::api::expr::runtime::FieldBackedListImpl;
-using ::google::api::expr::runtime::FieldBackedMapImpl;
 using ::google::api::expr::runtime::GetGenericProtoTypeInfoInstance;
 using ::google::api::expr::runtime::LegacyTypeInfoApis;
 using ::google::api::expr::runtime::MessageWrapper;
@@ -284,19 +280,17 @@ CelValue LegacyTrivialListValue(google::protobuf::Arena* absl_nonnull arena,
   }
   if (auto parsed_repeated_field_value = value.AsParsedRepeatedField();
       parsed_repeated_field_value) {
-    auto maybe_cloned = parsed_repeated_field_value->Clone(arena);
-    return CelValue::CreateList(google::protobuf::Arena::Create<FieldBackedListImpl>(
-        arena, &maybe_cloned.message(), maybe_cloned.field(), arena));
+    auto wrapped = common_internal::WrapLegacyParsedRepeatedField(
+        *parsed_repeated_field_value, arena);
+    return CelValue::CreateList(
+        common_internal::AsLegacyListValue(wrapped)->cel_list());
   }
   if (auto parsed_json_list_value = value.AsParsedJsonList();
       parsed_json_list_value) {
-    auto maybe_cloned = parsed_json_list_value->Clone(arena);
-    return CelValue::CreateList(google::protobuf::Arena::Create<FieldBackedListImpl>(
-        arena, cel::to_address(maybe_cloned),
-        well_known_types::GetListValueReflectionOrDie(
-            maybe_cloned->GetDescriptor())
-            .GetValuesDescriptor(),
-        arena));
+    auto wrapped = common_internal::WrapLegacyParsedJsonList(
+        *parsed_json_list_value, arena);
+    return CelValue::CreateList(
+        common_internal::AsLegacyListValue(wrapped)->cel_list());
   }
   if (auto custom_list_value = value.AsCustomList(); custom_list_value) {
     auto status_or_compat_list = common_internal::MakeCompatListValue(
@@ -322,19 +316,17 @@ CelValue LegacyTrivialMapValue(google::protobuf::Arena* absl_nonnull arena,
   }
   if (auto parsed_map_field_value = value.AsParsedMapField();
       parsed_map_field_value) {
-    auto maybe_cloned = parsed_map_field_value->Clone(arena);
-    return CelValue::CreateMap(google::protobuf::Arena::Create<FieldBackedMapImpl>(
-        arena, &maybe_cloned.message(), maybe_cloned.field(), arena));
+    auto wrapped = common_internal::WrapLegacyParsedMapField(
+        *parsed_map_field_value, arena);
+    return CelValue::CreateMap(
+        common_internal::AsLegacyMapValue(wrapped)->cel_map());
   }
   if (auto parsed_json_map_value = value.AsParsedJsonMap();
       parsed_json_map_value) {
-    auto maybe_cloned = parsed_json_map_value->Clone(arena);
-    return CelValue::CreateMap(google::protobuf::Arena::Create<FieldBackedMapImpl>(
-        arena, cel::to_address(maybe_cloned),
-        well_known_types::GetStructReflectionOrDie(
-            maybe_cloned->GetDescriptor())
-            .GetFieldsDescriptor(),
-        arena));
+    auto wrapped =
+        common_internal::WrapLegacyParsedJsonMap(*parsed_json_map_value, arena);
+    return CelValue::CreateMap(
+        common_internal::AsLegacyMapValue(wrapped)->cel_map());
   }
   if (auto custom_map_value = value.AsCustomMap(); custom_map_value) {
     auto status_or_compat_map = common_internal::MakeCompatMapValue(
@@ -350,6 +342,25 @@ CelValue LegacyTrivialMapValue(google::protobuf::Arena* absl_nonnull arena,
       arena, absl::InvalidArgumentError(absl::StrCat(
                  "unsupported conversion from cel::MapValue to CelValue: ",
                  value.GetRuntimeType().DebugString()))));
+}
+
+LegacyStructValue ParsedMessageToLegacyStructValue(
+    const ParsedMessageValue& parsed_message) {
+  return LegacyStructValue(cel::to_address(parsed_message),
+                           &GetGenericProtoTypeInfoInstance());
+}
+
+LegacyStructValue MakeLegacyStructValue(
+    const google::protobuf::Message* absl_nonnull message,
+    const LegacyTypeInfoApis* legacy_type_info) {
+  // Guard against edge cases where a custom implementation of Message
+  // misbehaves.
+  // Modern value handles this with DCHECKs on value creation, legacy value
+  // would allow it and just report an ErrorValue on accesses.
+  if (message->GetReflection() == nullptr || legacy_type_info == nullptr) {
+    legacy_type_info = TrivialTypeInfo::GetInstance();
+  }
+  return LegacyStructValue(message, legacy_type_info);
 }
 
 }  // namespace
@@ -393,10 +404,6 @@ google::api::expr::runtime::CelValue UnsafeLegacyValue(
                      value->GetRuntimeType().DebugString()))));
   }
 }
-
-}  // namespace common_internal
-
-namespace common_internal {
 
 std::string LegacyListValue::DebugString() const {
   return CelValue::CreateList(impl_).DebugString();
@@ -837,10 +844,8 @@ absl::Status LegacyStructValue::SerializeTo(
   ABSL_DCHECK(message_factory != nullptr);
   ABSL_DCHECK(output != nullptr);
 
-  auto message_wrapper = AsMessageWrapper(message_ptr_, legacy_type_info_);
   if (ABSL_PREDICT_TRUE(
-          message_wrapper.message_ptr()->SerializePartialToZeroCopyStream(
-              output))) {
+          message_ptr_->SerializePartialToZeroCopyStream(output))) {
     return absl::OkStatus();
   }
   return absl::UnknownError("failed to serialize protocol buffer message");
@@ -1035,7 +1040,7 @@ absl::Status ModernValue(google::protobuf::Arena* arena,
       return absl::OkStatus();
     case CelValue::Type::kMessage: {
       auto message_wrapper = legacy_value.MessageWrapperOrDie();
-      result = common_internal::LegacyStructValue(
+      result = common_internal::MakeLegacyStructValue(
           google::protobuf::DownCastMessage<google::protobuf::Message>(
               message_wrapper.message_ptr()),
           message_wrapper.legacy_type_info());
@@ -1153,7 +1158,7 @@ absl::StatusOr<Value> FromLegacyValue(google::protobuf::Arena* arena,
                         legacy_value.BytesOrDie().value());
     case CelValue::Type::kMessage: {
       auto message_wrapper = legacy_value.MessageWrapperOrDie();
-      return common_internal::LegacyStructValue(
+      return common_internal::MakeLegacyStructValue(
           google::protobuf::DownCastMessage<google::protobuf::Message>(
               message_wrapper.message_ptr()),
           message_wrapper.legacy_type_info());
@@ -1260,6 +1265,23 @@ google::api::expr::runtime::CelValue ModernValueToLegacyValueOrDie(
   auto status_or_value = ToLegacyValue(arena, value, unchecked);
   ABSL_CHECK_OK(status_or_value.status());  // Crash OK
   return std::move(*status_or_value);
+}
+
+void WrapLegacyFieldAccessResult(google::protobuf::Arena* absl_nonnull arena,
+                                 Value* absl_nonnull result) {
+  if (result->IsParsedMessage()) {
+    *result = common_internal::ParsedMessageToLegacyStructValue(
+        result->GetParsedMessage());
+  } else if (result->IsParsedRepeatedField()) {
+    *result =
+        WrapLegacyParsedRepeatedField(result->GetParsedRepeatedField(), arena);
+  } else if (result->IsParsedJsonList()) {
+    *result = WrapLegacyParsedJsonList(result->GetParsedJsonList(), arena);
+  } else if (result->IsParsedMapField()) {
+    *result = WrapLegacyParsedMapField(result->GetParsedMapField(), arena);
+  } else if (result->IsParsedJsonMap()) {
+    *result = WrapLegacyParsedJsonMap(result->GetParsedJsonMap(), arena);
+  }
 }
 
 TypeValue CreateTypeValueFromView(google::protobuf::Arena* arena,

@@ -25,11 +25,12 @@
 #include "absl/base/nullability.h"
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
-#include "absl/strings/cord.h"
 #include "absl/strings/string_view.h"
 #include "absl/types/optional.h"
 #include "common/value_kind.h"
 #include "common/values/custom_map_value.h"
+#include "common/values/parsed_json_map_value.h"
+#include "common/values/parsed_map_field_value.h"
 #include "common/values/values.h"
 #include "google/protobuf/arena.h"
 #include "google/protobuf/descriptor.h"
@@ -177,6 +178,15 @@ bool IsLegacyMapValue(const Value& value);
 LegacyMapValue GetLegacyMapValue(const Value& value);
 
 absl::optional<LegacyMapValue> AsLegacyMapValue(const Value& value);
+
+class LegacyParsedMapFieldMapValue;
+class LegacyParsedJsonMapValue;
+
+CustomMapValue WrapLegacyParsedMapField(ParsedMapFieldValue value,
+                                        google::protobuf::Arena* absl_nonnull arena);
+
+CustomMapValue WrapLegacyParsedJsonMap(ParsedJsonMapValue value,
+                                       google::protobuf::Arena* absl_nonnull arena);
 
 }  // namespace common_internal
 

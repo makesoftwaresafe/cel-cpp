@@ -59,11 +59,22 @@ google::api::expr::runtime::CelValue UnsafeLegacyValue(
 
 }  // namespace cel
 
+namespace proto2 {
+class MessageFactory;
+}  // namespace proto2
+
 namespace cel::interop_internal {
 
 // Returns the underlying `google::protobuf::Message` of a `cel::Value` if it is a legacy
 // message with the default type info, or `nullptr` otherwise.
 const google::protobuf::Message* absl_nullable GetLegacyMessage(const Value& value);
+
+// Helper for wrapping a field accesses for the legacy runtime.
+//
+// Adapts the output to avoid further allocations when converting to a legacy
+// value when possible.
+void WrapLegacyFieldAccessResult(google::protobuf::Arena* absl_nonnull arena,
+                                 Value* absl_nonnull result);
 
 // Access a field on a legacy message value, writing the result to `out`.
 // Prefers wrapping legacy values instead of using the modern value

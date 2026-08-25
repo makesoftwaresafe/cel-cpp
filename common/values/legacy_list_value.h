@@ -30,6 +30,8 @@
 #include "absl/types/optional.h"
 #include "common/value_kind.h"
 #include "common/values/custom_list_value.h"
+#include "common/values/parsed_json_list_value.h"
+#include "common/values/parsed_repeated_field_value.h"
 #include "common/values/values.h"
 #include "google/protobuf/arena.h"
 #include "google/protobuf/descriptor.h"
@@ -159,6 +161,15 @@ bool IsLegacyListValue(const Value& value);
 LegacyListValue GetLegacyListValue(const Value& value);
 
 absl::optional<LegacyListValue> AsLegacyListValue(const Value& value);
+
+class LegacyParsedRepeatedFieldListValue;
+class LegacyParsedJsonListValue;
+
+CustomListValue WrapLegacyParsedRepeatedField(
+    ParsedRepeatedFieldValue value, google::protobuf::Arena* absl_nonnull arena);
+
+CustomListValue WrapLegacyParsedJsonList(ParsedJsonListValue value,
+                                         google::protobuf::Arena* absl_nonnull arena);
 
 }  // namespace common_internal
 
