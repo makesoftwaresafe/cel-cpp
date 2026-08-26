@@ -74,11 +74,9 @@ using ::cel::interop_internal::TrivialTypeInfo;
 using ::google::api::expr::runtime::CelList;
 using ::google::api::expr::runtime::CelMap;
 using ::google::api::expr::runtime::CelValue;
-using ::google::api::expr::runtime::CreateCelValueFromField;
 using ::google::api::expr::runtime::GetGenericProtoTypeInfoInstance;
 using ::google::api::expr::runtime::LegacyTypeInfoApis;
 using ::google::api::expr::runtime::MessageWrapper;
-using ::google::api::expr::runtime::internal::GetGenericProtoAccessApisInstance;
 using ::google::api::expr::runtime::internal::MaybeWrapValueToMessage;
 
 absl::Status InvalidMapKeyTypeError(ValueKind kind) {
@@ -923,17 +921,26 @@ absl::Status LegacyStructValue::GetFieldByName(
     const google::protobuf::DescriptorPool* absl_nonnull descriptor_pool,
     google::protobuf::MessageFactory* absl_nonnull message_factory,
     google::protobuf::Arena* absl_nonnull arena, Value* absl_nonnull result) const {
-  auto message_wrapper = AsMessageWrapper(message_ptr_, legacy_type_info_);
   if (ABSL_PREDICT_FALSE(legacy_type_info_ == TrivialTypeInfo::GetInstance())) {
     *result = NoSuchFieldError(name);
     return absl::OkStatus();
   }
-  CEL_ASSIGN_OR_RETURN(auto cel_value,
-                       GetGenericProtoAccessApisInstance().GetField(
-                           name, message_wrapper, unboxing_options,
-                           MemoryManagerRef::Pooling(arena)));
-  CEL_RETURN_IF_ERROR(ModernValue(arena, cel_value, *result));
-  return absl::OkStatus();
+
+  ParsedMessageValue parsed_message = UnsafeParsedMessageValue(message_ptr_);
+  const auto* descriptor = parsed_message.GetDescriptor();
+  const auto* field = descriptor->FindFieldByName(name);
+  if (field == nullptr) {
+    field = descriptor->file()->pool()->FindExtensionByPrintableName(descriptor,
+                                                                     name);
+    if (field == nullptr) {
+      *result = NoSuchFieldError(name);
+      return absl::OkStatus();
+    }
+  }
+
+  return interop_internal::WrapLegacyMessageField(
+      message_ptr_, field, unboxing_options, descriptor_pool, message_factory,
+      arena, result);
 }
 
 absl::Status LegacyStructValue::GetFieldByNumber(
@@ -985,7 +992,6 @@ absl::Status LegacyStructValue::Qualify(
   if (ABSL_PREDICT_FALSE(qualifiers.empty())) {
     return absl::InvalidArgumentError("invalid select qualifier path.");
   }
-  auto message_wrapper = AsMessageWrapper(message_ptr_, legacy_type_info_);
   if (ABSL_PREDICT_FALSE(legacy_type_info_ == TrivialTypeInfo::GetInstance())) {
     absl::string_view field_name = absl::visit(
         absl::Overload(
@@ -1000,12 +1006,13 @@ absl::Status LegacyStructValue::Qualify(
     *count = -1;
     return absl::OkStatus();
   }
-  CEL_ASSIGN_OR_RETURN(auto legacy_result,
-                       GetGenericProtoAccessApisInstance().Qualify(
-                           qualifiers, message_wrapper, presence_test,
-                           MemoryManager::Pooling(arena)));
-  CEL_RETURN_IF_ERROR(ModernValue(arena, legacy_result.value, *result));
-  *count = legacy_result.qualifier_count;
+
+  ParsedMessageValue parsed_message = UnsafeParsedMessageValue(message_ptr_);
+  CEL_RETURN_IF_ERROR(parsed_message.Qualify(qualifiers, presence_test,
+                                             descriptor_pool, message_factory,
+                                             arena, result, count));
+
+  interop_internal::WrapLegacyFieldAccessResult(arena, result);
   return absl::OkStatus();
 }
 
@@ -1311,12 +1318,17 @@ const google::protobuf::Message* absl_nullable GetLegacyMessage(const Value& val
 absl::Status WrapLegacyMessageField(
     const google::protobuf::Message* absl_nonnull message,
     const google::protobuf::FieldDescriptor* absl_nonnull field_descriptor,
-    ProtoWrapperTypeOptions unboxing_option, google::protobuf::Arena* arena,
+    ProtoWrapperTypeOptions unboxing_option,
+    const google::protobuf::DescriptorPool* absl_nonnull descriptor_pool,
+    google::protobuf::MessageFactory* absl_nonnull message_factory, google::protobuf::Arena* arena,
     Value* absl_nonnull out) {
-  CEL_ASSIGN_OR_RETURN(CelValue result,
-                       CreateCelValueFromField(message, field_descriptor,
-                                               unboxing_option, arena));
-  return ModernValue(arena, result, *out);
+  ParsedMessageValue parsed_message = UnsafeParsedMessageValue(message);
+  CEL_RETURN_IF_ERROR(parsed_message.GetField(field_descriptor, unboxing_option,
+                                              descriptor_pool, message_factory,
+                                              arena, out));
+  WrapLegacyFieldAccessResult(arena, out);
+
+  return absl::OkStatus();
 }
 
 }  // namespace interop_internal

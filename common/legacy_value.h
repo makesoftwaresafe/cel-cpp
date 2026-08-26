@@ -82,7 +82,9 @@ void WrapLegacyFieldAccessResult(google::protobuf::Arena* absl_nonnull arena,
 absl::Status WrapLegacyMessageField(
     const google::protobuf::Message* absl_nonnull message,
     const google::protobuf::FieldDescriptor* absl_nonnull field_descriptor,
-    ProtoWrapperTypeOptions unboxing_option, google::protobuf::Arena* arena,
+    ProtoWrapperTypeOptions unboxing_option,
+    const google::protobuf::DescriptorPool* absl_nonnull descriptor_pool,
+    google::protobuf::MessageFactory* absl_nonnull message_factory, google::protobuf::Arena* arena,
     Value* absl_nonnull out);
 
 absl::StatusOr<Value> FromLegacyValue(

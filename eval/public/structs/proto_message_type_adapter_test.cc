@@ -1188,10 +1188,12 @@ TEST(ProtoMesssageTypeAdapter, InteropFieldAccess) {
       message.GetDescriptor()->FindFieldByName("string_value");
   ASSERT_NE(field, nullptr);
   cel::Value field_value;
-  ASSERT_THAT(cel::interop_internal::WrapLegacyMessageField(
-                  &message, field, ProtoWrapperTypeOptions::kUnsetNull, &arena,
-                  &field_value),
-              IsOk());
+  ASSERT_THAT(
+      cel::interop_internal::WrapLegacyMessageField(
+          &message, field, ProtoWrapperTypeOptions::kUnsetNull,
+          google::protobuf::DescriptorPool::generated_pool(),
+          google::protobuf::MessageFactory::generated_factory(), &arena, &field_value),
+      IsOk());
 
   EXPECT_THAT(field_value, cel::test::StringValueIs("hello"));
 }

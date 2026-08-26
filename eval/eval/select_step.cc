@@ -86,17 +86,22 @@ absl::Status WrappedStructGet(
     ProtoWrapperTypeOptions unboxing_option,
     const google::protobuf::DescriptorPool* absl_nonnull descriptor_pool,
     google::protobuf::MessageFactory* absl_nonnull message_factory,
-    google::protobuf::Arena* absl_nonnull arena, Value* absl_nonnull result) {
-  if (const google::protobuf::Message* message =
-          cel::interop_internal::GetLegacyMessage(target);
-      message != nullptr) {
-    CelValue::MessageWrapper message_wrapper(
-        message, &GetGenericProtoTypeInfoInstance());
-    CEL_ASSIGN_OR_RETURN(CelValue cel_value,
-                         internal::GetGenericProtoAccessApisInstance().GetField(
-                             field, message_wrapper, unboxing_option,
-                             cel::MemoryManagerRef::Pooling(arena)));
-    return cel::ModernValue(arena, cel_value, *result);
+    google::protobuf::Arena* absl_nonnull arena,
+    bool enable_use_new_field_select_implementation,
+    Value* absl_nonnull result) {
+  if (!enable_use_new_field_select_implementation) {
+    if (const google::protobuf::Message* message =
+            cel::interop_internal::GetLegacyMessage(target);
+        message != nullptr) {
+      CelValue::MessageWrapper message_wrapper(
+          message, &GetGenericProtoTypeInfoInstance());
+      CEL_ASSIGN_OR_RETURN(
+          CelValue cel_value,
+          internal::GetGenericProtoAccessApisInstance().GetField(
+              field, message_wrapper, unboxing_option,
+              cel::MemoryManagerRef::Pooling(arena)));
+      return cel::ModernValue(arena, cel_value, *result);
+    }
   }
   return target.GetStruct().GetFieldByName(
       field, unboxing_option, descriptor_pool, message_factory, arena, result);
@@ -132,7 +137,9 @@ absl::Status PerformGet(const Value& target, absl::string_view field,
                         ProtoWrapperTypeOptions unboxing_option,
                         const google::protobuf::DescriptorPool* descriptor_pool,
                         google::protobuf::MessageFactory* message_factory,
-                        google::protobuf::Arena* arena, Value& result) {
+                        google::protobuf::Arena* arena,
+                        bool enable_use_new_field_select_implementation,
+                        Value& result) {
   switch (target.kind()) {
     case ValueKind::kMap: {
       auto status = target.GetMap().Get(field_value, descriptor_pool,
@@ -143,9 +150,9 @@ absl::Status PerformGet(const Value& target, absl::string_view field,
       return absl::OkStatus();
     }
     case ValueKind::kStruct: {
-      auto status =
-          WrappedStructGet(target, field, unboxing_option, descriptor_pool,
-                           message_factory, arena, &result);
+      auto status = WrappedStructGet(
+          target, field, unboxing_option, descriptor_pool, message_factory,
+          arena, enable_use_new_field_select_implementation, &result);
       if (!status.ok()) {
         result = ErrorValue(std::move(status));
       }
@@ -161,7 +168,9 @@ absl::Status PerformOptionalGet(const Value& target, absl::string_view field,
                                 ProtoWrapperTypeOptions unboxing_option,
                                 const google::protobuf::DescriptorPool* descriptor_pool,
                                 google::protobuf::MessageFactory* message_factory,
-                                google::protobuf::Arena* arena, Value& result) {
+                                google::protobuf::Arena* arena,
+                                bool enable_use_new_field_select_implementation,
+                                Value& result) {
   switch (target.kind()) {
     case ValueKind::kMap: {
       CEL_ASSIGN_OR_RETURN(
@@ -182,9 +191,9 @@ absl::Status PerformOptionalGet(const Value& target, absl::string_view field,
         result = OptionalValue::None();
         return absl::OkStatus();
       }
-      CEL_RETURN_IF_ERROR(WrappedStructGet(target, field, unboxing_option,
-                                           descriptor_pool, message_factory,
-                                           arena, &result));
+      CEL_RETURN_IF_ERROR(WrappedStructGet(
+          target, field, unboxing_option, descriptor_pool, message_factory,
+          arena, enable_use_new_field_select_implementation, &result));
 
       ABSL_DCHECK(!result.IsUnknown());
       result = OptionalValue::Of(std::move(result), arena);
@@ -247,7 +256,7 @@ absl::Status SelectStep::Evaluate(ExecutionFrame* frame) const {
     optional_arg = arg.GetOptional();
   }
 
-  if (!(optional_arg || arg->Is<MapValue>() || arg->Is<StructValue>())) {
+  if (!(optional_arg || arg.IsMap() || arg.IsStruct())) {
     frame->value_stack().PopAndPush(cel::ErrorValue(InvalidSelectTargetError()),
                                     std::move(result_trail));
     return absl::OkStatus();
@@ -290,7 +299,8 @@ absl::Status SelectStep::Evaluate(ExecutionFrame* frame) const {
     optional_arg->Value(&value);
     auto status = PerformOptionalGet(
         value, field_, field_value_, unboxing_option_, frame->descriptor_pool(),
-        frame->message_factory(), frame->arena(), result);
+        frame->message_factory(), frame->arena(),
+        frame->options().enable_use_new_field_select_implementation, result);
     if (!status.ok()) {
       result = ErrorValue(std::move(status));
     }
@@ -300,7 +310,8 @@ absl::Status SelectStep::Evaluate(ExecutionFrame* frame) const {
 
   CEL_RETURN_IF_ERROR(PerformGet(
       arg, field_, field_value_, unboxing_option_, frame->descriptor_pool(),
-      frame->message_factory(), frame->arena(), result));
+      frame->message_factory(), frame->arena(),
+      frame->options().enable_use_new_field_select_implementation, result));
   frame->value_stack().PopAndPush(std::move(result), std::move(result_trail));
   return absl::OkStatus();
 }
@@ -380,19 +391,20 @@ class DirectSelectStep : public DirectExpressionStep {
       }
       Value value;
       optional_arg->Value(&value);
-      auto status =
-          PerformOptionalGet(value, field_, field_value_, unboxing_option_,
-                             frame.descriptor_pool(), frame.message_factory(),
-                             frame.arena(), result);
+      auto status = PerformOptionalGet(
+          value, field_, field_value_, unboxing_option_,
+          frame.descriptor_pool(), frame.message_factory(), frame.arena(),
+          frame.options().enable_use_new_field_select_implementation, result);
       if (!status.ok()) {
         result = ErrorValue(std::move(status));
       }
       return absl::OkStatus();
     }
 
-    return PerformGet(result, field_, field_value_, unboxing_option_,
-                      frame.descriptor_pool(), frame.message_factory(),
-                      frame.arena(), result);
+    return PerformGet(
+        result, field_, field_value_, unboxing_option_, frame.descriptor_pool(),
+        frame.message_factory(), frame.arena(),
+        frame.options().enable_use_new_field_select_implementation, result);
   }
 
  private:
@@ -495,7 +507,8 @@ absl::Status ProtoSelectStep::EvaluateLegacyMessageGetField(
     return absl::OkStatus();
   }
   return cel::interop_internal::WrapLegacyMessageField(
-      legacy_message, field_descriptor_, unboxing_option_, frame->arena(),
+      legacy_message, field_descriptor_, unboxing_option_,
+      frame->descriptor_pool(), frame->message_factory(), frame->arena(),
       &frame->value_stack().Peek());
 }
 

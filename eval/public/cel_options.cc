@@ -45,6 +45,7 @@ cel::RuntimeOptions ConvertToRuntimeOptions(const InterpreterOptions& options) {
       options.enable_fast_builtins,
       options.enable_precision_preserving_double_format,
       options.enable_typed_field_access,
+      options.enable_use_new_field_select_implementation,
   };
 }
 
