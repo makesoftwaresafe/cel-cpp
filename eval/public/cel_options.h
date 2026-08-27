@@ -232,7 +232,7 @@ struct InterpreterOptions {
   // For google::api::expr::runtime::CelExpression, this will enable updated
   // implementations for field access on protobuf messages, aligned with the
   // cel::Value implementation.
-  bool enable_use_new_field_select_implementation = false;
+  bool enable_use_new_field_select_implementation = true;
 };
 // LINT.ThenChange(//depot/google3/runtime/runtime_options.h)
 
