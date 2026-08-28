@@ -852,6 +852,7 @@ std::vector<ExprNode> PrattParserWorker<ExprNode>::ParseArguments(
       if (peek_token_.type == TokenType::kComma) {
         NextToken();
         if (peek_token_.type == close_token) {
+          ReportError(peek_token_, "unexpected token");
           break;
         }
         continue;

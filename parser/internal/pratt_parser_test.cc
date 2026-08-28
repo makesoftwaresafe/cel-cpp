@@ -1284,6 +1284,12 @@ std::vector<ErrorTestCase> GetErrorTestCases() {
               " | ......^",
       },
       ErrorTestCase{
+          .source = "foo(a,b,)",
+          .expected_error = "ERROR: <input>:1:9: unexpected token\n"
+                            " | foo(a,b,)\n"
+                            " | ........^",
+      },
+      ErrorTestCase{
           .source = "999999999999999999999999999999999999999",
           .expected_error = "ERROR: <input>:1:1: invalid int literal\n"
                             " | 999999999999999999999999999999999999999\n"

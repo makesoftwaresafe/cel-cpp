@@ -501,6 +501,17 @@ std::vector<TestInfo> test_cases = {
      "ERROR: <input>:1:3: expected struct field name\n"
      " | t{>C}\n"
      " | ..^"},
+    {"foo(a,b,)", "",
+     "ERROR: <input>:1:9: Syntax error: mismatched input ')' expecting "
+     "{'[', '{', '(', '.', '-', '!', 'true', 'false', 'null', NUM_FLOAT, "
+     "NUM_INT, NUM_UINT, STRING, BYTES, IDENTIFIER}\n"
+     " | foo(a,b,)\n"
+     " | ........^",
+     "", "", "", "",
+     // PRATT PARSER ERROR MESSAGE
+     "ERROR: <input>:1:9: unexpected token\n"
+     " | foo(a,b,)\n"
+     " | ........^"},
 
     // Macro tests
     {"has(m.f)", "m^#2:Expr.Ident#.f~test-only~^#4:Expr.Select#", "",
