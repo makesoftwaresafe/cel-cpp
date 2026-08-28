@@ -260,6 +260,11 @@ CelValue LegacyTrivialStructValue(google::protobuf::Arena* absl_nonnull arena,
   }
   if (auto parsed_message_value = value.AsParsedMessage();
       parsed_message_value) {
+    if (interop_internal::IsUnsafeParsedMessageValue(*parsed_message_value)) {
+      return CelValue::CreateMessageWrapper(
+          AsMessageWrapper(cel::to_address(*parsed_message_value),
+                           &GetGenericProtoTypeInfoInstance()));
+    }
     auto maybe_cloned = parsed_message_value->Clone(arena);
     return CelValue::CreateMessageWrapper(MessageWrapper(
         cel::to_address(maybe_cloned), &GetGenericProtoTypeInfoInstance()));
