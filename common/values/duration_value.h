@@ -51,6 +51,12 @@ class DurationValue final : private common_internal::ValueMixin<DurationValue> {
  public:
   static constexpr ValueKind kKind = ValueKind::kDuration;
 
+  // Constructs a `DurationValue` from an `absl::Duration`.
+  //
+  // DCHECK-fails if the value is not in the supported range.
+  //
+  // Prefer using `SafeDurationValue` or `UnsafeDurationValue` if the caller
+  // has already validated the value.
   explicit DurationValue(absl::Duration value) noexcept
       : DurationValue(absl::in_place, value) {
     ABSL_DCHECK_OK(internal::ValidateDuration(value));

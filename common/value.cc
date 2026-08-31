@@ -1146,10 +1146,13 @@ Value VistWellKnownTypeValue(float value) { return DoubleValue(value); }
 Value VistWellKnownTypeValue(double value) { return DoubleValue(value); }
 
 Value VistWellKnownTypeValue(absl::Duration value) {
-  return DurationValue(value);
+  // Tolerate out-of-range values.
+  return UnsafeDurationValue(value);
 }
 
-Value VistWellKnownTypeValue(absl::Time value) { return TimestampValue(value); }
+Value VistWellKnownTypeValue(absl::Time value) {
+  return UnsafeTimestampValue(value);
+}
 
 struct OwningWellKnownTypesValueVisitor {
   google::protobuf::Arena* absl_nullable arena;

@@ -121,14 +121,6 @@ inline MapValue CreateLegacyMapValue(
   return common_internal::LegacyMapValue(value);
 }
 
-inline Value CreateDurationValue(absl::Duration value, bool unchecked = false) {
-  return DurationValue{value};
-}
-
-inline TimestampValue CreateTimestampValue(absl::Time value) {
-  return TimestampValue{value};
-}
-
 Value LegacyValueToModernValueOrDie(
     google::protobuf::Arena* arena, const google::api::expr::runtime::CelValue& value,
     bool unchecked = false);

@@ -254,8 +254,8 @@ absl::StatusOr<absl::optional<ErrorValue>> ProtoMessageFromValueImpl(
       if (auto duration_value = value.AsDuration(); duration_value) {
         CEL_RETURN_IF_ERROR(
             well_known_types->Duration().Initialize(message->GetDescriptor()));
-        CEL_RETURN_IF_ERROR(well_known_types->Duration().SetFromAbslDuration(
-            message, duration_value->NativeValue()));
+        well_known_types->Duration().UnsafeSetFromAbslDuration(
+            message, duration_value->NativeValue());
         return std::nullopt;
       }
       return TypeConversionError(value.GetTypeName(), to_desc->full_name());
@@ -264,8 +264,8 @@ absl::StatusOr<absl::optional<ErrorValue>> ProtoMessageFromValueImpl(
       if (auto timestamp_value = value.AsTimestamp(); timestamp_value) {
         CEL_RETURN_IF_ERROR(
             well_known_types->Timestamp().Initialize(message->GetDescriptor()));
-        CEL_RETURN_IF_ERROR(well_known_types->Timestamp().SetFromAbslTime(
-            message, timestamp_value->NativeValue()));
+        well_known_types->Timestamp().UnsafeSetFromAbslTime(
+            message, timestamp_value->NativeValue());
         return std::nullopt;
       }
       return TypeConversionError(value.GetTypeName(), to_desc->full_name());
@@ -1304,11 +1304,11 @@ class MessageValueBuilderImpl {
             if (auto duration_value = value.AsDuration(); duration_value) {
               CEL_RETURN_IF_ERROR(well_known_types_.Duration().Initialize(
                   field->message_type()));
-              CEL_RETURN_IF_ERROR(
-                  well_known_types_.Duration().SetFromAbslDuration(
-                      reflection_->MutableMessage(message_, field,
-                                                  message_factory_),
-                      duration_value->NativeValue()));
+
+              well_known_types_.Duration().UnsafeSetFromAbslDuration(
+                  reflection_->MutableMessage(message_, field,
+                                              message_factory_),
+                  duration_value->NativeValue());
               return std::nullopt;
             }
             return TypeConversionError(value.GetTypeName(),
@@ -1322,10 +1322,10 @@ class MessageValueBuilderImpl {
             if (auto timestamp_value = value.AsTimestamp(); timestamp_value) {
               CEL_RETURN_IF_ERROR(well_known_types_.Timestamp().Initialize(
                   field->message_type()));
-              CEL_RETURN_IF_ERROR(well_known_types_.Timestamp().SetFromAbslTime(
+              well_known_types_.Timestamp().UnsafeSetFromAbslTime(
                   reflection_->MutableMessage(message_, field,
                                               message_factory_),
-                  timestamp_value->NativeValue()));
+                  timestamp_value->NativeValue());
               return std::nullopt;
             }
             return TypeConversionError(value.GetTypeName(),

@@ -2114,13 +2114,15 @@ absl::StatusOr<well_known_types::Value> AdaptFromMessage(
     case Descriptor::WELLKNOWNTYPE_ANY:
       // This is unreachable, as AdaptAny() above recursively unpacks.
       ABSL_UNREACHABLE();
+    // Don't check that time values are in range on field access. Assume
+    // error will propagate if they are used in any arithmetic.
     case Descriptor::WELLKNOWNTYPE_DURATION: {
       CEL_ASSIGN_OR_RETURN(auto reflection, GetDurationReflection(descriptor));
-      return reflection.ToAbslDuration(*to_adapt);
+      return reflection.UnsafeToAbslDuration(*to_adapt);
     }
     case Descriptor::WELLKNOWNTYPE_TIMESTAMP: {
       CEL_ASSIGN_OR_RETURN(auto reflection, GetTimestampReflection(descriptor));
-      return reflection.ToAbslTime(*to_adapt);
+      return reflection.UnsafeToAbslTime(*to_adapt);
     }
     case Descriptor::WELLKNOWNTYPE_VALUE: {
       CEL_ASSIGN_OR_RETURN(auto reflection, GetValueReflection(descriptor));

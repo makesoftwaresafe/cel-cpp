@@ -403,14 +403,16 @@ absl::Status RegisterTimeConversionFunctions(FunctionRegistry& registry,
   CEL_RETURN_IF_ERROR(
       (UnaryFunctionAdapter<Value, absl::Time>::RegisterGlobalOverload(
           cel::builtin::kTimestamp,
-          [](absl::Time value) -> Value { return TimestampValue(value); },
+          [](absl::Time value) -> Value { return UnsafeTimestampValue(value); },
           registry)));
 
   // duration -> duration
   CEL_RETURN_IF_ERROR(
       (UnaryFunctionAdapter<Value, absl::Duration>::RegisterGlobalOverload(
           cel::builtin::kDuration,
-          [](absl::Duration value) -> Value { return DurationValue(value); },
+          [](absl::Duration value) -> Value {
+            return UnsafeDurationValue(value);
+          },
           registry)));
 
   // timestamp() conversion from string.

@@ -200,13 +200,13 @@ struct AdaptedToValueVisitor {
   absl::StatusOr<Value> operator()(absl::Time in) {
     // Type matching may have already occurred. It's too late to change up the
     // type and return an error.
-    return TimestampValue(in);
+    return UnsafeTimestampValue(in);
   }
 
   absl::StatusOr<Value> operator()(absl::Duration in) {
     // Type matching may have already occurred. It's too late to change up the
     // type and return an error.
-    return DurationValue(in);
+    return UnsafeDurationValue(in);
   }
 
   absl::StatusOr<Value> operator()(Value in) { return in; }

@@ -380,11 +380,11 @@ absl::StatusOr<EquatableValue> AsEquatableValue(
     case Descriptor::WELLKNOWNTYPE_DURATION:
       CEL_RETURN_IF_ERROR(
           reflection.duration_reflection.Initialize(descriptor));
-      return reflection.duration_reflection.ToAbslDuration(message);
+      return reflection.duration_reflection.UnsafeToAbslDuration(message);
     case Descriptor::WELLKNOWNTYPE_TIMESTAMP:
       CEL_RETURN_IF_ERROR(
           reflection.timestamp_reflection.Initialize(descriptor));
-      return reflection.timestamp_reflection.ToAbslTime(message);
+      return reflection.timestamp_reflection.UnsafeToAbslTime(message);
     case Descriptor::WELLKNOWNTYPE_ANY:
       return EquatableAny(message);
     default:

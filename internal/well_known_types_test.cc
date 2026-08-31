@@ -341,6 +341,44 @@ TEST_F(ReflectionTest, Duration_Dynamic) {
               StatusIs(absl::StatusCode::kInvalidArgument));
 }
 
+TEST_F(ReflectionTest, Duration_ToAbslDuration) {
+  auto* value = MakeDynamic<google::protobuf::Duration>();
+  ASSERT_OK_AND_ASSIGN(
+      auto reflection,
+      GetDurationReflection(ABSL_DIE_IF_NULL(value->GetDescriptor())));
+
+  reflection.SetSeconds(value, 1);
+  reflection.SetNanos(value, 1);
+  EXPECT_THAT(reflection.ToAbslDuration(*value),
+              IsOkAndHolds(absl::Seconds(1) + absl::Nanoseconds(1)));
+  EXPECT_EQ(reflection.UnsafeToAbslDuration(*value),
+            absl::Seconds(1) + absl::Nanoseconds(1));
+
+  reflection.SetSeconds(value, 0x7fffffffffffffff);
+  reflection.SetNanos(value, 1);
+  EXPECT_THAT(reflection.ToAbslDuration(*value),
+              StatusIs(absl::StatusCode::kInvalidArgument,
+                       HasSubstr("invalid duration seconds: ")));
+  EXPECT_EQ(reflection.UnsafeToAbslDuration(*value),
+            absl::Seconds(0x7fffffffffffffff) + absl::Nanoseconds(1));
+
+  reflection.SetSeconds(value, 1);
+  reflection.SetNanos(value, 0x7fffffff);
+  EXPECT_THAT(reflection.ToAbslDuration(*value),
+              StatusIs(absl::StatusCode::kInvalidArgument,
+                       HasSubstr("invalid duration nanoseconds: ")));
+  EXPECT_EQ(reflection.UnsafeToAbslDuration(*value),
+            absl::Seconds(1) + absl::Nanoseconds(0x7fffffff));
+
+  reflection.SetSeconds(value, -1);
+  reflection.SetNanos(value, 1);
+  EXPECT_THAT(reflection.ToAbslDuration(*value),
+              StatusIs(absl::StatusCode::kInvalidArgument,
+                       HasSubstr("duration sign mismatch: ")));
+  EXPECT_EQ(reflection.UnsafeToAbslDuration(*value),
+            absl::Seconds(-1) + absl::Nanoseconds(1));
+}
+
 TEST_F(ReflectionTest, Timestamp_Generated) {
   auto* value = MakeGenerated<google::protobuf::Timestamp>();
   EXPECT_EQ(TimestampReflection::GetSeconds(*value), 0);
@@ -387,6 +425,39 @@ TEST_F(ReflectionTest, Timestamp_Dynamic) {
               StatusIs(absl::StatusCode::kInvalidArgument));
   EXPECT_THAT(reflection.SetFromAbslTime(value, absl::InfinitePast()),
               StatusIs(absl::StatusCode::kInvalidArgument));
+}
+
+TEST_F(ReflectionTest, Timestamp_ToAbslTime) {
+  auto* value = MakeDynamic<google::protobuf::Timestamp>();
+  ASSERT_OK_AND_ASSIGN(
+      auto reflection,
+      GetTimestampReflection(ABSL_DIE_IF_NULL(value->GetDescriptor())));
+
+  reflection.SetSeconds(value, 1);
+  reflection.SetNanos(value, 1);
+  EXPECT_THAT(reflection.ToAbslTime(*value),
+              IsOkAndHolds(absl::UnixEpoch() + absl::Seconds(1) +
+                           absl::Nanoseconds(1)));
+  EXPECT_EQ(reflection.UnsafeToAbslTime(*value),
+            absl::UnixEpoch() + absl::Seconds(1) + absl::Nanoseconds(1));
+
+  reflection.SetSeconds(value, 0x7fffffffffffffff);
+  reflection.SetNanos(value, 1);
+  EXPECT_THAT(reflection.ToAbslTime(*value),
+              StatusIs(absl::StatusCode::kInvalidArgument,
+                       HasSubstr("invalid timestamp seconds: ")));
+  EXPECT_EQ(reflection.UnsafeToAbslTime(*value),
+            absl::UnixEpoch() + absl::Seconds(0x7fffffffffffffff) +
+                absl::Nanoseconds(1));
+
+  reflection.SetSeconds(value, 1);
+  reflection.SetNanos(value, 0x7fffffff);
+  EXPECT_THAT(reflection.ToAbslTime(*value),
+              StatusIs(absl::StatusCode::kInvalidArgument,
+                       HasSubstr("invalid timestamp nanoseconds: ")));
+  EXPECT_EQ(
+      reflection.UnsafeToAbslTime(*value),
+      absl::UnixEpoch() + absl::Seconds(1) + absl::Nanoseconds(0x7fffffff));
 }
 
 TEST_F(ReflectionTest, Value_Generated) {
@@ -698,16 +769,16 @@ TEST_F(AdaptFromMessageTest, Duration_SecondsOutOfRange) {
   auto message = DynamicParseTextProto<google::protobuf::Duration>(
       R"pb(seconds: 0x7fffffffffffffff nanos: 1)pb");
   EXPECT_THAT(AdaptFromMessage(*message),
-              StatusIs(absl::StatusCode::kInvalidArgument,
-                       HasSubstr("invalid duration seconds: ")));
+              IsOkAndHolds(VariantWith<absl::Duration>(
+                  absl::Seconds(0x7fffffffffffffff) + absl::Nanoseconds(1))));
 }
 
 TEST_F(AdaptFromMessageTest, Duration_NanosOutOfRange) {
   auto message = DynamicParseTextProto<google::protobuf::Duration>(
       R"pb(seconds: 1 nanos: 0x7fffffff)pb");
   EXPECT_THAT(AdaptFromMessage(*message),
-              StatusIs(absl::StatusCode::kInvalidArgument,
-                       HasSubstr("invalid duration nanoseconds: ")));
+              IsOkAndHolds(VariantWith<absl::Duration>(
+                  absl::Seconds(1) + absl::Nanoseconds(0x7fffffff))));
 }
 
 TEST_F(AdaptFromMessageTest, Duration_SignMismatch) {
@@ -715,8 +786,8 @@ TEST_F(AdaptFromMessageTest, Duration_SignMismatch) {
       DynamicParseTextProto<google::protobuf::Duration>(R"pb(seconds: -1
                                                              nanos: 1)pb");
   EXPECT_THAT(AdaptFromMessage(*message),
-              StatusIs(absl::StatusCode::kInvalidArgument,
-                       HasSubstr("duration sign mismatch: ")));
+              IsOkAndHolds(VariantWith<absl::Duration>(absl::Seconds(-1) +
+                                                       absl::Nanoseconds(1))));
 }
 
 TEST_F(AdaptFromMessageTest, Timestamp) {
@@ -733,16 +804,18 @@ TEST_F(AdaptFromMessageTest, Timestamp_SecondsOutOfRange) {
   auto message = DynamicParseTextProto<google::protobuf::Timestamp>(
       R"pb(seconds: 0x7fffffffffffffff nanos: 1)pb");
   EXPECT_THAT(AdaptFromMessage(*message),
-              StatusIs(absl::StatusCode::kInvalidArgument,
-                       HasSubstr("invalid timestamp seconds: ")));
+              IsOkAndHolds(VariantWith<absl::Time>(
+                  absl::UnixEpoch() + absl::Seconds(0x7fffffffffffffff) +
+                  absl::Nanoseconds(1))));
 }
 
 TEST_F(AdaptFromMessageTest, Timestamp_NanosOutOfRange) {
   auto message = DynamicParseTextProto<google::protobuf::Timestamp>(
       R"pb(seconds: 1 nanos: 0x7fffffff)pb");
   EXPECT_THAT(AdaptFromMessage(*message),
-              StatusIs(absl::StatusCode::kInvalidArgument,
-                       HasSubstr("invalid timestamp nanoseconds: ")));
+              IsOkAndHolds(
+                  VariantWith<absl::Time>(absl::UnixEpoch() + absl::Seconds(1) +
+                                          absl::Nanoseconds(0x7fffffff))));
 }
 
 TEST_F(AdaptFromMessageTest, Value_NullValue) {

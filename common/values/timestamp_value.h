@@ -52,6 +52,12 @@ class TimestampValue final
  public:
   static constexpr ValueKind kKind = ValueKind::kTimestamp;
 
+  // Constructs a `TimestampValue` from an `absl::Time`.
+  //
+  // DCHECK-fails if the value is not in the supported range.
+  //
+  // Prefer using `SafeTimestampValue` or `UnsafeTimestampValue` if the caller
+  // has already validated the value.
   explicit TimestampValue(absl::Time value) noexcept
       : TimestampValue(absl::in_place, value) {
     ABSL_DCHECK_OK(internal::ValidateTimestamp(value));
