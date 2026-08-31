@@ -133,7 +133,7 @@ Token ParserWorker::NextSignificantToken(bool report_error) {
       continue;
     }
     if (tok.type == TokenType::kError && report_error) {
-      ReportError(tok, lexer_.GetError().message);
+      ReportSyntaxError(tok, lexer_.GetError().message);
       if (is_recovery_limit_exceeded()) {
         return Token{.type = TokenType::kEnd, .start = 0, .end = 0};
       }
@@ -177,7 +177,7 @@ bool ParserWorker::Expect(TokenType type, absl::string_view msg) {
     } else {
       err_msg = std::string(msg);
     }
-    ReportError(peek_token_, err_msg);
+    ReportSyntaxError(peek_token_, err_msg);
   }
   SynchronizeOnDelimiter();
   return false;
@@ -269,6 +269,11 @@ void ParserWorker::ReportError(const SourceLocation& loc,
       error_count_ <= options_.error_recovery_limit) {
     parse_issues_->push_back(cel::ParseIssue(loc, std::string(msg)));
   }
+}
+
+void ParserWorker::ReportSyntaxError(const Token& token,
+                                     absl::string_view msg) {
+  ReportError(token.start, absl::StrCat("Syntax error: ", msg));
 }
 
 }  // namespace cel::parser_internal

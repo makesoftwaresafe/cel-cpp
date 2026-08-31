@@ -212,7 +212,7 @@ std::vector<TestInfo> test_cases = {
      " | .^",
      "", "", "", "",
      // PRATT PARSER ERROR MESSAGE
-     "ERROR: <input>:1:2: expected '}'\n"
+     "ERROR: <input>:1:2: Syntax error: expected '}'\n"
      " | {\n"
      " | .^"},
 
@@ -480,10 +480,10 @@ std::vector<TestInfo> test_cases = {
      " | ......^",
      "", "", "", "",
      // PRATT PARSER ERROR MESSAGE
-     "ERROR: <input>:1:1: unexpected token\n"
+     "ERROR: <input>:1:1: Syntax error: unexpected token\n"
      " | *@a | b\n"
      " | ^\n"
-     "ERROR: <input>:1:2: unexpected character\n"
+     "ERROR: <input>:1:2: Syntax error: unexpected character\n"
      " | *@a | b\n"
      " | .^"},
     {"a | b", "",
@@ -495,7 +495,7 @@ std::vector<TestInfo> test_cases = {
      " | ....^",
      "", "", "", "",
      // PRATT PARSER ERROR MESSAGE
-     "ERROR: <input>:1:3: unexpected single '|', expected '||'\n"
+     "ERROR: <input>:1:3: Syntax error: unexpected single '|', expected '||'\n"
      " | a | b\n"
      " | ..^"},
     {"?", "",
@@ -508,7 +508,7 @@ std::vector<TestInfo> test_cases = {
      "ERROR: <input>:4294967295:0: <<nil>> parsetree",
      "", "", "", "",
      // PRATT PARSER ERROR MESSAGE
-     "ERROR: <input>:1:1: unexpected token\n"
+     "ERROR: <input>:1:1: Syntax error: unexpected token\n"
      " | ?\n"
      " | ^"},
     {"t{>C}", "",
@@ -519,7 +519,7 @@ std::vector<TestInfo> test_cases = {
      "mismatched input '}' expecting ':'\n | t{>C}\n | ....^",
      "", "", "", "",
      // PRATT PARSER ERROR MESSAGE
-     "ERROR: <input>:1:3: expected struct field name\n"
+     "ERROR: <input>:1:3: Syntax error: expected struct field name\n"
      " | t{>C}\n"
      " | ..^"},
     {"foo(a,b,)", "",
@@ -696,7 +696,7 @@ std::vector<TestInfo> test_cases = {
      " | ..............^",
      "", "", "", "",
      // PRATT PARSER ERROR MESSAGE
-     "ERROR: <input>:1:15: unexpected token after expression\n"
+     "ERROR: <input>:1:15: Syntax error: unexpected token after expression\n"
      " | TestAllTypes(){single_int32: 1, single_int64: 2}\n"
      " | ..............^"},
     {"size(x) == x.size()",
@@ -718,7 +718,7 @@ std::vector<TestInfo> test_cases = {
      " | .....^",
      "", "", "", "",
      // PRATT PARSER ERROR MESSAGE
-     "ERROR: <input>:1:5: unexpected character\n"
+     "ERROR: <input>:1:5: Syntax error: unexpected character\n"
      " | 1 + $\n"
      " | ....^"},
     {"1 + 2\n"
@@ -729,7 +729,7 @@ std::vector<TestInfo> test_cases = {
      " | ^",
      "", "", "", "",
      // PRATT PARSER ERROR MESSAGE
-     "ERROR: <input>:2:1: unexpected token after expression\n"
+     "ERROR: <input>:2:1: Syntax error: unexpected token after expression\n"
      " | 3 +\n"
      " | ^"},
     {"\"\\\"\"", "\"\\\"\"^#1:string#"},
@@ -870,7 +870,7 @@ std::vector<TestInfo> test_cases = {
      " | .....^",
      "", "", "", "",
      // PRATT PARSER ERROR MESSAGE
-     "ERROR: <input>:1:5: unexpected token\n"
+     "ERROR: <input>:1:5: Syntax error: unexpected token\n"
      " | 1 + +\n"
      " | ....^"},
     {"\"abc\" + \"def\"",
@@ -885,7 +885,7 @@ std::vector<TestInfo> test_cases = {
      " | .........^",
      "", "", "", "",
      // PRATT PARSER ERROR MESSAGE
-     "ERROR: <input>:1:10: expected identifier after '.'\n"
+     "ERROR: <input>:1:10: Syntax error: expected identifier after '.'\n"
      " | {\"a\": 1}.\"a\"\n"
      " | .........^"},
     {"\"\\xC3\\XBF\"", "\"Ã¿\"^#1:string#"},
@@ -985,10 +985,10 @@ std::vector<TestInfo> test_cases = {
      " | .........．^",
      "", "", "", "",
      // PRATT PARSER ERROR MESSAGE
-     "ERROR: <input>:2:7: unexpected token\n"
+     "ERROR: <input>:2:7: Syntax error: unexpected token\n"
      " |    && in.😁\n"
      " | ......^\n"
-     "ERROR: <input>:2:10: unexpected character\n"
+     "ERROR: <input>:2:10: Syntax error: unexpected character\n"
      " |    && in.😁\n"
      " | .........＾"},
     {"as", "",
@@ -1041,7 +1041,7 @@ std::vector<TestInfo> test_cases = {
      " | ..^",
      "", "", "", "",
      // PRATT PARSER ERROR MESSAGE
-     "ERROR: <input>:1:1: unexpected token\n"
+     "ERROR: <input>:1:1: Syntax error: unexpected token\n"
      " | in\n"
      " | ^"},
     {"let", "",
@@ -1129,7 +1129,7 @@ std::vector<TestInfo> test_cases = {
      " | ..^",
      "", "", "", "",
      // PRATT PARSER ERROR MESSAGE
-     "ERROR: <input>:6:3: expected ']'\n"
+     "ERROR: <input>:6:3: Syntax error: expected ']'\n"
      " |  \r\n"
      " | ..^"},
 

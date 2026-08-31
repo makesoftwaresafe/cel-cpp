@@ -110,6 +110,7 @@ class ParserWorker {
   void ReportError(const Token& token, absl::string_view msg) {
     ReportError(token.start, msg);
   }
+  void ReportSyntaxError(const Token& token, absl::string_view msg);
 
   const cel::Source& source_;
   cel::ParserOptions options_;
@@ -335,7 +336,7 @@ ExprNode PrattParserWorker<ExprNode>::Parse() {
   }
   if (peek_token_.type != TokenType::kEnd &&
       peek_token_.type != TokenType::kError) {
-    ReportError(peek_token_, "unexpected token after expression");
+    ReportSyntaxError(peek_token_, "unexpected token after expression");
   }
   return expr;
 }
@@ -357,8 +358,8 @@ ExprNode PrattParserWorker<ExprNode>::ParseExpr() {
 
 template <typename ExprNode>
 void PrattParserWorker<ExprNode>::ParseTernary(ExprNode& lhs) {
-  NextToken();
-  int64_t op_id = NextId();
+  Token op_tok = NextToken();
+  int64_t op_id = NextId(op_tok);
   ExprNode true_expr = ParseBinaryAndTernary(1);
   if (!Expect(TokenType::kColon, "expected ':' in conditional expression")) {
     return;
@@ -462,7 +463,7 @@ void PrattParserWorker<ExprNode>::ParseSelectorChainTail(ExprNode& lhs) {
       if (id_tok.type != TokenType::kIdent &&
           id_tok.type != TokenType::kReservedWord) {
         if (id_tok.type != TokenType::kError) {
-          ReportError(id_tok, "expected identifier after '.'");
+          ReportSyntaxError(id_tok, "expected identifier after '.'");
         }
         SynchronizeOnDelimiter();
         return;
@@ -643,7 +644,7 @@ ExprNode PrattParserWorker<ExprNode>::ParseIdentOrCall() {
   if (id_tok.type != TokenType::kIdent &&
       id_tok.type != TokenType::kReservedWord) {
     if (id_tok.type != TokenType::kError) {
-      ReportError(id_tok, "expected identifier");
+      ReportSyntaxError(id_tok, "expected identifier");
     }
     return ast_factory_.NewUnspecified(NextId(id_tok));
   }
@@ -655,16 +656,17 @@ ExprNode PrattParserWorker<ExprNode>::ParseIdentOrCall() {
   }
   std::string name =
       leading_dot ? absl::StrCat(".", id_text) : std::string(id_text);
-  int64_t id = NextId(leading_dot ? first_tok : id_tok);
   if (peek_token_.type == TokenType::kLeftParen) {
-    NextToken();
+    Token lparen = NextToken();
+    int64_t call_id = NextId(lparen);
     std::vector<ExprNode> args = ParseArguments(TokenType::kRightParen);
-    if (auto expanded = TryExpandMacro(id, name, nullptr, args);
+    if (auto expanded = TryExpandMacro(call_id, name, nullptr, args);
         expanded.has_value()) {
       return std::move(*expanded);
     }
-    return ast_factory_.NewCall(id, name, std::move(args));
+    return ast_factory_.NewCall(call_id, name, std::move(args));
   }
+  int64_t id = NextId(leading_dot ? first_tok : id_tok);
   return ast_factory_.NewIdent(id, std::move(name));
 }
 
@@ -717,11 +719,10 @@ ExprNode PrattParserWorker<ExprNode>::ParsePrimary() {
       Token bad_tok = NextToken();
       if (bad_tok.type != TokenType::kError) {
         if (bad_tok.type == TokenType::kEnd) {
-          ReportError(
-              bad_tok,
-              "Syntax error: mismatched input '<EOF>' expecting expression");
+          ReportSyntaxError(bad_tok,
+                            "mismatched input '<EOF>' expecting expression");
         } else {
-          ReportError(bad_tok, "unexpected token");
+          ReportSyntaxError(bad_tok, "unexpected token");
         }
       }
       return ast_factory_.NewUnspecified(NextId(bad_tok));
@@ -815,7 +816,7 @@ ExprNode PrattParserWorker<ExprNode>::ParseStruct(
     Token field_tok = NextToken();
     if (field_tok.type != TokenType::kIdent &&
         field_tok.type != TokenType::kReservedWord) {
-      ReportError(field_tok, "expected struct field name");
+      ReportSyntaxError(field_tok, "expected struct field name");
       SynchronizeOnDelimiter();
       break;
     }
@@ -879,7 +880,7 @@ ExprNode PrattParserWorker<ExprNode>::ParseIntLiteral() {
   } else if (absl::SimpleAtoi(value, &int_val)) {
     return ast_factory_.NewIntConst(NextId(tok), int_val);
   }
-  ReportError(tok, "invalid int literal");
+  ReportSyntaxError(tok, "invalid int literal");
   return ast_factory_.NewUnspecified(NextId(tok));
 }
 
@@ -913,7 +914,7 @@ ExprNode PrattParserWorker<ExprNode>::ParseNegativeIntLiteral(int64_t node_id) {
   if (success) {
     return ast_factory_.NewIntConst(node_id, int_val);
   }
-  ReportError(lit_tok, "invalid int literal");
+  ReportSyntaxError(lit_tok, "invalid int literal");
   return ast_factory_.NewUnspecified(NextId(lit_tok));
 }
 
@@ -933,7 +934,7 @@ ExprNode PrattParserWorker<ExprNode>::ParseUintLiteral() {
   } else if (absl::SimpleAtoi(value, &uint_val)) {
     return ast_factory_.NewUintConst(NextId(tok), uint_val);
   }
-  ReportError(tok, "invalid uint literal");
+  ReportSyntaxError(tok, "invalid uint literal");
   return ast_factory_.NewUnspecified(NextId(tok));
 }
 
@@ -946,7 +947,7 @@ ExprNode PrattParserWorker<ExprNode>::ParseDoubleLiteral() {
   if (absl::SimpleAtod(value, &double_val)) {
     return ast_factory_.NewDoubleConst(NextId(tok), double_val);
   }
-  ReportError(tok, "invalid double literal");
+  ReportSyntaxError(tok, "invalid double literal");
   return ast_factory_.NewUnspecified(NextId(tok));
 }
 
@@ -958,7 +959,7 @@ ExprNode PrattParserWorker<ExprNode>::ParseNegativeDoubleLiteral(
   if (absl::SimpleAtod(GetTokenText(lit_tok), &double_val)) {
     return ast_factory_.NewDoubleConst(node_id, -double_val);
   }
-  ReportError(lit_tok, "invalid double literal");
+  ReportSyntaxError(lit_tok, "invalid double literal");
   return ast_factory_.NewUnspecified(NextId(lit_tok));
 }
 

@@ -1222,21 +1222,24 @@ std::vector<ErrorTestCase> GetErrorTestCases() {
       ErrorTestCase{
           .source = "1 + 2 * 3 4",
           .expected_error =
-              "ERROR: <input>:1:11: unexpected token after expression\n"
+              "ERROR: <input>:1:11: Syntax error: unexpected token after "
+              "expression\n"
               " | 1 + 2 * 3 4\n"
               " | ..........^",
       },
       ErrorTestCase{
           .source = "1{}",
           .expected_error =
-              "ERROR: <input>:1:2: unexpected token after expression\n"
+              "ERROR: <input>:1:2: Syntax error: unexpected token after "
+              "expression\n"
               " | 1{}\n"
               " | .^",
       },
       ErrorTestCase{
           .source = "true ? 1",
           .expected_error =
-              "ERROR: <input>:1:9: expected ':' in conditional expression\n"
+              "ERROR: <input>:1:9: Syntax error: expected ':' in conditional "
+              "expression\n"
               " | true ? 1\n"
               " | ........^",
       },
@@ -1248,10 +1251,10 @@ std::vector<ErrorTestCase> GetErrorTestCases() {
       },
       ErrorTestCase{
           .source = "a.",
-          .expected_error =
-              "ERROR: <input>:1:3: expected identifier after '.'\n"
-              " | a.\n"
-              " | ..^",
+          .expected_error = "ERROR: <input>:1:3: Syntax error: expected "
+                            "identifier after '.'\n"
+                            " | a.\n"
+                            " | ..^",
       },
       ErrorTestCase{
           .source = "a[?0]",
@@ -1261,9 +1264,10 @@ std::vector<ErrorTestCase> GetErrorTestCases() {
       },
       ErrorTestCase{
           .source = ". *",
-          .expected_error = "ERROR: <input>:1:3: expected identifier\n"
-                            " | . *\n"
-                            " | ..^",
+          .expected_error =
+              "ERROR: <input>:1:3: Syntax error: expected identifier\n"
+              " | . *\n"
+              " | ..^",
       },
       ErrorTestCase{
           .source = ".as",
@@ -1274,17 +1278,19 @@ std::vector<ErrorTestCase> GetErrorTestCases() {
       ErrorTestCase{
           .source = "* 2",
           .expected_error =
-              "ERROR: <input>:1:1: unexpected token\n"
+              "ERROR: <input>:1:1: Syntax error: unexpected token\n"
               " | * 2\n"
               " | ^\n"
-              "ERROR: <input>:1:3: unexpected token after expression\n"
+              "ERROR: <input>:1:3: Syntax error: unexpected token after "
+              "expression\n"
               " | * 2\n"
               " | ..^",
       },
       ErrorTestCase{
           .source = "(1 + 2",
           .expected_error =
-              "ERROR: <input>:1:7: mismatched input <EOF> expecting ')'\n"
+              "ERROR: <input>:1:7: Syntax error: mismatched input <EOF> "
+              "expecting ')'\n"
               " | (1 + 2\n"
               " | ......^",
       },
@@ -1296,7 +1302,7 @@ std::vector<ErrorTestCase> GetErrorTestCases() {
       },
       ErrorTestCase{
           .source = "[1, 2",
-          .expected_error = "ERROR: <input>:1:6: expected ']'\n"
+          .expected_error = "ERROR: <input>:1:6: Syntax error: expected ']'\n"
                             " | [1, 2\n"
                             " | .....^",
       },
@@ -1308,13 +1314,14 @@ std::vector<ErrorTestCase> GetErrorTestCases() {
       },
       ErrorTestCase{
           .source = "{'k' 'v'}",
-          .expected_error = "ERROR: <input>:1:6: expected ':' in map entry\n"
-                            " | {'k' 'v'}\n"
-                            " | .....^",
+          .expected_error =
+              "ERROR: <input>:1:6: Syntax error: expected ':' in map entry\n"
+              " | {'k' 'v'}\n"
+              " | .....^",
       },
       ErrorTestCase{
           .source = "{'k': 'v'",
-          .expected_error = "ERROR: <input>:1:10: expected '}'\n"
+          .expected_error = "ERROR: <input>:1:10: Syntax error: expected '}'\n"
                             " | {'k': 'v'\n"
                             " | .........^",
       },
@@ -1326,26 +1333,29 @@ std::vector<ErrorTestCase> GetErrorTestCases() {
       },
       ErrorTestCase{
           .source = "Msg{1: 2}",
-          .expected_error = "ERROR: <input>:1:5: expected struct field name\n"
-                            " | Msg{1: 2}\n"
-                            " | ....^",
+          .expected_error =
+              "ERROR: <input>:1:5: Syntax error: expected struct field name\n"
+              " | Msg{1: 2}\n"
+              " | ....^",
       },
       ErrorTestCase{
           .source = "Msg{f 10}",
-          .expected_error = "ERROR: <input>:1:7: expected ':' in struct field\n"
-                            " | Msg{f 10}\n"
-                            " | ......^",
+          .expected_error =
+              "ERROR: <input>:1:7: Syntax error: expected ':' in struct field\n"
+              " | Msg{f 10}\n"
+              " | ......^",
       },
       ErrorTestCase{
           .source = "Msg{f: 10",
-          .expected_error = "ERROR: <input>:1:10: expected '}'\n"
+          .expected_error = "ERROR: <input>:1:10: Syntax error: expected '}'\n"
                             " | Msg{f: 10\n"
                             " | .........^",
       },
       ErrorTestCase{
           .source = "f(1, 2",
           .expected_error =
-              "ERROR: <input>:1:7: mismatched input <EOF> expecting ')'\n"
+              "ERROR: <input>:1:7: Syntax error: mismatched input <EOF> "
+              "expecting ')'\n"
               " | f(1, 2\n"
               " | ......^",
       },
@@ -1357,35 +1367,39 @@ std::vector<ErrorTestCase> GetErrorTestCases() {
       },
       ErrorTestCase{
           .source = "999999999999999999999999999999999999999",
-          .expected_error = "ERROR: <input>:1:1: invalid int literal\n"
-                            " | 999999999999999999999999999999999999999\n"
-                            " | ^",
+          .expected_error =
+              "ERROR: <input>:1:1: Syntax error: invalid int literal\n"
+              " | 999999999999999999999999999999999999999\n"
+              " | ^",
       },
       ErrorTestCase{
           .source = "999999999999999999999999999999999999999u",
-          .expected_error = "ERROR: <input>:1:1: invalid uint literal\n"
-                            " | 999999999999999999999999999999999999999u\n"
-                            " | ^",
+          .expected_error =
+              "ERROR: <input>:1:1: Syntax error: invalid uint literal\n"
+              " | 999999999999999999999999999999999999999u\n"
+              " | ^",
       },
       ErrorTestCase{
           .source = "1e",
           .expected_error =
-              "ERROR: <input>:1:1: floating point literal missing digits after "
-              "exponent separator\n"
+              "ERROR: <input>:1:1: Syntax error: floating point literal "
+              "missing digits after exponent separator\n"
               " | 1e\n"
               " | ^",
       },
       ErrorTestCase{
           .source = "\"unterminated",
-          .expected_error = "ERROR: <input>:1:1: unterminated string literal\n"
-                            " | \"unterminated\n"
-                            " | ^",
+          .expected_error =
+              "ERROR: <input>:1:1: Syntax error: unterminated string literal\n"
+              " | \"unterminated\n"
+              " | ^",
       },
       ErrorTestCase{
           .source = "b\"unterminated",
-          .expected_error = "ERROR: <input>:1:1: unterminated bytes literal\n"
-                            " | b\"unterminated\n"
-                            " | ^",
+          .expected_error =
+              "ERROR: <input>:1:1: Syntax error: unterminated bytes literal\n"
+              " | b\"unterminated\n"
+              " | ^",
       },
       ErrorTestCase{
           .source = "a.?`foo`",
@@ -1440,7 +1454,8 @@ std::vector<ErrorTestCase> GetErrorTestCases() {
       ErrorTestCase{
           .source = "`foo",
           .expected_error =
-              "ERROR: <input>:1:1: unterminated quoted identifier\n"
+              "ERROR: <input>:1:1: Syntax error: unterminated quoted "
+              "identifier\n"
               " | `foo\n"
               " | ^",
           .enable_quoted_identifiers = true,
@@ -1448,73 +1463,82 @@ std::vector<ErrorTestCase> GetErrorTestCases() {
       ErrorTestCase{
           .source = "f(*, 1e, {2 3})",
           .expected_error =
-              "ERROR: <input>:1:3: unexpected token\n"
+              "ERROR: <input>:1:3: Syntax error: unexpected token\n"
               " | f(*, 1e, {2 3})\n"
               " | ..^\n"
-              "ERROR: <input>:1:6: floating point literal missing digits after "
-              "exponent separator\n"
+              "ERROR: <input>:1:6: Syntax error: floating point literal "
+              "missing digits after exponent separator\n"
               " | f(*, 1e, {2 3})\n"
               " | .....^\n"
-              "ERROR: <input>:1:13: expected ':' in map entry\n"
+              "ERROR: <input>:1:13: Syntax error: expected ':' in map entry\n"
               " | f(*, 1e, {2 3})\n"
               " | ............^",
       },
       ErrorTestCase{
           .source = "(1 + *) + 2",
-          .expected_error = "ERROR: <input>:1:6: unexpected token\n"
-                            " | (1 + *) + 2\n"
-                            " | .....^",
+          .expected_error =
+              "ERROR: <input>:1:6: Syntax error: unexpected token\n"
+              " | (1 + *) + 2\n"
+              " | .....^",
       },
       ErrorTestCase{
           .source = "f(1 + *, 2)",
-          .expected_error = "ERROR: <input>:1:7: unexpected token\n"
-                            " | f(1 + *, 2)\n"
-                            " | ......^",
+          .expected_error =
+              "ERROR: <input>:1:7: Syntax error: unexpected token\n"
+              " | f(1 + *, 2)\n"
+              " | ......^",
       },
       ErrorTestCase{
           .source = "(a. + 1)",
           .expected_error =
-              "ERROR: <input>:1:5: expected identifier after '.'\n"
+              "ERROR: <input>:1:5: Syntax error: expected identifier after "
+              "'.'\n"
               " | (a. + 1)\n"
               " | ....^",
       },
       ErrorTestCase{
           .source = "f(a., 1)",
           .expected_error =
-              "ERROR: <input>:1:5: expected identifier after '.'\n"
+              "ERROR: <input>:1:5: Syntax error: expected identifier after "
+              "'.'\n"
               " | f(a., 1)\n"
               " | ....^",
       },
       ErrorTestCase{
           .source = "[a., 1]",
           .expected_error =
-              "ERROR: <input>:1:4: expected identifier after '.'\n"
+              "ERROR: <input>:1:4: Syntax error: expected identifier after "
+              "'.'\n"
               " | [a., 1]\n"
               " | ...^",
       },
       ErrorTestCase{
           .source = "-0x8000000000000001",
-          .expected_error = "ERROR: <input>:1:2: invalid int literal\n"
-                            " | -0x8000000000000001\n"
-                            " | .^",
+          .expected_error =
+              "ERROR: <input>:1:2: Syntax error: invalid int literal\n"
+              " | -0x8000000000000001\n"
+              " | .^",
       },
       ErrorTestCase{
           .source = "-0x10000000000000000",
-          .expected_error = "ERROR: <input>:1:2: invalid int literal\n"
-                            " | -0x10000000000000000\n"
-                            " | .^",
+          .expected_error =
+              "ERROR: <input>:1:2: Syntax error: invalid int literal\n"
+              " | -0x10000000000000000\n"
+              " | .^",
       },
       ErrorTestCase{
           .source = "-9223372036854775809",
-          .expected_error = "ERROR: <input>:1:2: invalid int literal\n"
-                            " | -9223372036854775809\n"
-                            " | .^",
+          .expected_error =
+              "ERROR: <input>:1:2: Syntax error: invalid int literal\n"
+              " | -9223372036854775809\n"
+              " | .^",
       },
       ErrorTestCase{
           .source = "-999999999999999999999999999999999999999",
-          .expected_error = "ERROR: <input>:1:2: invalid int literal\n"
-                            " | -999999999999999999999999999999999999999\n"
-                            " | .^",
+          .expected_error =
+              "ERROR: <input>:1:2: Syntax error: invalid int literal\n"
+              " | -999999999999999999999999999999999999999\n"
+              " | .^",
       },
       ErrorTestCase{
           .source = "-",
@@ -1526,15 +1550,17 @@ std::vector<ErrorTestCase> GetErrorTestCases() {
       },
       ErrorTestCase{
           .source = "- *",
-          .expected_error = "ERROR: <input>:1:3: unexpected token\n"
-                            " | - *\n"
-                            " | ..^",
+          .expected_error =
+              "ERROR: <input>:1:3: Syntax error: unexpected token\n"
+              " | - *\n"
+              " | ..^",
       },
       ErrorTestCase{
           .source = "\"😀😀😀😀😀\" ~error",
-          .expected_error = "ERROR: <input>:1:9: unexpected character\n"
-                            " | \"😀😀😀😀😀\" ~error\n"
-                            " | .．．．．．..^",
+          .expected_error =
+              "ERROR: <input>:1:9: Syntax error: unexpected character\n"
+              " | \"😀😀😀😀😀\" ~error\n"
+              " | .．．．．．..^",
       },
   };
 }
@@ -1892,9 +1918,9 @@ TEST(PrattParserMacroErrorTest, ReportError) {
   auto ast = parser->Parse(*source, &issues);
   EXPECT_THAT(ast, StatusIs(absl::StatusCode::kInvalidArgument));
   EXPECT_EQ(FormatIssues(*source, issues),
-            "ERROR: <input>:1:6: custom macro error\n"
+            "ERROR: <input>:1:15: custom macro error\n"
             " | 42 + bad_macro(x)\n"
-            " | .....^");
+            " | ..............^");
 }
 
 TEST(PrattParserMacroErrorTest, ReportErrorAt) {
@@ -1941,7 +1967,7 @@ TEST(PrattParserErrorRecoveryTest, ErrorRecoveryLimitOne) {
   ASSERT_OK_AND_ASSIGN(auto source, cel::NewSource("......"));
   EXPECT_EQ(FormatIssues(*source, issues),
             "ERROR: <input>:-1:0: Error recovery limit (1) exceeded\n"
-            "ERROR: <input>:1:2: expected identifier\n"
+            "ERROR: <input>:1:2: Syntax error: expected identifier\n"
             " | ......\n"
             " | .^");
 }
