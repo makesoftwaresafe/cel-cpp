@@ -96,7 +96,7 @@ class ConstantFoldingExtension : public ProgramOptimizer {
   static constexpr size_t kComprehensionSlotCount = 0;
 
   absl_nullable std::shared_ptr<google::protobuf::Arena> shared_arena_;
-  ABSL_ATTRIBUTE_UNUSED
+  [[maybe_unused]]
   absl_nullable std::shared_ptr<google::protobuf::MessageFactory> shared_message_factory_;
   Activation empty_;
   FlatExpressionEvaluatorState state_;
