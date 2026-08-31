@@ -346,9 +346,9 @@ class FunctionAdapterImpl {
 #else
     inline absl::Status RunWrap(
         std::function<ReturnType()> func,
-        ABSL_ATTRIBUTE_UNUSED const absl::Span<const CelValue> argset,
+        [[maybe_unused]] const absl::Span<const CelValue> argset,
         ::google::protobuf::Arena* arena, CelValue* result,
-        ABSL_ATTRIBUTE_UNUSED int arg_index) const {
+        [[maybe_unused]] int arg_index) const {
       return ValueConverter().NativeToValue(func(), arena, result);
     }
 
