@@ -556,10 +556,12 @@ ExprNode PrattParserWorker<ExprNode>::ParseUnaryOpsChain(Token first_op) {
       int64_t op_id = ops.back().id;
       ops.pop_back();
       operand = ParseNegativeIntLiteral(op_id);
+      ParseSelectorChainTail(operand);
     } else if (peek_token_.type == TokenType::kFloat) {
       int64_t op_id = ops.back().id;
       ops.pop_back();
       operand = ParseNegativeDoubleLiteral(op_id);
+      ParseSelectorChainTail(operand);
     } else {
       operand = ParseSelectorChain();
     }

@@ -137,6 +137,27 @@ std::vector<TestInfo> test_cases = {
      "  a^#1:Expr.Ident#,\n"
      "  3^#3:int64#\n"
      ")^#2:Expr.Call#"},
+    {"-x.foo[0]",
+     "-_(\n"
+     "  _[_](\n"
+     "    x^#2:Expr.Ident#.foo^#3:Expr.Select#,\n"
+     "    0^#5:int64#\n"
+     "  )^#4:Expr.Call#\n"
+     ")^#1:Expr.Call#"},
+    {"-x[0].foo",
+     "-_(\n"
+     "  _[_](\n"
+     "    x^#2:Expr.Ident#,\n"
+     "    0^#4:int64#\n"
+     "  )^#3:Expr.Call#.foo^#5:Expr.Select#\n"
+     ")^#1:Expr.Call#"},
+    {"!x[0].foo",
+     "!_(\n"
+     "  _[_](\n"
+     "    x^#2:Expr.Ident#,\n"
+     "    0^#4:int64#\n"
+     "  )^#3:Expr.Call#.foo^#5:Expr.Select#\n"
+     ")^#1:Expr.Call#"},
     {"SomeMessage{foo: 5, bar: \"xyz\"}",
      "SomeMessage{\n"
      "  foo:5^#3:int64#^#2:Expr.CreateStruct.Entry#,\n"

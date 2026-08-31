@@ -483,6 +483,72 @@ std::vector<TestCase> GetParserTestCases() {
             )",
       },
       TestCase{
+          .source = "-.2.V",
+          .expected_ast = R"(
+              -0.2^#1:double#.V^#2:Expr.Select#
+            )",
+      },
+      TestCase{
+          .source = "!-.2.V",
+          .expected_ast = R"(
+              !_(
+                -0.2^#2:double#.V^#3:Expr.Select#
+              )^#1:Expr.Call#
+            )",
+      },
+      TestCase{
+          .source = "!-2.V",
+          .expected_ast = R"(
+              !_(
+                -2^#2:int64#.V^#3:Expr.Select#
+              )^#1:Expr.Call#
+            )",
+      },
+      TestCase{
+          .source = "!-.2[0]",
+          .expected_ast = R"(
+              !_(
+                _[_](
+                  -0.2^#2:double#,
+                  0^#4:int64#
+                )^#3:Expr.Call#
+              )^#1:Expr.Call#
+            )",
+      },
+      TestCase{
+          .source = "-x.foo[0]",
+          .expected_ast = R"(
+              -_(
+                _[_](
+                  x^#2:Expr.Ident#.foo^#3:Expr.Select#,
+                  0^#5:int64#
+                )^#4:Expr.Call#
+              )^#1:Expr.Call#
+            )",
+      },
+      TestCase{
+          .source = "-x[0].foo",
+          .expected_ast = R"(
+              -_(
+                _[_](
+                  x^#2:Expr.Ident#,
+                  0^#4:int64#
+                )^#3:Expr.Call#.foo^#5:Expr.Select#
+              )^#1:Expr.Call#
+            )",
+      },
+      TestCase{
+          .source = "!x[0].foo",
+          .expected_ast = R"(
+              !_(
+                _[_](
+                  x^#2:Expr.Ident#,
+                  0^#4:int64#
+                )^#3:Expr.Call#.foo^#5:Expr.Select#
+              )^#1:Expr.Call#
+            )",
+      },
+      TestCase{
           .source = "a + b",
           .expected_ast = R"(
               _+_(
