@@ -434,7 +434,7 @@ std::vector<TestCase> GetParserTestCases() {
       TestCase{
           .source = "- -1",
           .expected_ast = R"(
-              1^#3:int64#
+              1^#1:int64#
             )",
       },
       TestCase{
@@ -452,7 +452,7 @@ std::vector<TestCase> GetParserTestCases() {
           .source = "---a",
           .expected_ast = R"(
               -_(
-                a^#4:Expr.Ident#
+                a^#2:Expr.Ident#
               )^#1:Expr.Call#
             )",
       },
@@ -1082,8 +1082,8 @@ std::vector<TestCase> GetParserTestCases() {
           .source = "{'key': 'value', 'num': 42}",
           .expected_ast = R"(
               {
-                "key"^#2:string#:"value"^#4:string#^#3:Expr.CreateStruct.Entry#,
-                "num"^#5:string#:42^#7:int64#^#6:Expr.CreateStruct.Entry#
+                "key"^#3:string#:"value"^#4:string#^#2:Expr.CreateStruct.Entry#,
+                "num"^#6:string#:42^#7:int64#^#5:Expr.CreateStruct.Entry#
               }^#1:Expr.CreateMap#
             )",
       },
@@ -1091,8 +1091,8 @@ std::vector<TestCase> GetParserTestCases() {
           .source = "{?'key': 'value', 'num': 42}",
           .expected_ast = R"(
               {
-                ?"key"^#2:string#:"value"^#4:string#^#3:Expr.CreateStruct.Entry#,
-                "num"^#5:string#:42^#7:int64#^#6:Expr.CreateStruct.Entry#
+                ?"key"^#3:string#:"value"^#4:string#^#2:Expr.CreateStruct.Entry#,
+                "num"^#6:string#:42^#7:int64#^#5:Expr.CreateStruct.Entry#
               }^#1:Expr.CreateMap#
             )",
           .enable_optional_syntax = true,
@@ -1101,8 +1101,8 @@ std::vector<TestCase> GetParserTestCases() {
           .source = "{foo: 5, bar: \"xyz\"}",
           .expected_ast = R"(
               {
-                foo^#2:Expr.Ident#:5^#4:int64#^#3:Expr.CreateStruct.Entry#,
-                bar^#5:Expr.Ident#:"xyz"^#7:string#^#6:Expr.CreateStruct.Entry#
+                foo^#3:Expr.Ident#:5^#4:int64#^#2:Expr.CreateStruct.Entry#,
+                bar^#6:Expr.Ident#:"xyz"^#7:string#^#5:Expr.CreateStruct.Entry#
               }^#1:Expr.CreateMap#
             )",
       },

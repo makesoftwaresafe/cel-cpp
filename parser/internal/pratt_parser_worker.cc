@@ -216,6 +216,14 @@ int64_t ParserWorker::NextId(int32_t position) {
 
 int64_t ParserWorker::NextId() { return NextId(-1); }
 
+void ParserWorker::SetPosition(int64_t id, const Token& token) {
+  if (token.start >= 0) {
+    positions_[id] = token.start;
+    SetNodeRange(id, token.start,
+                 token.end > token.start ? token.end - 1 : token.start);
+  }
+}
+
 int64_t ParserWorker::CopyId(int64_t id) {
   if (id == 0) {
     return 0;

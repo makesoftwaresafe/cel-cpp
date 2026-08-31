@@ -16,6 +16,7 @@
 #define THIRD_PARTY_CEL_CPP_PARSER_INTERNAL_PRATT_PARSER_WORKER_H_
 
 #include <algorithm>
+#include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <limits>
@@ -83,14 +84,12 @@ class ParserWorker {
   int64_t NextId(int32_t position);
   int64_t NextId(const Token& token) {
     int64_t id = NextId(token.start);
-    if (ABSL_PREDICT_FALSE(track_node_ranges_)) {
-      if (token.start >= 0 && token.end > token.start) {
-        node_ranges_[id] = {token.start, token.end - 1};
-      }
-    }
+    SetNodeRange(id, token.start,
+                 token.end > token.start ? token.end - 1 : token.start);
     return id;
   }
   int64_t NextId();
+  void SetPosition(int64_t id, const Token& token);
   int64_t CopyId(int64_t id);
   void EraseId(int64_t id);
   void SetNodeRange(int64_t id, int32_t begin, int32_t end) {
@@ -150,6 +149,7 @@ template <typename ExprNode>
 class PrattParserWorker : public ParserWorker {
  public:
   using ParserWorker::NextId;
+  using ParserWorker::SetPosition;
 
   explicit PrattParserWorker(
       const cel::Source& source, const cel::ParserOptions& options,
@@ -530,57 +530,61 @@ void PrattParserWorker<ExprNode>::ParseSelectorChainTail(ExprNode& lhs) {
 
 template <typename ExprNode>
 ExprNode PrattParserWorker<ExprNode>::ParseUnaryOpsChain(Token first_op) {
-  struct UnaryOpInfo {
-    TokenType type;
-    int64_t id;
+  struct UnaryOp {
+    Token token;
+    int64_t id = 0;
   };
-  std::vector<UnaryOpInfo> ops;
-  ops.push_back({first_op.type, NextId(first_op)});
-
+  std::vector<UnaryOp> ops;
+  ops.push_back({first_op});
   while (peek_token_.type == TokenType::kExclamation ||
          peek_token_.type == TokenType::kMinus) {
-    Token op = NextToken();
-    ops.push_back({op.type, NextId(op)});
+    ops.push_back({NextToken()});
+  }
+
+  const bool has_solitary_trailing_minus =
+      !ops.empty() && ops.back().token.type == TokenType::kMinus &&
+      (ops.size() == 1 || ops[ops.size() - 2].token.type != TokenType::kMinus);
+
+  if (options_.fold_unary_operators) {
+    size_t write = 0;
+    for (size_t read = 0; read < ops.size();) {
+      size_t next = read;
+      while (next < ops.size() &&
+             ops[next].token.type == ops[read].token.type) {
+        next++;
+      }
+      if ((next - read) % 2 != 0) {
+        ops[write++] = ops[read];
+      }
+      read = next;
+    }
+    ops.resize(write);
+  }
+
+  for (auto& op : ops) {
+    op.id = NextId(op.token);
   }
 
   ExprNode operand;
-  if (!ops.empty() && ops.back().type == TokenType::kMinus) {
-    if (options_.fold_unary_operators && ops.size() > 1 &&
-        ops[ops.size() - 2].type == TokenType::kMinus) {
-      // Match the ANTLR parser behavior where `-(-)+` prefers to match as
-      // repeated negate operators instead of a negation of an int literal.
-      // ---9223372036854775808 will fail to parse.
-      ops.pop_back();
-      ops.pop_back();
-      operand = ParseSelectorChain();
-    } else if (peek_token_.type == TokenType::kInt) {
-      int64_t op_id = ops.back().id;
-      ops.pop_back();
-      operand = ParseNegativeIntLiteral(op_id);
-      ParseSelectorChainTail(operand);
-    } else if (peek_token_.type == TokenType::kFloat) {
-      int64_t op_id = ops.back().id;
-      ops.pop_back();
-      operand = ParseNegativeDoubleLiteral(op_id);
-      ParseSelectorChainTail(operand);
-    } else {
-      operand = ParseSelectorChain();
-    }
+  // Match the ANTLR parser behavior where `-(-)+` prefers to match as
+  // repeated negate operators instead of a negation of an int literal.
+  // ---9223372036854775808 will fail to parse.
+  if (has_solitary_trailing_minus && (peek_token_.type == TokenType::kInt ||
+                                      peek_token_.type == TokenType::kFloat)) {
+    int64_t op_id = ops.back().id;
+    ops.pop_back();
+    operand = (peek_token_.type == TokenType::kInt)
+                  ? ParseNegativeIntLiteral(op_id)
+                  : ParseNegativeDoubleLiteral(op_id);
+    ParseSelectorChainTail(operand);
   } else {
     operand = ParseSelectorChain();
   }
 
   for (int i = static_cast<int>(ops.size()) - 1; i >= 0; --i) {
     std::vector<ExprNode> args;
-    if (options_.fold_unary_operators && i > 0) {
-      if (ops[i - 1].type == ops[i].type) {
-        i--;
-        continue;
-      }
-    }
-
     args.push_back(std::move(operand));
-    absl::string_view op_name = (ops[i].type == TokenType::kExclamation)
+    absl::string_view op_name = (ops[i].token.type == TokenType::kExclamation)
                                     ? CelOperator::LOGICAL_NOT
                                     : CelOperator::NEGATE;
     operand =
@@ -777,12 +781,13 @@ ExprNode PrattParserWorker<ExprNode>::ParseMap() {
       }
       key_start = peek_token_;
     }
+    int64_t entry_id = NextId();
     ExprNode key = ParseExpr();
     Token colon = peek_token_;
     if (!Expect(TokenType::kColon, "expected ':' in map entry")) {
       break;
     }
-    int64_t entry_id = NextId(colon);
+    SetPosition(entry_id, colon);
     builder.Add(entry_id, std::move(key), ParseExpr(), optional);
     if (peek_token_.type == TokenType::kComma) {
       NextToken();

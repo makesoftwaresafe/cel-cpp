@@ -65,15 +65,8 @@ struct TestInfo {
   TestInfo(const std::string& I, const std::string& P,
            const std::string& E = "", const std::string& L = "",
            const std::string& R = "", const std::string& M = "",
-           const std::string& P_PRATT = "", const std::string& E_PRATT = "")
-      : I(I),
-        P(P),
-        E(E),
-        L(L),
-        R(R),
-        M(M),
-        P_PRATT(P_PRATT),
-        E_PRATT(E_PRATT) {}
+           const std::string& E_PRATT = "")
+      : I(I), P(P), E(E), L(L), R(R), M(M), E_PRATT(E_PRATT) {}
 
   // I contains the input expression to be parsed.
   std::string I;
@@ -93,9 +86,6 @@ struct TestInfo {
 
   // M contains the expected macro call output of hte expression tree.
   std::string M;
-
-  // P_PRATT contains alternative adorned AST string when using pratt parser.
-  std::string P_PRATT;
 
   // E_PRATT contains alternative error output when using pratt parser.
   std::string E_PRATT;
@@ -173,12 +163,16 @@ std::vector<TestInfo> test_cases = {
      "{\n"
      "  foo^#3:Expr.Ident#:5^#4:int64#^#2:Expr.CreateStruct.Entry#,\n"
      "  bar^#6:Expr.Ident#:\"xyz\"^#7:string#^#5:Expr.CreateStruct.Entry#\n"
-     "}^#1:Expr.CreateStruct#",
-     "", "", "", "",
-     // PRATT PARSER AST
+     "}^#1:Expr.CreateStruct#"},
+    {"{\"foo\": 5, \"bar\": \"xyz\"}",
      "{\n"
-     "  foo^#2:Expr.Ident#:5^#4:int64#^#3:Expr.CreateStruct.Entry#,\n"
-     "  bar^#5:Expr.Ident#:\"xyz\"^#7:string#^#6:Expr.CreateStruct.Entry#\n"
+     "  \"foo\"^#3:string#:5^#4:int64#^#2:Expr.CreateStruct.Entry#,\n"
+     "  \"bar\"^#6:string#:\"xyz\"^#7:string#^#5:Expr.CreateStruct.Entry#\n"
+     "}^#1:Expr.CreateStruct#"},
+    {"{'a': 1, 'b': 2}",
+     "{\n"
+     "  \"a\"^#3:string#:1^#4:int64#^#2:Expr.CreateStruct.Entry#,\n"
+     "  \"b\"^#6:string#:2^#7:int64#^#5:Expr.CreateStruct.Entry#\n"
      "}^#1:Expr.CreateStruct#"},
     {"a > 5 && a < 10",
      "_&&_(\n"
@@ -210,7 +204,7 @@ std::vector<TestInfo> test_cases = {
      "NUM_INT, "
      "NUM_UINT, STRING, BYTES, IDENTIFIER}\n | {\n"
      " | .^",
-     "", "", "", "",
+     "", "", "",
      // PRATT PARSER ERROR MESSAGE
      "ERROR: <input>:1:2: Syntax error: expected '}'\n"
      " | {\n"
@@ -407,12 +401,6 @@ std::vector<TestInfo> test_cases = {
      "{\n"
      "  a^#3:Expr.Ident#:b^#4:Expr.Ident#^#2:Expr.CreateStruct.Entry#,\n"
      "  c^#6:Expr.Ident#:d^#7:Expr.Ident#^#5:Expr.CreateStruct.Entry#\n"
-     "}^#1:Expr.CreateStruct#",
-     "", "", "", "",
-     // PRATT PARSER AST
-     "{\n"
-     "  a^#2:Expr.Ident#:b^#4:Expr.Ident#^#3:Expr.CreateStruct.Entry#,\n"
-     "  c^#5:Expr.Ident#:d^#7:Expr.Ident#^#6:Expr.CreateStruct.Entry#\n"
      "}^#1:Expr.CreateStruct#"},
     {"[]", "[]^#1:Expr.CreateList#"},
     {"[a]",
@@ -478,7 +466,7 @@ std::vector<TestInfo> test_cases = {
      "ERROR: <input>:1:7: Syntax error: extraneous input 'b' expecting <EOF>\n"
      " | *@a | b\n"
      " | ......^",
-     "", "", "", "",
+     "", "", "",
      // PRATT PARSER ERROR MESSAGE
      "ERROR: <input>:1:1: Syntax error: unexpected token\n"
      " | *@a | b\n"
@@ -493,7 +481,7 @@ std::vector<TestInfo> test_cases = {
      "ERROR: <input>:1:5: Syntax error: extraneous input 'b' expecting <EOF>\n"
      " | a | b\n"
      " | ....^",
-     "", "", "", "",
+     "", "", "",
      // PRATT PARSER ERROR MESSAGE
      "ERROR: <input>:1:3: Syntax error: unexpected single '|', expected '||'\n"
      " | a | b\n"
@@ -506,7 +494,7 @@ std::vector<TestInfo> test_cases = {
      "{'[', '{', '(', '.', '-', '!', 'true', 'false', 'null', NUM_FLOAT, "
      "NUM_INT, NUM_UINT, STRING, BYTES, IDENTIFIER}\n | ?\n | .^\n"
      "ERROR: <input>:4294967295:0: <<nil>> parsetree",
-     "", "", "", "",
+     "", "", "",
      // PRATT PARSER ERROR MESSAGE
      "ERROR: <input>:1:1: Syntax error: unexpected token\n"
      " | ?\n"
@@ -517,7 +505,7 @@ std::vector<TestInfo> test_cases = {
      "<input>:1:5: "
      "Syntax error: "
      "mismatched input '}' expecting ':'\n | t{>C}\n | ....^",
-     "", "", "", "",
+     "", "", "",
      // PRATT PARSER ERROR MESSAGE
      "ERROR: <input>:1:3: Syntax error: expected struct field name\n"
      " | t{>C}\n"
@@ -528,7 +516,7 @@ std::vector<TestInfo> test_cases = {
      "NUM_INT, NUM_UINT, STRING, BYTES, IDENTIFIER}\n"
      " | foo(a,b,)\n"
      " | ........^",
-     "", "", "", "",
+     "", "", "",
      // PRATT PARSER ERROR MESSAGE
      "ERROR: <input>:1:9: unexpected token\n"
      " | foo(a,b,)\n"
@@ -678,12 +666,6 @@ std::vector<TestInfo> test_cases = {
      "{\n"
      "  1^#3:int64#:2u^#4:uint64#^#2:Expr.CreateStruct.Entry#,\n"
      "  2^#6:int64#:3u^#7:uint64#^#5:Expr.CreateStruct.Entry#\n"
-     "}^#1:Expr.CreateStruct#",
-     "", "", "", "",
-     // PRATT PARSER AST
-     "{\n"
-     "  1^#2:int64#:2u^#4:uint64#^#3:Expr.CreateStruct.Entry#,\n"
-     "  2^#5:int64#:3u^#7:uint64#^#6:Expr.CreateStruct.Entry#\n"
      "}^#1:Expr.CreateStruct#"},
     {"TestAllTypes{single_int32: 1, single_int64: 2}",
      "TestAllTypes{\n"
@@ -694,7 +676,7 @@ std::vector<TestInfo> test_cases = {
      "ERROR: <input>:1:15: Syntax error: mismatched input '{' expecting <EOF>\n"
      " | TestAllTypes(){single_int32: 1, single_int64: 2}\n"
      " | ..............^",
-     "", "", "", "",
+     "", "", "",
      // PRATT PARSER ERROR MESSAGE
      "ERROR: <input>:1:15: Syntax error: unexpected token after expression\n"
      " | TestAllTypes(){single_int32: 1, single_int64: 2}\n"
@@ -716,7 +698,7 @@ std::vector<TestInfo> test_cases = {
      "NUM_UINT, STRING, BYTES, IDENTIFIER}\n"
      " | 1 + $\n"
      " | .....^",
-     "", "", "", "",
+     "", "", "",
      // PRATT PARSER ERROR MESSAGE
      "ERROR: <input>:1:5: Syntax error: unexpected character\n"
      " | 1 + $\n"
@@ -727,7 +709,7 @@ std::vector<TestInfo> test_cases = {
      "ERROR: <input>:2:1: Syntax error: mismatched input '3' expecting <EOF>\n"
      " | 3 +\n"
      " | ^",
-     "", "", "", "",
+     "", "", "",
      // PRATT PARSER ERROR MESSAGE
      "ERROR: <input>:2:1: Syntax error: unexpected token after expression\n"
      " | 3 +\n"
@@ -750,7 +732,7 @@ std::vector<TestInfo> test_cases = {
      "ERROR: <input>:1:9: all() variable name must be a simple identifier\n"
      " | [].all(.x, x)\n"
      " | ........^",
-     "", "", "", "",
+     "", "", "",
      // PRATT PARSER ERROR MESSAGE
      "ERROR: <input>:1:8: all() variable name must be a simple identifier\n"
      " | [].all(.x, x)\n"
@@ -759,7 +741,7 @@ std::vector<TestInfo> test_cases = {
      "ERROR: <input>:1:12: exists() variable name must be a simple identifier\n"
      " | [].exists(.x, x)\n"
      " | ...........^",
-     "", "", "", "",
+     "", "", "",
      // PRATT PARSER ERROR MESSAGE
      "ERROR: <input>:1:11: exists() variable name must be a simple identifier\n"
      " | [].exists(.x, x)\n"
@@ -769,7 +751,7 @@ std::vector<TestInfo> test_cases = {
      "identifier\n"
      " | [].exists_one(.x, x)\n"
      " | ...............^",
-     "", "", "", "",
+     "", "", "",
      // PRATT PARSER ERROR MESSAGE
      "ERROR: <input>:1:15: exists_one() variable name must be a simple "
      "identifier\n"
@@ -779,7 +761,7 @@ std::vector<TestInfo> test_cases = {
      "ERROR: <input>:1:9: map() variable name must be a simple identifier\n"
      " | [].map(.x, x, x)\n"
      " | ........^",
-     "", "", "", "",
+     "", "", "",
      // PRATT PARSER ERROR MESSAGE
      "ERROR: <input>:1:8: map() variable name must be a simple identifier\n"
      " | [].map(.x, x, x)\n"
@@ -788,7 +770,7 @@ std::vector<TestInfo> test_cases = {
      "ERROR: <input>:1:12: filter() variable name must be a simple identifier\n"
      " | [].filter(.x, x)\n"
      " | ...........^",
-     "", "", "", "",
+     "", "", "",
      // PRATT PARSER ERROR MESSAGE
      "ERROR: <input>:1:11: filter() variable name must be a simple identifier\n"
      " | [].filter(.x, x)\n"
@@ -848,11 +830,6 @@ std::vector<TestInfo> test_cases = {
     {"---a",
      "-_(\n"
      "  a^#2:Expr.Ident#\n"
-     ")^#1:Expr.Call#",
-     "", "", "", "",
-     // PRATT PARSER AST
-     "-_(\n"
-     "  a^#4:Expr.Ident#\n"
      ")^#1:Expr.Call#"},
     {"1 + +", "",
      "ERROR: <input>:1:5: Syntax error: mismatched input '+' expecting {'[', "
@@ -868,7 +845,7 @@ std::vector<TestInfo> test_cases = {
      "NUM_UINT, STRING, BYTES, IDENTIFIER}\n"
      " | 1 + +\n"
      " | .....^",
-     "", "", "", "",
+     "", "", "",
      // PRATT PARSER ERROR MESSAGE
      "ERROR: <input>:1:5: Syntax error: unexpected token\n"
      " | 1 + +\n"
@@ -883,7 +860,7 @@ std::vector<TestInfo> test_cases = {
      "'.\"a\"'\n"
      " | {\"a\": 1}.\"a\"\n"
      " | .........^",
-     "", "", "", "",
+     "", "", "",
      // PRATT PARSER ERROR MESSAGE
      "ERROR: <input>:1:10: Syntax error: expected identifier after '.'\n"
      " | {\"a\": 1}.\"a\"\n"
@@ -907,7 +884,7 @@ std::vector<TestInfo> test_cases = {
      "NUM_UINT, STRING, BYTES, IDENTIFIER}\n"
      " | \"\\xFh\"\n"
      " | ......^",
-     "", "", "", "",
+     "", "", "",
      // PRATT PARSER ERROR MESSAGE
      "ERROR: <input>:1:1: Invalid string literal: Illegal escape sequence: Hex "
      "escape must be followed by 2 hex digits but saw: \\xFh\n"
@@ -927,7 +904,7 @@ std::vector<TestInfo> test_cases = {
      "NUM_UINT, STRING, BYTES, IDENTIFIER}\n"
      " | \"\\a\\b\\f\\n\\r\\t\\v\\'\\\"\\\\\\? Illegal escape \\>\"\n"
      " | ..........................................^",
-     "", "", "", "",
+     "", "", "",
      // PRATT PARSER ERROR MESSAGE
      "ERROR: <input>:1:1: Invalid string literal: Illegal escape sequence: "
      "\\>\n"
@@ -983,7 +960,7 @@ std::vector<TestInfo> test_cases = {
      "ERROR: <input>:2:11: Syntax error: no viable alternative at input '.'\n"
      " |    && in.😁\n"
      " | .........．^",
-     "", "", "", "",
+     "", "", "",
      // PRATT PARSER ERROR MESSAGE
      "ERROR: <input>:2:7: Syntax error: unexpected token\n"
      " |    && in.😁\n"
@@ -1039,7 +1016,7 @@ std::vector<TestInfo> test_cases = {
      "NUM_UINT, STRING, BYTES, IDENTIFIER}\n"
      " | in\n"
      " | ..^",
-     "", "", "", "",
+     "", "", "",
      // PRATT PARSER ERROR MESSAGE
      "ERROR: <input>:1:1: Syntax error: unexpected token\n"
      " | in\n"
@@ -1089,7 +1066,7 @@ std::vector<TestInfo> test_cases = {
      "ERROR: <input>:1:26: reserved identifier: var\n"
      " | [1, 2, 3].map(var, var * var)\n"
      " | .........................^",
-     "", "", "", "",
+     "", "", "",
      // PRATT PARSER ERROR MESSAGE
      "ERROR: <input>:1:15: reserved identifier: var\n"
      " | [1, 2, 3].map(var, var * var)\n"
@@ -1127,7 +1104,7 @@ std::vector<TestInfo> test_cases = {
      "{']', ','}\n"
      " |  \r\n"
      " | ..^",
-     "", "", "", "",
+     "", "", "",
      // PRATT PARSER ERROR MESSAGE
      "ERROR: <input>:6:3: Syntax error: expected ']'\n"
      " |  \r\n"
@@ -1173,7 +1150,7 @@ std::vector<TestInfo> test_cases = {
      "ERROR: <input>:1:7: Syntax error: token recognition error at: '`'\n"
      " | a.`b c`\n"
      " | ......^",
-     "", "", "", "",
+     "", "", "",
      // PRATT PARSER ERROR MESSAGE
      "ERROR: <input>:1:3: unexpected quoted identifier\n"
      " | a.`b c`\n"
@@ -1185,7 +1162,7 @@ std::vector<TestInfo> test_cases = {
      "ERROR: <input>:1:8: Syntax error: token recognition error at: '`'\n"
      " | a.`@foo`\n"
      " | .......^",
-     "", "", "", "",
+     "", "", "",
      // PRATT PARSER ERROR MESSAGE
      "ERROR: <input>:1:3: unexpected quoted identifier\n"
      " | a.`@foo`\n"
@@ -1197,7 +1174,7 @@ std::vector<TestInfo> test_cases = {
      "ERROR: <input>:1:8: Syntax error: token recognition error at: '`'\n"
      " | a.`$foo`\n"
      " | .......^",
-     "", "", "", "",
+     "", "", "",
      // PRATT PARSER ERROR MESSAGE
      "ERROR: <input>:1:3: unexpected quoted identifier\n"
      " | a.`$foo`\n"
@@ -1210,7 +1187,7 @@ std::vector<TestInfo> test_cases = {
      "BYTES, IDENTIFIER}\n"
      " | `a.b`\n"
      " | ^",
-     "", "", "", "",
+     "", "", "",
      // PRATT PARSER ERROR MESSAGE
      "ERROR: <input>:1:1: unexpected quoted identifier\n"
      " | `a.b`\n"
@@ -1226,7 +1203,7 @@ std::vector<TestInfo> test_cases = {
      "_INT, NUM_UINT, STRING, BYTES, IDENTIFIER}\n"
      " | `a.b`()\n"
      " | ......^",
-     "", "", "", "",
+     "", "", "",
      // PRATT PARSER ERROR MESSAGE
      "ERROR: <input>:1:1: unexpected quoted identifier\n"
      " | `a.b`()\n"
@@ -1235,7 +1212,7 @@ std::vector<TestInfo> test_cases = {
      "ERROR: <input>:1:10: Syntax error: mismatched input '(' expecting <EOF>\n"
      " | foo.`a.b`()\n"
      " | .........^",
-     "", "", "", "",
+     "", "", "",
      // PRATT PARSER ERROR MESSAGE
      "ERROR: <input>:1:5: unexpected quoted identifier\n"
      " | foo.`a.b`()\n"
@@ -1292,8 +1269,7 @@ std::vector<TestInfo> test_cases = {
      "    @result^#24:Expr.Ident#\n"
      "  )^#25:Expr.Call#,\n"
      "  // Result\n"
-     "  @result^#26:Expr.Ident#)^#27:Expr.Comprehension#"
-     "",
+     "  @result^#26:Expr.Ident#)^#27:Expr.Comprehension#",
      "", "", "",
      "x^#1:Expr.Ident#.filter(\n"
      "  y^#3:Expr.Ident#,\n"
@@ -1515,12 +1491,7 @@ std::vector<TestInfo> test_cases = {
     {"{?'key': value}",
      "{\n  "
      "?\"key\"^#3:string#:value^#4:Expr.Ident#^#2:Expr.CreateStruct.Entry#\n}^#"
-     "1:Expr.CreateStruct#",
-     "", "", "", "",
-     // PRATT PARSER AST
-     "{\n"
-     "  ?\"key\"^#2:string#:value^#4:Expr.Ident#^#3:Expr.CreateStruct.Entry#\n"
-     "}^#1:Expr.CreateStruct#"},
+     "1:Expr.CreateStruct#"},
     {"[?a, ?b]",
      "[\n  ?a^#2:Expr.Ident#,\n  ?b^#3:Expr.Ident#\n]^#1:Expr.CreateList#"},
     {"[?a[?b]]",
@@ -1759,13 +1730,8 @@ TEST_P(ExpressionTest, Parse) {
     KindAndIdAdorner kind_and_id_adorner;
     ExprPrinter w(kind_and_id_adorner);
     std::string adorned_string = w.PrintProto(result->parsed_expr().expr());
-    if (options_.enable_pratt_parser && !test_info.P_PRATT.empty()) {
-      EXPECT_EQ(test_info.P_PRATT, adorned_string)
-          << result->parsed_expr().ShortDebugString();
-    } else {
-      EXPECT_EQ(test_info.P, adorned_string)
-          << result->parsed_expr().ShortDebugString();
-    }
+    EXPECT_EQ(test_info.P, adorned_string)
+        << result->parsed_expr().ShortDebugString();
   }
 
   if (!options_.enable_pratt_parser && !test_info.L.empty()) {
