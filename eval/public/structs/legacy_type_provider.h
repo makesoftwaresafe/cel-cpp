@@ -53,7 +53,7 @@ class LegacyTypeProvider {
   // created ones, the TypeInfoApis returned from this method should be the same
   // as the ones used in value creation.
   virtual std::optional<const LegacyTypeInfoApis*> ProvideLegacyTypeInfo(
-      ABSL_ATTRIBUTE_UNUSED absl::string_view name) const {
+      [[maybe_unused]] absl::string_view name) const {
     return std::nullopt;
   }
 };
