@@ -70,7 +70,7 @@ struct RuntimeEnv final {
 
   bool IsInitialized() const { return well_known_types.IsInitialized(); }
 
-  ABSL_ATTRIBUTE_UNUSED
+  [[maybe_unused]]
   const absl_nonnull std::shared_ptr<const google::protobuf::DescriptorPool>
       descriptor_pool;
 
