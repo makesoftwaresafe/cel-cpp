@@ -77,7 +77,7 @@ constexpr Kind TypeKindToKind(TypeKind kind) {
   return static_cast<Kind>(static_cast<std::underlying_type_t<TypeKind>>(kind));
 }
 
-constexpr bool KindIsTypeKind(Kind kind ABSL_ATTRIBUTE_UNUSED) {
+constexpr bool KindIsTypeKind(Kind kind [[maybe_unused]]) {
   // Currently all Kind are valid TypeKind.
   return true;
 }
