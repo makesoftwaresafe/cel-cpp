@@ -26,7 +26,7 @@
 #include "common/value.h"
 #include "eval/public/cel_value.h"
 #include "eval/public/message_wrapper.h"
-#include "eval/public/structs/cel_proto_wrap_util.h"
+#include "eval/public/structs/cel_proto_wrap_value_to_message.h"
 #include "eval/public/structs/proto_message_type_adapter.h"
 #include "eval/public/structs/trivial_legacy_type_info_internal.h"
 #include "google/protobuf/arena.h"
