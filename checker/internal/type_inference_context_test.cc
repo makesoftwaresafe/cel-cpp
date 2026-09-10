@@ -846,5 +846,267 @@ TEST(TypeInferenceContextTest, AssignabilityContextReset) {
               IsTypeKind(TypeKind::kDouble));
 }
 
+TEST(TypeInferenceContextTest,
+     TypeTypeAssignability_ConcreteTypes_Coassignable) {
+  google::protobuf::Arena arena;
+  TypeInferenceContext context(&arena);
+
+  Type int_type = TypeType(&arena, IntType());
+  Type string_type = TypeType(&arena, StringType());
+
+  EXPECT_TRUE(context.IsAssignable(int_type, string_type));
+  EXPECT_TRUE(context.IsAssignable(string_type, int_type));
+}
+
+TEST(TypeInferenceContextTest, TypeTypeAssignability_MapContainerErasure) {
+  google::protobuf::Arena arena;
+  TypeInferenceContext context(&arena);
+
+  Type map_int_uint = TypeType(&arena, MapType(&arena, IntType(), UintType()));
+  Type map_dyn_dyn = TypeType(&arena, MapType(&arena, DynType(), DynType()));
+
+  EXPECT_TRUE(context.IsAssignable(map_int_uint, map_dyn_dyn));
+}
+
+TEST(TypeInferenceContextTest, TypeTypeAssignability_ListContainerErasure) {
+  google::protobuf::Arena arena;
+  TypeInferenceContext context(&arena);
+
+  Type list_int = TypeType(&arena, ListType(&arena, IntType()));
+  Type list_dyn = TypeType(&arena, ListType(&arena, DynType()));
+
+  EXPECT_TRUE(context.IsAssignable(list_int, list_dyn));
+}
+
+TEST(TypeInferenceContextTest,
+     TypeTypeAssignability_TypeParamTarget_BindsConcreteType) {
+  google::protobuf::Arena arena;
+  TypeInferenceContext context(&arena);
+
+  Type type_param_t =
+      context.InstantiateTypeParams(TypeType(&arena, TypeParamType("T")));
+  Type from_type = TypeType(&arena, IntType());
+
+  EXPECT_TRUE(context.IsAssignable(from_type, type_param_t));
+
+  Type resolved_type = context.FinalizeType(type_param_t);
+  ASSERT_THAT(resolved_type, IsTypeKind(TypeKind::kType));
+  EXPECT_THAT(resolved_type.AsType()->GetParameters(),
+              ElementsAre(IsTypeKind(TypeKind::kInt)));
+}
+
+TEST(TypeInferenceContextTest,
+     TypeTypeAssignability_TypeParamSource_BindsConcreteType) {
+  google::protobuf::Arena arena;
+  TypeInferenceContext context(&arena);
+
+  Type type_param_t =
+      context.InstantiateTypeParams(TypeType(&arena, TypeParamType("T")));
+  Type to_type = TypeType(&arena, IntType());
+
+  EXPECT_TRUE(context.IsAssignable(type_param_t, to_type));
+
+  Type resolved_type = context.FinalizeType(type_param_t);
+  ASSERT_THAT(resolved_type, IsTypeKind(TypeKind::kType));
+  EXPECT_THAT(resolved_type.AsType()->GetParameters(),
+              ElementsAre(IsTypeKind(TypeKind::kInt)));
+}
+
+TEST(TypeInferenceContextTest, TypeTypeAssignability_NestedTypeParam_Unifies) {
+  google::protobuf::Arena arena;
+  TypeInferenceContext context(&arena);
+
+  Type type_param_t =
+      context.InstantiateTypeParams(TypeType(&arena, TypeParamType("T")));
+  Type type_param_r = context.InstantiateTypeParams(
+      TypeType(&arena, TypeType(&arena, TypeParamType("R"))));
+
+  EXPECT_TRUE(context.IsAssignable(type_param_t, type_param_r));
+}
+
+TEST(TypeInferenceContextTest,
+     TypeTypeAssignability_DeeplyNestedTypeParam_BindsConcreteType) {
+  google::protobuf::Arena arena;
+  TypeInferenceContext context(&arena);
+
+  Type from_type = TypeType(&arena, TypeType(&arena, IntType()));
+  Type to_type = context.InstantiateTypeParams(
+      TypeType(&arena, TypeType(&arena, TypeParamType("T"))));
+
+  EXPECT_TRUE(context.IsAssignable(from_type, to_type));
+
+  Type resolved_type = context.FinalizeType(to_type);
+  ASSERT_THAT(resolved_type, IsTypeKind(TypeKind::kType));
+  Type inner_type = resolved_type.AsType()->GetType();
+  ASSERT_THAT(inner_type, IsTypeKind(TypeKind::kType));
+  EXPECT_THAT(inner_type.AsType()->GetParameters(),
+              ElementsAre(IsTypeKind(TypeKind::kInt)));
+}
+
+TEST(TypeInferenceContextTest,
+     TypeTypeAssignability_CompositeListTypeParam_BindsConcreteType) {
+  google::protobuf::Arena arena;
+  TypeInferenceContext context(&arena);
+
+  Type from_type = TypeType(&arena, ListType(&arena, IntType()));
+  Type to_type = context.InstantiateTypeParams(
+      TypeType(&arena, ListType(&arena, TypeParamType("T"))));
+
+  EXPECT_TRUE(context.IsAssignable(from_type, to_type));
+
+  Type resolved_type = context.FinalizeType(to_type);
+  ASSERT_THAT(resolved_type, IsTypeKind(TypeKind::kType));
+  Type inner_type = resolved_type.AsType()->GetType();
+  ASSERT_THAT(inner_type, IsTypeKind(TypeKind::kList));
+  EXPECT_THAT(inner_type.AsList()->GetElement(), IsTypeKind(TypeKind::kInt));
+}
+
+TEST(TypeInferenceContextTest,
+     TypeTypeAssignability_CompositeMapTypeParam_BindsConcreteTypes) {
+  google::protobuf::Arena arena;
+  TypeInferenceContext context(&arena);
+
+  Type from_type = TypeType(&arena, MapType(&arena, StringType(), IntType()));
+  Type to_type = context.InstantiateTypeParams(TypeType(
+      &arena, MapType(&arena, TypeParamType("K"), TypeParamType("V"))));
+
+  EXPECT_TRUE(context.IsAssignable(from_type, to_type));
+
+  Type resolved_type = context.FinalizeType(to_type);
+  ASSERT_THAT(resolved_type, IsTypeKind(TypeKind::kType));
+  Type inner_type = resolved_type.AsType()->GetType();
+  ASSERT_THAT(inner_type, IsTypeKind(TypeKind::kMap));
+  EXPECT_THAT(inner_type.AsMap()->GetKey(), IsTypeKind(TypeKind::kString));
+  EXPECT_THAT(inner_type.AsMap()->GetValue(), IsTypeKind(TypeKind::kInt));
+}
+
+TEST(TypeInferenceContextTest,
+     TypeTypeAssignability_OptionalTypeParam_Unifies) {
+  google::protobuf::Arena arena;
+  TypeInferenceContext context(&arena);
+
+  Type from_type = TypeType(&arena, OptionalType(&arena, IntType()));
+  Type to_type = context.InstantiateTypeParams(
+      TypeType(&arena, OptionalType(&arena, TypeParamType("T"))));
+
+  EXPECT_TRUE(context.IsAssignable(from_type, to_type));
+
+  Type resolved_type = context.FinalizeType(to_type);
+  ASSERT_THAT(resolved_type, IsTypeKind(TypeKind::kType));
+  Type inner_type = resolved_type.AsType()->GetType();
+  ASSERT_THAT(inner_type, IsTypeKind(TypeKind::kOpaque));
+  EXPECT_THAT(inner_type.AsOpaque()->GetParameters(),
+              ElementsAre(IsTypeKind(TypeKind::kInt)));
+}
+
+TEST(TypeInferenceContextTest,
+     TypeTypeAssignability_IncompatibleTypeParams_ReturnsFalse) {
+  google::protobuf::Arena arena;
+  TypeInferenceContext context(&arena);
+
+  Type from_type = context.InstantiateTypeParams(
+      TypeType(&arena, ListType(&arena, TypeParamType("T"))));
+  Type to_type = TypeType(&arena, IntType());
+
+  EXPECT_FALSE(context.IsAssignable(from_type, to_type));
+}
+
+TEST(TypeInferenceContextTest,
+     TypeTypeAssignability_ConflictingBoundTypeParam_ReturnsFalse) {
+  google::protobuf::Arena arena;
+  TypeInferenceContext context(&arena);
+
+  Type param_t =
+      context.InstantiateTypeParams(TypeType(&arena, TypeParamType("T")));
+  EXPECT_TRUE(context.IsAssignable(TypeType(&arena, StringType()), param_t));
+  EXPECT_FALSE(context.IsAssignable(param_t, TypeType(&arena, IntType())));
+}
+
+TEST(TypeInferenceContextTest,
+     TypeTypeAssignability_OccursCheck_FailsOnSelfReference) {
+  google::protobuf::Arena arena;
+  TypeInferenceContext context(&arena);
+
+  Type param_t =
+      context.InstantiateTypeParams(TypeType(&arena, TypeParamType("T")));
+  Type to_type = TypeType(&arena, param_t);
+
+  EXPECT_FALSE(context.IsAssignable(param_t, to_type));
+}
+
+TEST(TypeInferenceContextTest,
+     TypeTypeAssignability_OccursCheck_FailsOnTransitiveCycle) {
+  google::protobuf::Arena arena;
+  TypeInferenceContext context(&arena);
+
+  Type param_t =
+      context.InstantiateTypeParams(TypeType(&arena, TypeParamType("T")));
+  Type param_r =
+      context.InstantiateTypeParams(TypeType(&arena, TypeParamType("R")));
+
+  EXPECT_TRUE(context.IsAssignable(param_t, TypeType(&arena, param_r)));
+  EXPECT_FALSE(context.IsAssignable(param_r, TypeType(&arena, param_t)));
+}
+
+TEST(TypeInferenceContextTest,
+     TypeTypeOverloadResolution_TypeParamInTypeType_ResolvesReturnTypeInt) {
+  google::protobuf::Arena arena;
+  TypeInferenceContext context(&arena);
+
+  ASSERT_OK_AND_ASSIGN(
+      FunctionDecl decl,
+      MakeFunctionDecl("cast",
+                       MakeOverloadDecl("cast_t", TypeParamType("T"), DynType(),
+                                        TypeType(&arena, TypeParamType("T")))));
+
+  std::optional<TypeInferenceContext::OverloadResolution> resolution =
+      context.ResolveOverload(decl, {StringType(), TypeType(&arena, IntType())},
+                              false);
+  ASSERT_TRUE(resolution.has_value());
+  EXPECT_THAT(context.FinalizeType(resolution->result_type),
+              IsTypeKind(TypeKind::kInt));
+}
+
+TEST(TypeInferenceContextTest,
+     TypeTypeOverloadResolution_TypeParamInTypeType_ResolvesReturnTypeString) {
+  google::protobuf::Arena arena;
+  TypeInferenceContext context(&arena);
+
+  ASSERT_OK_AND_ASSIGN(
+      FunctionDecl decl,
+      MakeFunctionDecl("cast",
+                       MakeOverloadDecl("cast_t", TypeParamType("T"), DynType(),
+                                        TypeType(&arena, TypeParamType("T")))));
+
+  std::optional<TypeInferenceContext::OverloadResolution> resolution =
+      context.ResolveOverload(decl, {IntType(), TypeType(&arena, StringType())},
+                              false);
+  ASSERT_TRUE(resolution.has_value());
+  EXPECT_THAT(context.FinalizeType(resolution->result_type),
+              IsTypeKind(TypeKind::kString));
+}
+
+TEST(TypeInferenceContextTest,
+     TypeTypeOverloadResolution_TypeParamInComposite_ResolvesReturnType) {
+  google::protobuf::Arena arena;
+  TypeInferenceContext context(&arena);
+
+  ASSERT_OK_AND_ASSIGN(
+      FunctionDecl decl,
+      MakeFunctionDecl(
+          "first_elem_type",
+          MakeOverloadDecl(
+              "first_elem_type_overload", TypeParamType("T"), DynType(),
+              TypeType(&arena, ListType(&arena, TypeParamType("T"))))));
+
+  std::optional<TypeInferenceContext::OverloadResolution> resolution =
+      context.ResolveOverload(
+          decl, {StringType(), TypeType(&arena, ListType(&arena, IntType()))},
+          false);
+  ASSERT_TRUE(resolution.has_value());
+  EXPECT_THAT(context.FinalizeType(resolution->result_type),
+              IsTypeKind(TypeKind::kInt));
+}
+
 }  // namespace
 }  // namespace cel::checker_internal

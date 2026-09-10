@@ -112,13 +112,13 @@ Type TypeDynType() {
 
 Type TypeListType() {
   static absl::NoDestructor<Type> kInstance(
-      TypeType(BuiltinsArena(), ListOfA()));
+      TypeType(BuiltinsArena(), ListType(BuiltinsArena(), DynType())));
   return *kInstance;
 }
 
 Type TypeMapType() {
-  static absl::NoDestructor<Type> kInstance(
-      TypeType(BuiltinsArena(), MapOfAB()));
+  static absl::NoDestructor<Type> kInstance(TypeType(
+      BuiltinsArena(), MapType(BuiltinsArena(), DynType(), DynType())));
   return *kInstance;
 }
 

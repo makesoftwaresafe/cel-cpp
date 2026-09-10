@@ -153,6 +153,19 @@ std::optional<Type> WrapperToPrimitive(const Type& t) {
   }
 }
 
+// Tests whether the type contains any type params directly or transitively.
+bool HasTypeParam(const Type& type) {
+  if (type.kind() == TypeKind::kTypeParam) {
+    return true;
+  }
+  for (const auto& param : type.GetParameters()) {
+    if (HasTypeParam(param)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 }  // namespace
 
 Type TypeInferenceContext::InstantiateTypeParams(const Type& type) {
@@ -252,6 +265,26 @@ bool TypeInferenceContext::IsAssignableInternal(
   Type to_subs = Substitute(to, prospective_substitutions);
   Type from_subs = Substitute(from, prospective_substitutions);
 
+  if (from_subs.kind() == TypeKind::kType &&
+      to_subs.kind() == TypeKind::kType) {
+    Type from_inner = from_subs.AsType()->GetType();
+    Type to_inner = to_subs.AsType()->GetType();
+    // If either type contains a type parameter (e.g., type(T) in foo(data,
+    // type(T)) -> T), delegate to inner type unification to bind or validate
+    // type parameter substitutions. Returns true if the inner types
+    // structurally match, unify with an unbound type param, or conform to an
+    // existing binding in 'prospective_substitutions'. Returns false on
+    // structural/kind mismatches (e.g., int vs list(T)), occurs-check cycles,
+    // or conflicting type param bindings.
+    if (HasTypeParam(from_inner) || HasTypeParam(to_inner)) {
+      return IsAssignableInternal(from_inner, to_inner,
+                                  prospective_substitutions);
+    }
+    // Concrete types are coassignable in CEL (e.g., type(1) == type("a"),
+    // type([1]) == list).
+    return true;
+  }
+
   // Types always assignable to themselves.
   // Remainder is checking for assignability across different types.
   if (to_subs == from_subs) {
@@ -311,13 +344,6 @@ bool TypeInferenceContext::IsAssignableInternal(
     if (to_subs.IsNull() && IsLegacyNullable(from_subs)) {
       return true;
     }
-  }
-
-  if (from_subs.kind() == TypeKind::kType &&
-      to_subs.kind() == TypeKind::kType) {
-    // Types are always assignable to themselves (even if differently
-    // parameterized).
-    return true;
   }
 
   if (to_subs.kind() == TypeKind::kEnum && from_subs.kind() == TypeKind::kInt) {

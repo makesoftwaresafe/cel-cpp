@@ -335,5 +335,39 @@ INSTANTIATE_TEST_SUITE_P(
                  "== null",
                  _, "no matching overload for '_==_'"}));
 
+class OptionalListTypePermutationsTest
+    : public testing::TestWithParam<std::string> {};
+
+TEST_P(OptionalListTypePermutationsTest, ResolvesToListDyn) {
+  ASSERT_OK_AND_ASSIGN(
+      std::unique_ptr<TypeCheckerBuilder> builder,
+      CreateTypeCheckerBuilder(GetSharedTestingDescriptorPool()));
+  ASSERT_THAT(builder->AddLibrary(StandardCheckerLibrary()), IsOk());
+  ASSERT_THAT(builder->AddLibrary(OptionalCheckerLibrary()), IsOk());
+  ASSERT_OK_AND_ASSIGN(std::unique_ptr<TypeChecker> checker,
+                       std::move(*builder).Build());
+
+  const std::string& expr = GetParam();
+  ASSERT_OK_AND_ASSIGN(auto ast, MakeTestParsedAst(expr));
+  ASSERT_OK_AND_ASSIGN(auto result, checker->Check(std::move(ast)));
+  EXPECT_THAT(result.GetIssues(), IsEmpty());
+  ASSERT_OK_AND_ASSIGN(auto checked_ast, result.ReleaseAst());
+  EXPECT_EQ(checked_ast->GetTypeOrDyn(checked_ast->root_expr().id()),
+            TypeSpec(ListTypeSpec(std::make_unique<TypeSpec>(DynTypeSpec()))));
+  ASSERT_EQ(checked_ast->root_expr().list_expr().elements().size(), 3);
+  for (const auto& elem : checked_ast->root_expr().list_expr().elements()) {
+    EXPECT_TRUE(checked_ast->GetTypeOrDyn(elem.expr().id()).has_type());
+  }
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    OptionalTests, OptionalListTypePermutationsTest,
+    ::testing::Values("[type([]), int, type(optional.none())]",
+                      "[type([]), type(optional.none()), int]",
+                      "[int, type([]), type(optional.none())]",
+                      "[int, type(optional.none()), type([])]",
+                      "[type(optional.none()), type([]), int]",
+                      "[type(optional.none()), int, type([])]"));
+
 }  // namespace
 }  // namespace cel
