@@ -245,14 +245,16 @@ absl::Status ValidateType(const Type& t, bool check_type_param_name,
       return absl::OkStatus();
     }
     case TypeKind::kOpaque: {
-      for (Type type_param : t.AsOpaque()->GetParameters()) {
+      OpaqueType opaque_type = t.GetOpaque();
+      for (Type type_param : opaque_type.GetParameters()) {
         CEL_RETURN_IF_ERROR(ValidateType(type_param, check_type_param_name,
                                          depth_limit, remaining_depth));
       }
       return absl::OkStatus();
     }
     case TypeKind::kType: {
-      for (Type type_param : t.AsType()->GetParameters()) {
+      TypeType type_type = t.GetType();
+      for (Type type_param : type_type.GetParameters()) {
         CEL_RETURN_IF_ERROR(ValidateType(type_param, check_type_param_name,
                                          depth_limit, remaining_depth));
       }
