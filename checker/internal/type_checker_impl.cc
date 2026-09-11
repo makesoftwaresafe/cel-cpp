@@ -838,7 +838,8 @@ void ResolveVisitor::PostVisitComprehensionSubexpression(
                            GetDeducedType(&comprehension.accu_init())));
       break;
     case ComprehensionArg::ITER_RANGE: {
-      Type range_type = GetDeducedType(&comprehension.iter_range());
+      Type range_type = inference_context_->FullySubstitute(
+          GetDeducedType(&comprehension.iter_range()), /*free_to_dyn=*/false);
       Type iter_type = DynType();   // iter_var for non comprehensions v2.
       Type iter_type1 = DynType();  // iter_var for comprehensions v2.
       Type iter_type2 = DynType();  // iter_var2 for comprehensions v2.
@@ -851,7 +852,14 @@ void ResolveVisitor::PostVisitComprehensionSubexpression(
           iter_type = iter_type1 = range_type.GetMap().key();
           iter_type2 = range_type.GetMap().value();
           break;
+        case TypeKind::kTypeParam:
+          // Set the range type to DYN to prevent assignment to a potentially
+          // incorrect type at a later point in type-checking. The IsAssignable
+          // call will update the type substitutions for the type param.
+          inference_context_->IsAssignable(DynType(), range_type);
+          break;
         case TypeKind::kDyn:
+        case TypeKind::kError:
           break;
         default:
           ReportIssue(TypeCheckIssue::CreateError(

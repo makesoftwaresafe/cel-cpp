@@ -1287,6 +1287,76 @@ TEST(TypeCheckerImplTest, ComprehensionDynRange) {
   EXPECT_THAT(result.GetIssues(), IsEmpty());
 }
 
+TEST(TypeCheckerImplTest, EmptyListRangeNestedListComprehension) {
+  TypeCheckEnv env(GetSharedTestingDescriptorPool());
+  google::protobuf::Arena arena;
+  ASSERT_THAT(RegisterMinimalBuiltins(&arena, env), IsOk());
+
+  TypeCheckerImpl impl(std::move(env));
+  ASSERT_OK_AND_ASSIGN(auto ast, MakeTestParsedAst("[].map(x, x.map(y, y))"));
+  ASSERT_OK_AND_ASSIGN(ValidationResult result, impl.Check(std::move(ast)));
+
+  EXPECT_TRUE(result.IsValid()) << result.FormatError();
+  EXPECT_THAT(result.GetIssues(), IsEmpty());
+
+  ASSERT_OK_AND_ASSIGN(auto checked_ast, result.ReleaseAst());
+  EXPECT_EQ(checked_ast->GetReturnType(),
+            AstType(ListTypeSpec(std::make_unique<AstType>(
+                ListTypeSpec(std::make_unique<AstType>(DynTypeSpec()))))));
+}
+
+TEST(TypeCheckerImplTest, EmptyMapRangeNestedComprehension) {
+  TypeCheckEnv env(GetSharedTestingDescriptorPool());
+  google::protobuf::Arena arena;
+  ASSERT_THAT(RegisterMinimalBuiltins(&arena, env), IsOk());
+
+  TypeCheckerImpl impl(std::move(env));
+  ASSERT_OK_AND_ASSIGN(auto ast, MakeTestParsedAst("{}.map(k, k.map(y, y))"));
+  ASSERT_OK_AND_ASSIGN(ValidationResult result, impl.Check(std::move(ast)));
+
+  EXPECT_TRUE(result.IsValid()) << result.FormatError();
+  EXPECT_THAT(result.GetIssues(), IsEmpty());
+
+  ASSERT_OK_AND_ASSIGN(auto checked_ast, result.ReleaseAst());
+  EXPECT_EQ(checked_ast->GetReturnType(),
+            AstType(ListTypeSpec(std::make_unique<AstType>(
+                ListTypeSpec(std::make_unique<AstType>(DynTypeSpec()))))));
+}
+
+TEST(TypeCheckerImplTest, EmptyRangeNestedComprehensionPredicate) {
+  TypeCheckEnv env(GetSharedTestingDescriptorPool());
+  google::protobuf::Arena arena;
+  ASSERT_THAT(RegisterMinimalBuiltins(&arena, env), IsOk());
+
+  TypeCheckerImpl impl(std::move(env));
+  ASSERT_OK_AND_ASSIGN(auto ast,
+                       MakeTestParsedAst("[].all(x, x.all(y, y == 1))"));
+  ASSERT_OK_AND_ASSIGN(ValidationResult result, impl.Check(std::move(ast)));
+
+  EXPECT_TRUE(result.IsValid()) << result.FormatError();
+  EXPECT_THAT(result.GetIssues(), IsEmpty());
+
+  ASSERT_OK_AND_ASSIGN(auto checked_ast, result.ReleaseAst());
+  EXPECT_EQ(checked_ast->GetReturnType(), AstType(PrimitiveType::kBool));
+}
+
+TEST(TypeCheckerImplTest, EmptyRangeNestedComprehensionBeforeConstraint) {
+  TypeCheckEnv env(GetSharedTestingDescriptorPool());
+  google::protobuf::Arena arena;
+  ASSERT_THAT(RegisterMinimalBuiltins(&arena, env), IsOk());
+
+  TypeCheckerImpl impl(std::move(env));
+  ASSERT_OK_AND_ASSIGN(
+      auto ast, MakeTestParsedAst("[].all(x, x.all(y, y == 1) && x == 1)"));
+  ASSERT_OK_AND_ASSIGN(ValidationResult result, impl.Check(std::move(ast)));
+
+  EXPECT_TRUE(result.IsValid()) << result.FormatError();
+  EXPECT_THAT(result.GetIssues(), IsEmpty());
+
+  ASSERT_OK_AND_ASSIGN(auto checked_ast, result.ReleaseAst());
+  EXPECT_EQ(checked_ast->GetReturnType(), AstType(PrimitiveType::kBool));
+}
+
 TEST(TypeCheckerImplTest, BasicOvlResolution) {
   TypeCheckEnv env(GetSharedTestingDescriptorPool());
   google::protobuf::Arena arena;
