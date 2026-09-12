@@ -199,7 +199,8 @@ Type TypeInferenceContext::InstantiateTypeParams(
     case TypeKind::kUintWrapper:
       return type;
     case TypeKind::kTypeParam: {
-      absl::string_view name = type.AsTypeParam()->name();
+      TypeParamType type_param = type.GetTypeParam();
+      absl::string_view name = type_param.name();
       if (IsTypeVar(name)) {
         // Already instantiated (e.g. list comprehension variable).
         return type;
@@ -494,7 +495,8 @@ bool TypeInferenceContext::OccursWithin(
   // T3 -> T2 -> null_type;
   Type substitution = type;
   while (substitution.kind() == TypeKind::kTypeParam) {
-    absl::string_view param_name = substitution.AsTypeParam()->name();
+    TypeParamType type_param = substitution.GetTypeParam();
+    absl::string_view param_name = type_param.name();
     if (param_name == var_name) {
       return true;
     }
@@ -534,7 +536,8 @@ bool TypeInferenceContext::IsAssignableWithConstraints(
   }
 
   if (to.kind() == TypeKind::kTypeParam) {
-    absl::string_view name = to.AsTypeParam()->name();
+    TypeParamType to_param = to.GetTypeParam();
+    absl::string_view name = to_param.name();
     if (!OccursWithin(name, from, prospective_substitutions)) {
       prospective_substitutions[name] = from;
       return true;
@@ -542,7 +545,8 @@ bool TypeInferenceContext::IsAssignableWithConstraints(
   }
 
   if (from.kind() == TypeKind::kTypeParam) {
-    absl::string_view name = from.AsTypeParam()->name();
+    TypeParamType from_param = from.GetTypeParam();
+    absl::string_view name = from_param.name();
     if (!OccursWithin(name, to, prospective_substitutions)) {
       prospective_substitutions[name] = to;
       return true;
@@ -663,11 +667,12 @@ Type TypeInferenceContext::FullySubstitute(const Type& type,
       return MapType(arena_, key, value);
     }
     case TypeKind::kOpaque: {
+      OpaqueType opaque_type = type.GetOpaque();
       std::vector<Type> types;
-      for (const auto& param : type.AsOpaque()->GetParameters()) {
+      for (const auto& param : opaque_type.GetParameters()) {
         types.push_back(FullySubstitute(param, free_to_dyn));
       }
-      return OpaqueType(arena_, type.AsOpaque()->name(), types);
+      return OpaqueType(arena_, opaque_type.name(), types);
     }
     default:
       return type;
