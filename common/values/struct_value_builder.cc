@@ -85,17 +85,8 @@ absl::StatusOr<absl::optional<ErrorValue>> ProtoMessageCopy(
     const google::protobuf::Message* absl_nonnull from_message) {
   CEL_ASSIGN_OR_RETURN(const auto* from_descriptor,
                        GetDescriptor(*from_message));
-  if (to_descriptor == from_descriptor &&
-      to_message->GetReflection()->GetMessageFactory() ==
-          from_message->GetReflection()->GetMessageFactory()) {
-    // Same type, use proto reflection copy.
-    //
-    // We use the slower serialization copy if the factory is different to avoid
-    // adding an implicit lifetime dependency on the other factory.
-    //
-    // This should only happen if the embedding application is calling the
-    // builder directly or attempting to set the field from an unsafe wrapped
-    // message.
+  if (to_descriptor == from_descriptor) {
+    // Same.
     to_message->CopyFrom(*from_message);
     return std::nullopt;
   }

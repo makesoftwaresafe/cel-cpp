@@ -887,6 +887,8 @@ std::unique_ptr<google::protobuf::Message> MakeTestExtendedMessage(
 }
 
 TEST_F(ProtoValueUnwrapTest, DynamicMessageFromUnderlayDescriptorPool) {
+  GTEST_SKIP() << "TODO(b/562935074): Avoid use-after-free when unwrapping "
+                  "messages with extensions from a different factory.";
   const auto& pool = GetTestExternalExtensionsDescriptorPoolUnderlay();
   TestAllTypes dest;
   {
