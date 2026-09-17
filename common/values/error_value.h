@@ -31,7 +31,6 @@
 #include "absl/log/absl_check.h"
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
-#include "absl/strings/cord.h"
 #include "absl/strings/string_view.h"
 #include "common/arena.h"
 #include "common/type.h"
@@ -45,6 +44,9 @@
 namespace cel {
 
 class Value;
+class ErrorValue;
+
+ErrorValue DuplicateKeyError();
 
 // `ErrorValue` represents values of the `ErrorType`.
 class ABSL_ATTRIBUTE_TRIVIAL_ABI ErrorValue final
@@ -52,8 +54,22 @@ class ABSL_ATTRIBUTE_TRIVIAL_ABI ErrorValue final
  public:
   static constexpr ValueKind kKind = ValueKind::kError;
 
-  explicit ErrorValue(absl::Status value) : arena_(nullptr) {
-    ::new (static_cast<void*>(&status_.val[0])) absl::Status(std::move(value));
+  // Returns a new ErrorValue created from absl::Status. The resulting storage
+  // for the underlying representation of ErrorValue is stored on the arena.
+  [[nodiscard]]
+  static ErrorValue From(absl::Status value,
+                         google::protobuf::Arena* absl_nonnull arena
+                             ABSL_ATTRIBUTE_LIFETIME_BOUND) {
+    ABSL_DCHECK(!value.ok()) << "ErrorValue requires a non-OK absl::Status";
+    ABSL_DCHECK(arena != nullptr);
+    return ErrorValue(
+        arena, google::protobuf::Arena::Create<absl::Status>(arena, std::move(value)));
+  }
+
+  ABSL_DEPRECATED("Use From")
+  explicit ErrorValue(absl::Status value)
+      : arena_(nullptr), status_ptr_(nullptr) {
+    ::new (static_cast<void*>(&status_val_[0])) absl::Status(std::move(value));
     ABSL_DCHECK(*this) << "ErrorValue requires a non-OK absl::Status";
   }
 
@@ -127,80 +143,112 @@ class ABSL_ATTRIBUTE_TRIVIAL_ABI ErrorValue final
   explicit operator bool() const;
 
  private:
+  friend ErrorValue DuplicateKeyError();
   friend class common_internal::ValueMixin<ErrorValue>;
   friend struct ArenaTraits<ErrorValue>;
 
-  ErrorValue(google::protobuf::Arena* absl_nonnull arena,
+  ErrorValue(google::protobuf::Arena* absl_nullable arena,
              const absl::Status* absl_nonnull status)
-      : arena_(arena) {
-    status_.ptr = status;
-  }
+      : arena_(arena), status_ptr_(status) {}
 
   void CopyConstruct(const ErrorValue& other) {
     arena_ = other.arena_;
-    if (arena_ == nullptr) {
-      ::new (static_cast<void*>(&status_.val[0])) absl::Status(*std::launder(
-          reinterpret_cast<const absl::Status*>(&other.status_.val[0])));
-    } else {
-      status_.ptr = other.status_.ptr;
+    status_ptr_ = other.status_ptr_;
+    if (status_ptr_ == nullptr) {
+      ::new (static_cast<void*>(&status_val_[0])) absl::Status(*std::launder(
+          reinterpret_cast<const absl::Status*>(&other.status_val_[0])));
     }
   }
 
   void MoveConstruct(ErrorValue& other) {
     arena_ = other.arena_;
-    if (arena_ == nullptr) {
-      ::new (static_cast<void*>(&status_.val[0]))
+    status_ptr_ = other.status_ptr_;
+    if (status_ptr_ == nullptr) {
+      ::new (static_cast<void*>(&status_val_[0]))
           absl::Status(std::move(*std::launder(
-              reinterpret_cast<absl::Status*>(&other.status_.val[0]))));
-    } else {
-      status_.ptr = other.status_.ptr;
+              reinterpret_cast<absl::Status*>(&other.status_val_[0]))));
     }
   }
 
   void Destruct() {
-    if (arena_ == nullptr) {
-      std::launder(reinterpret_cast<absl::Status*>(&status_.val[0]))->~Status();
+    if (status_ptr_ == nullptr) {
+      std::launder(reinterpret_cast<absl::Status*>(&status_val_[0]))->~Status();
     }
   }
 
   google::protobuf::Arena* absl_nullable arena_;
-  union {
-    alignas(absl::Status) char val[sizeof(absl::Status)];
-    const absl::Status* absl_nonnull ptr;
-  } status_;
+  const absl::Status* absl_nullable status_ptr_ = nullptr;
+  alignas(absl::Status) char status_val_[sizeof(absl::Status)];
 };
 
+ABSL_DEPRECATED("Use the overload which takes google::protobuf::Arena*")
 ErrorValue NoSuchFieldError(absl::string_view field);
+ErrorValue NoSuchFieldError(absl::string_view field,
+                            google::protobuf::Arena* absl_nonnull arena);
 
+ABSL_DEPRECATED("Use the overload which takes google::protobuf::Arena*")
 ErrorValue NoSuchKeyError(absl::string_view key);
+ErrorValue NoSuchKeyError(absl::string_view key,
+                          google::protobuf::Arena* absl_nonnull arena);
 
+ABSL_DEPRECATED("Use the overload which takes google::protobuf::Arena*")
 ErrorValue NoSuchTypeError(absl::string_view type);
+ErrorValue NoSuchTypeError(absl::string_view type,
+                           google::protobuf::Arena* absl_nonnull arena);
 
 ErrorValue DuplicateKeyError();
 
+ABSL_DEPRECATED("Use the overload which takes google::protobuf::Arena*")
 ErrorValue TypeConversionError(absl::string_view from, absl::string_view to);
+ErrorValue TypeConversionError(absl::string_view from, absl::string_view to,
+                               google::protobuf::Arena* absl_nonnull arena);
 
+ABSL_DEPRECATED("Use the overload which takes google::protobuf::Arena*")
 ErrorValue TypeConversionError(const Type& from, const Type& to);
+ErrorValue TypeConversionError(const Type& from, const Type& to,
+                               google::protobuf::Arena* absl_nonnull arena);
 
+ABSL_DEPRECATED("Use the overload which takes google::protobuf::Arena*")
 ErrorValue IndexOutOfBoundsError(size_t index);
+ErrorValue IndexOutOfBoundsError(size_t index,
+                                 google::protobuf::Arena* absl_nonnull arena);
 
+ABSL_DEPRECATED("Use the overload which takes google::protobuf::Arena*")
 ErrorValue IndexOutOfBoundsError(ptrdiff_t index);
+ErrorValue IndexOutOfBoundsError(ptrdiff_t index,
+                                 google::protobuf::Arena* absl_nonnull arena);
 
 // Catch other integrals and forward them to the above ones. This is needed to
 // avoid ambiguous overload issues for smaller integral types like `int`.
 template <typename T>
+ABSL_DEPRECATED("Use the overload which takes google::protobuf::Arena*")
+std::enable_if_t<std::conjunction_v<std::is_integral<T>, std::is_unsigned<T>,
+                                    std::negation<std::is_same<T, size_t>>>,
+                 ErrorValue> IndexOutOfBoundsError(T index) {
+  static_assert(sizeof(T) <= sizeof(size_t));
+  return IndexOutOfBoundsError(static_cast<size_t>(index));
+}
+template <typename T>
 std::enable_if_t<std::conjunction_v<std::is_integral<T>, std::is_unsigned<T>,
                                     std::negation<std::is_same<T, size_t>>>,
                  ErrorValue>
-IndexOutOfBoundsError(T index) {
+IndexOutOfBoundsError(T index, google::protobuf::Arena* absl_nonnull arena) {
   static_assert(sizeof(T) <= sizeof(size_t));
   return IndexOutOfBoundsError(static_cast<size_t>(index));
+}
+template <typename T>
+ABSL_DEPRECATED("Use the overload which takes google::protobuf::Arena*")
+std::enable_if_t<std::conjunction_v<std::is_integral<T>, std::is_signed<T>,
+                                    std::negation<std::is_same<T, ptrdiff_t>>>,
+                 ErrorValue> IndexOutOfBoundsError(T index) {
+  static_assert(sizeof(T) <= sizeof(ptrdiff_t));
+  return IndexOutOfBoundsError(static_cast<ptrdiff_t>(index));
 }
 template <typename T>
 std::enable_if_t<std::conjunction_v<std::is_integral<T>, std::is_signed<T>,
                                     std::negation<std::is_same<T, ptrdiff_t>>>,
                  ErrorValue>
-IndexOutOfBoundsError(T index) {
+IndexOutOfBoundsError(T index, google::protobuf::Arena* absl_nonnull arena) {
   static_assert(sizeof(T) <= sizeof(ptrdiff_t));
   return IndexOutOfBoundsError(static_cast<ptrdiff_t>(index));
 }
@@ -215,11 +263,20 @@ bool IsNoSuchKey(const ErrorValue& value);
 
 class ErrorValueReturn final {
  public:
+  ABSL_DEPRECATED("Use constructor which takes google::protobuf::Arena*")
   ErrorValueReturn() = default;
 
-  ErrorValue operator()(absl::Status status) const {
-    return ErrorValue(std::move(status));
+  explicit ErrorValueReturn(google::protobuf::Arena* absl_nonnull arena) : arena_(arena) {
+    ABSL_DCHECK(arena != nullptr);
   }
+
+  ErrorValue operator()(absl::Status status) const {
+    return arena_ != nullptr ? ErrorValue::From(std::move(status), arena_)
+                             : ErrorValue(std::move(status));
+  }
+
+ private:
+  google::protobuf::Arena* arena_ = nullptr;
 };
 
 namespace common_internal {
@@ -248,13 +305,26 @@ class ErrorValueAssign final {
  public:
   ErrorValueAssign() = delete;
 
+  ABSL_DEPRECATED("Use constructor which takes google::protobuf::Arena*")
   explicit ErrorValueAssign(Value& value ABSL_ATTRIBUTE_LIFETIME_BOUND)
       : ErrorValueAssign(std::addressof(value)) {}
 
+  ABSL_DEPRECATED("Use constructor which takes google::protobuf::Arena*")
   explicit ErrorValueAssign(
       Value* absl_nonnull value ABSL_ATTRIBUTE_LIFETIME_BOUND)
       : value_(value) {
     ABSL_DCHECK(value != nullptr);
+  }
+
+  ErrorValueAssign(Value& value ABSL_ATTRIBUTE_LIFETIME_BOUND,
+                   google::protobuf::Arena* absl_nonnull arena)
+      : ErrorValueAssign(std::addressof(value), arena) {}
+
+  ErrorValueAssign(Value* absl_nonnull value ABSL_ATTRIBUTE_LIFETIME_BOUND,
+                   google::protobuf::Arena* absl_nonnull arena)
+      : value_(value), arena_(arena) {
+    ABSL_DCHECK(value != nullptr);
+    ABSL_DCHECK(arena != nullptr);
   }
 
   common_internal::ImplicitlyConvertibleStatus operator()(
@@ -262,12 +332,13 @@ class ErrorValueAssign final {
 
  private:
   Value* absl_nonnull value_;
+  google::protobuf::Arena* arena_ = nullptr;
 };
 
 template <>
 struct ArenaTraits<ErrorValue> {
   static bool trivially_destructible(const ErrorValue& value) {
-    return value.arena_ != nullptr;
+    return value.status_ptr_ != nullptr;
   }
 };
 

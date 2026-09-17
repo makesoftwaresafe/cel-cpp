@@ -46,46 +46,106 @@ const absl::Status& DefaultErrorValue() {
   return *value;
 }
 
+absl::Status MakeNoSuchFieldError(absl::string_view field) {
+  return absl::NotFoundError(
+      absl::StrCat("no_such_field", field.empty() ? "" : " : ", field));
+}
+
+absl::Status MakeNoSuchKeyError(absl::string_view key) {
+  return absl::NotFoundError(absl::StrCat("Key not found in map : ", key));
+}
+
+absl::Status MakeNoSuchTypeError(absl::string_view type) {
+  return absl::NotFoundError(absl::StrCat("type not found: ", type));
+}
+
+absl::Status MakeTypeConversionError(absl::string_view from,
+                                     absl::string_view to) {
+  return absl::InvalidArgumentError(
+      absl::StrCat("type conversion error from '", from, "' to '", to, "'"));
+}
+
+absl::Status MakeIndexOutOfBoundsError(size_t index) {
+  return absl::InvalidArgumentError(
+      absl::StrCat("index out of bounds: ", index));
+}
+
+absl::Status MakeIndexOutOfBoundsError(ptrdiff_t index) {
+  return absl::InvalidArgumentError(
+      absl::StrCat("index out of bounds: ", index));
+}
+
 }  // namespace
 
-ErrorValue::ErrorValue() : ErrorValue(DefaultErrorValue()) {}
+ErrorValue::ErrorValue() : ErrorValue(nullptr, &DefaultErrorValue()) {}
 
 ErrorValue NoSuchFieldError(absl::string_view field) {
-  return ErrorValue(absl::NotFoundError(
-      absl::StrCat("no_such_field", field.empty() ? "" : " : ", field)));
+  return ErrorValue(MakeNoSuchFieldError(field));
+}
+
+ErrorValue NoSuchFieldError(absl::string_view field,
+                            google::protobuf::Arena* absl_nonnull arena) {
+  return ErrorValue::From(MakeNoSuchFieldError(field), arena);
 }
 
 ErrorValue NoSuchKeyError(absl::string_view key) {
-  return ErrorValue(
-      absl::NotFoundError(absl::StrCat("Key not found in map : ", key)));
+  return ErrorValue(MakeNoSuchKeyError(key));
+}
+
+ErrorValue NoSuchKeyError(absl::string_view key,
+                          google::protobuf::Arena* absl_nonnull arena) {
+  return ErrorValue::From(MakeNoSuchKeyError(key), arena);
 }
 
 ErrorValue NoSuchTypeError(absl::string_view type) {
-  return ErrorValue(
-      absl::NotFoundError(absl::StrCat("type not found: ", type)));
+  return ErrorValue(MakeNoSuchTypeError(type));
+}
+
+ErrorValue NoSuchTypeError(absl::string_view type,
+                           google::protobuf::Arena* absl_nonnull arena) {
+  return ErrorValue::From(MakeNoSuchTypeError(type), arena);
 }
 
 ErrorValue DuplicateKeyError() {
-  return ErrorValue(absl::AlreadyExistsError("duplicate key in map"));
+  static const absl::NoDestructor<absl::Status> error(
+      absl::AlreadyExistsError("duplicate key in map"));
+  return ErrorValue(nullptr, &*error);
 }
 
 ErrorValue TypeConversionError(absl::string_view from, absl::string_view to) {
-  return ErrorValue(absl::InvalidArgumentError(
-      absl::StrCat("type conversion error from '", from, "' to '", to, "'")));
+  return ErrorValue(MakeTypeConversionError(from, to));
+}
+
+ErrorValue TypeConversionError(absl::string_view from, absl::string_view to,
+                               google::protobuf::Arena* absl_nonnull arena) {
+  return ErrorValue::From(MakeTypeConversionError(from, to), arena);
 }
 
 ErrorValue TypeConversionError(const Type& from, const Type& to) {
   return TypeConversionError(from.DebugString(), to.DebugString());
 }
 
+ErrorValue TypeConversionError(const Type& from, const Type& to,
+                               google::protobuf::Arena* absl_nonnull arena) {
+  return TypeConversionError(from.DebugString(), to.DebugString(), arena);
+}
+
 ErrorValue IndexOutOfBoundsError(size_t index) {
-  return ErrorValue(
-      absl::InvalidArgumentError(absl::StrCat("index out of bounds: ", index)));
+  return ErrorValue(MakeIndexOutOfBoundsError(index));
+}
+
+ErrorValue IndexOutOfBoundsError(size_t index,
+                                 google::protobuf::Arena* absl_nonnull arena) {
+  return ErrorValue::From(MakeIndexOutOfBoundsError(index), arena);
 }
 
 ErrorValue IndexOutOfBoundsError(ptrdiff_t index) {
-  return ErrorValue(
-      absl::InvalidArgumentError(absl::StrCat("index out of bounds: ", index)));
+  return ErrorValue(MakeIndexOutOfBoundsError(index));
+}
+
+ErrorValue IndexOutOfBoundsError(ptrdiff_t index,
+                                 google::protobuf::Arena* absl_nonnull arena) {
+  return ErrorValue::From(MakeIndexOutOfBoundsError(index), arena);
 }
 
 bool IsNoSuchField(const ErrorValue& value) {
@@ -159,30 +219,28 @@ ErrorValue ErrorValue::Clone(google::protobuf::Arena* absl_nonnull arena) const 
 
 absl::Status ErrorValue::ToStatus() const& {
   ABSL_DCHECK(*this);
-
-  if (arena_ == nullptr) {
+  if (status_ptr_ == nullptr) {
     return *std::launder(
-        reinterpret_cast<const absl::Status*>(&status_.val[0]));
+        reinterpret_cast<const absl::Status*>(&status_val_[0]));
   }
-  return *status_.ptr;
+  return *status_ptr_;
 }
 
 absl::Status ErrorValue::ToStatus() && {
   ABSL_DCHECK(*this);
-
-  if (arena_ == nullptr) {
+  if (status_ptr_ == nullptr) {
     return std::move(
-        *std::launder(reinterpret_cast<absl::Status*>(&status_.val[0])));
+        *std::launder(reinterpret_cast<absl::Status*>(&status_val_[0])));
   }
-  return *status_.ptr;
+  return *status_ptr_;
 }
 
 ErrorValue::operator bool() const {
-  if (arena_ == nullptr) {
-    return !std::launder(reinterpret_cast<const absl::Status*>(&status_.val[0]))
+  if (status_ptr_ == nullptr) {
+    return !std::launder(reinterpret_cast<const absl::Status*>(&status_val_[0]))
                 ->ok();
   }
-  return status_.ptr != nullptr && !status_.ptr->ok();
+  return !status_ptr_->ok();
 }
 
 void swap(ErrorValue& lhs, ErrorValue& rhs) noexcept {
