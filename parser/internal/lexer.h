@@ -135,7 +135,9 @@ struct LexerError final {
 class Lexer final {
  public:
   explicit Lexer(const cel::Source& source)
-      : content_(source.content()), position_(0) {
+      : content_(source.content()),
+        content_size_(static_cast<int32_t>(content_.size())),
+        position_(0) {
     ABSL_DCHECK_LE(content_.size(), static_cast<SourcePosition>(
                                         std::numeric_limits<int32_t>::max()));
   }
@@ -162,18 +164,18 @@ class Lexer final {
 
   void RestorePosition(int32_t position) {
     ABSL_DCHECK_GE(position, 0);
-    ABSL_DCHECK_LE(position, static_cast<int32_t>(content_.size()));
+    ABSL_DCHECK_LE(position, content_size_);
     position_ = position;
     error_ = LexerError{};
   }
 
  private:
   [[nodiscard]] bool Match(char32_t c) const {
-    return position_ < content_.size() && content_.at(position_) == c;
+    return position_ < content_size_ && content_.at(position_) == c;
   }
 
   [[nodiscard]] bool MatchIgnoreCase(char32_t c) const {
-    if (position_ >= content_.size()) return false;
+    if (position_ >= content_size_) return false;
     char32_t cp = content_.at(position_);
     return cp <= 0x7f && c <= 0x7f &&
            absl::ascii_tolower(static_cast<char>(cp)) ==
@@ -181,12 +183,12 @@ class Lexer final {
   }
 
   void Advance(size_t n) {
-    ABSL_DCHECK_LE(n, static_cast<size_t>(content_.size() - position_));
+    ABSL_DCHECK_LE(n, static_cast<size_t>(content_size_ - position_));
     position_ += static_cast<int32_t>(n);
   }
 
   void AdvanceProcessingNewLines(int32_t end_position) {
-    ABSL_DCHECK_LE(end_position, content_.size());
+    ABSL_DCHECK_LE(end_position, content_size_);
     ABSL_DCHECK_GE(end_position, position_);
     Advance(static_cast<size_t>(end_position - position_));
   }
@@ -275,6 +277,7 @@ class Lexer final {
   [[nodiscard]] Token ConsumeIdent();
 
   cel::SourceContentView content_;
+  int32_t content_size_ = 0;
   int32_t position_ = 0;
   LexerError error_;
 };

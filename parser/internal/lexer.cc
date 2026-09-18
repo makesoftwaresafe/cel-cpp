@@ -162,7 +162,7 @@ std::string_view TokenTypeToString(TokenType type) {
 
 Token Lexer::Lex() {
   int32_t start = GetPosition();
-  if (ABSL_PREDICT_FALSE(position_ >= content_.size())) {
+  if (ABSL_PREDICT_FALSE(position_ >= content_size_)) {
     return MakeToken(TokenType::kEnd, start, start);
   }
   char32_t c = content_.at(position_);
@@ -182,8 +182,7 @@ Token Lexer::Lex() {
       return MakeToken(TokenType::kWhitespace, start, GetPosition());
     }
     case '.': {
-      if (position_ + 1 < content_.size() &&
-          content_.at(position_ + 1) <= 0x7f &&
+      if (position_ + 1 < content_size_ && content_.at(position_ + 1) <= 0x7f &&
           absl::ascii_isdigit(static_cast<char>(content_.at(position_ + 1)))) {
         return ConsumeNumericLiteral();
       }
@@ -342,7 +341,7 @@ bool Lexer::ConsumeUntilAfter(char32_t c, bool is_raw) {
   ABSL_DCHECK_NE(c, '\r');
   int32_t pos = position_;
   bool escaped = false;
-  while (pos < content_.size()) {
+  while (pos < content_size_) {
     char32_t cc = content_.at(pos);
     if (cc == '\n' || cc == '\r') {
       AdvanceProcessingNewLines(pos);
@@ -359,7 +358,7 @@ bool Lexer::ConsumeUntilAfter(char32_t c, bool is_raw) {
     }
     ++pos;
   }
-  AdvanceProcessingNewLines(content_.size());
+  AdvanceProcessingNewLines(content_size_);
   return false;
 }
 
@@ -370,7 +369,7 @@ bool Lexer::ConsumeUntilAfter(char32_t c, bool is_raw) {
 bool Lexer::ConsumeUntilAfterString(std::u32string_view s) {
   ABSL_DCHECK(s.find(U'\n') == std::u32string_view::npos);
   int32_t pos = position_;
-  while (pos + static_cast<int32_t>(s.size()) <= content_.size()) {
+  while (pos + static_cast<int32_t>(s.size()) <= content_size_) {
     bool match = true;
     for (size_t i = 0; i < s.size(); ++i) {
       if (content_.at(pos + static_cast<int32_t>(i)) != s[i]) {
@@ -384,7 +383,7 @@ bool Lexer::ConsumeUntilAfterString(std::u32string_view s) {
     }
     ++pos;
   }
-  AdvanceProcessingNewLines(content_.size());
+  AdvanceProcessingNewLines(content_size_);
   return false;
 }
 
@@ -396,12 +395,12 @@ bool Lexer::ConsumeUntilAfterUnescapedString(std::u32string_view s) {
   ABSL_DCHECK(s.find(U'\n') == std::u32string_view::npos);
   int32_t pos = position_;
   bool escaped = false;
-  while (pos < content_.size()) {
+  while (pos < content_size_) {
     char32_t cc = content_.at(pos);
     if (cc == '\\') {
       escaped = !escaped;
     } else {
-      if (!escaped && pos + static_cast<int32_t>(s.size()) <= content_.size()) {
+      if (!escaped && pos + static_cast<int32_t>(s.size()) <= content_size_) {
         bool match = true;
         for (size_t j = 0; j < s.size(); ++j) {
           if (content_.at(pos + static_cast<int32_t>(j)) != s[j]) {
@@ -418,12 +417,12 @@ bool Lexer::ConsumeUntilAfterUnescapedString(std::u32string_view s) {
     }
     ++pos;
   }
-  AdvanceProcessingNewLines(content_.size());
+  AdvanceProcessingNewLines(content_size_);
   return false;
 }
 
 bool Lexer::MatchString(std::u32string_view s) const {
-  if (position_ + static_cast<int32_t>(s.size()) > content_.size()) {
+  if (position_ + static_cast<int32_t>(s.size()) > content_size_) {
     return false;
   }
   for (size_t i = 0; i < s.size(); ++i) {
@@ -436,7 +435,7 @@ bool Lexer::MatchString(std::u32string_view s) const {
 
 std::optional<char32_t> Lexer::MatchIf(
     absl::FunctionRef<bool(char32_t)> predicate) const {
-  if (position_ < content_.size()) {
+  if (position_ < content_size_) {
     char32_t cp = content_.at(position_);
     if (predicate(cp)) {
       return cp;
@@ -446,7 +445,7 @@ std::optional<char32_t> Lexer::MatchIf(
 }
 
 void Lexer::ConsumeLine() {
-  while (position_ < content_.size()) {
+  while (position_ < content_size_) {
     if (content_.at(position_) == '\n') {
       Advance(1);
       return;
@@ -456,7 +455,7 @@ void Lexer::ConsumeLine() {
 }
 
 void Lexer::ConsumeWhitespace() {
-  while (position_ < content_.size()) {
+  while (position_ < content_size_) {
     char32_t c = content_.at(position_);
     switch (c) {
       case '\f':
@@ -517,7 +516,7 @@ std::optional<char32_t> Lexer::ConsumeIf(
 
 bool Lexer::ConsumeDigits() {
   bool advanced = false;
-  while (position_ < content_.size()) {
+  while (position_ < content_size_) {
     char32_t c = content_.at(position_);
     if (c > 0x7f || !absl::ascii_isdigit(static_cast<char>(c))) {
       break;
@@ -530,7 +529,7 @@ bool Lexer::ConsumeDigits() {
 
 bool Lexer::ConsumeHexDigits() {
   bool advanced = false;
-  while (position_ < content_.size()) {
+  while (position_ < content_size_) {
     char32_t c = content_.at(position_);
     if (c > 0x7f || !absl::ascii_isxdigit(static_cast<char>(c))) {
       break;
@@ -588,12 +587,12 @@ Token Lexer::ConsumeStringLiteral(int32_t start, char32_t quote, bool is_bytes,
 //              rb"""...""", rb'''...'''
 std::optional<Token> Lexer::ConsumePrefixedStringLiteral() {
   int32_t start = GetPosition();
-  if (position_ >= content_.size()) return std::nullopt;
+  if (position_ >= content_size_) return std::nullopt;
   char32_t c = content_.at(position_);
   bool is_bytes = (c == 'b' || c == 'B');
   bool is_raw = (c == 'r' || c == 'R');
   size_t lookahead = 1;
-  if (position_ + 1 < content_.size()) {
+  if (position_ + 1 < content_size_) {
     char32_t c2 = content_.at(position_ + 1);
     if ((is_bytes && (c2 == 'r' || c2 == 'R')) ||
         (!is_bytes && (c2 == 'b' || c2 == 'B'))) {
@@ -602,7 +601,7 @@ std::optional<Token> Lexer::ConsumePrefixedStringLiteral() {
       lookahead = 2;
     }
   }
-  if (position_ + static_cast<int32_t>(lookahead) < content_.size()) {
+  if (position_ + static_cast<int32_t>(lookahead) < content_size_) {
     char32_t quote = content_.at(position_ + static_cast<int32_t>(lookahead));
     if (quote == '"' || quote == '\'') {
       Advance(lookahead);
@@ -649,8 +648,8 @@ Token Lexer::ConsumeNumericLiteral() {
       }
     }
     static_cast<void>(ConsumeDigits());
-    if (position_ < content_.size() && content_.at(position_) == '.' &&
-        position_ + 1 < content_.size() && content_.at(position_ + 1) <= 0x7f &&
+    if (position_ < content_size_ && content_.at(position_) == '.' &&
+        position_ + 1 < content_size_ && content_.at(position_ + 1) <= 0x7f &&
         absl::ascii_isdigit(static_cast<char>(content_.at(position_ + 1)))) {
       floating_point = true;
       Advance(1);
@@ -679,7 +678,7 @@ Token Lexer::ConsumeNumericLiteral() {
 
 Token Lexer::ConsumeIdent() {
   int32_t start = GetPosition();
-  while (position_ < content_.size()) {
+  while (position_ < content_size_) {
     char32_t c = content_.at(position_);
     if (!IsIdentTrailing(c)) {
       break;
