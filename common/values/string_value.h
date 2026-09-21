@@ -26,6 +26,7 @@
 #include <utility>
 
 #include "absl/base/attributes.h"
+#include "absl/base/macros.h"
 #include "absl/base/nullability.h"
 #include "absl/log/absl_check.h"
 #include "absl/status/status.h"
@@ -45,6 +46,16 @@
 #include "google/protobuf/io/zero_copy_stream.h"
 #include "google/protobuf/message.h"
 
+#if ABSL_HAVE_ATTRIBUTE(enable_if)
+#define CEL_COMMON_INTERNAL_REQUIRE_CONSTEXPR_STRING_VIEW(array)               \
+  __attribute__((                                                              \
+      enable_if(::cel::common_internal::IsWellFormedStringValueLiteral(array), \
+                "Argument '" #array "' must be a 'constexpr char[N]' or a "    \
+                "'constexpr absl::string_view'.")))
+#else
+#define CEL_COMMON_INTERNAL_REQUIRE_CONSTEXPR_STRING_VIEW(array)
+#endif
+
 namespace cel {
 
 class Value;
@@ -54,6 +65,14 @@ class StringValue;
 namespace common_internal {
 absl::string_view LegacyStringValue(const StringValue& value, bool stable,
                                     google::protobuf::Arena* absl_nonnull arena);
+constexpr bool IsWellFormedStringValueLiteral(absl::string_view string) {
+  for (char c : string) {
+    if (c == '\0') {
+      return false;
+    }
+  }
+  return true;
+}
 }  // namespace common_internal
 
 // `StringValue` represents values of the primitive `string` type.
@@ -85,6 +104,23 @@ class StringValue final : private common_internal::ValueMixin<StringValue> {
   // Returns a StringValue that aliases the provided string. Caller must ensure
   // the provided string outlives the use of the returned StringValue.
   static StringValue WrapUnsafe(absl::string_view value);
+
+  // Returns a StringValue that aliases the provided string, which must be a
+  // compile time constant. This is enforced during compilation when using
+  // Clang.
+  template <size_t N>
+  static StringValue Literal(const char (&value)[N])
+      CEL_COMMON_INTERNAL_REQUIRE_CONSTEXPR_STRING_VIEW(value) {
+    static_assert(N > 0);
+    ABSL_DCHECK_EQ(value[N - 1], '\0');
+    return WrapUnsafe(value);
+  }
+  static StringValue Literal(absl::string_view value)
+      CEL_COMMON_INTERNAL_REQUIRE_CONSTEXPR_STRING_VIEW(value) {
+    return WrapUnsafe(value);
+  }
+  static StringValue Literal(const std::string&) = delete;
+  static StringValue Literal(std::string&&) = delete;
 
   static StringValue Concat(const StringValue& lhs, const StringValue& rhs,
                             google::protobuf::Arena* absl_nonnull arena

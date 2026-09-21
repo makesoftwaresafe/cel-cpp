@@ -518,5 +518,12 @@ TEST_F(StringValueTest, Reverse) {
       StringValueIs("!enilni derots eb ton ot hguone egral si gnirts sihT"));
 }
 
+TEST_F(StringValueTest, Literal) {
+  using ::cel::test::StringValueIs;
+
+  EXPECT_THAT(StringValue::Literal("Hello, World!"),
+              StringValueIs("Hello, World!"));
+}
+
 }  // namespace
 }  // namespace cel
