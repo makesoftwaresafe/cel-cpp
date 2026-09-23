@@ -190,9 +190,10 @@ class LogicalOpStep : public ExpressionStepBase {
  public:
   // Constructs FunctionStep that uses overloads specified.
   LogicalOpStep(OpType op_type, size_t count, int64_t expr_id)
-      : ExpressionStepBase(expr_id), op_type_(op_type), count_(count) {
-    shortcircuit_ = (op_type_ == OpType::kOr);
-  }
+      : ExpressionStepBase(expr_id),
+        shortcircuit_(op_type == OpType::kOr),
+        op_type_(op_type),
+        count_(count) {}
 
   absl::Status Evaluate(ExecutionFrame* frame) const override;
 
@@ -247,9 +248,9 @@ class LogicalOpStep : public ExpressionStepBase {
     }
   }
 
+  bool shortcircuit_;
   const OpType op_type_;
   size_t count_;
-  bool shortcircuit_;
 };
 
 absl::Status LogicalOpStep::Evaluate(ExecutionFrame* frame) const {
