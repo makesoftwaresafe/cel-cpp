@@ -1698,15 +1698,12 @@ TEST(PrattParserRecursionDepthTest, ParseRecursionDepth) {
               StatusIs(absl::StatusCode::kCancelled));
 }
 
-TEST(PrattParserRecursionDepthTest, ParseRecursionDepthIgnoreExtraParens) {
-  cel::ParserOptions options;
-  options.max_recursion_depth = 1;
-  EXPECT_THAT(Parse("((((1))))", options), IsOkAndHolds(NotNull()));
-}
-
+// Parentheses are unwound iteratively, so nesting them does not grow the C++
+// call stack. The recursion limit is raised above the nesting level here to
+// exercise that: each '(' still consumes one unit of the recursion budget.
 TEST(PrattParserRecursionDepthTest, DeeplyNestedParens) {
   cel::ParserOptions options;
-  options.max_recursion_depth = 1;
+  options.max_recursion_depth = 2100;
   std::string literal_expr =
       std::string(1000, '(') + "42" + std::string(1000, ')');
   EXPECT_THAT(Parse(literal_expr, options), IsOkAndHolds(NotNull()));
@@ -1714,6 +1711,12 @@ TEST(PrattParserRecursionDepthTest, DeeplyNestedParens) {
   std::string binary_expr =
       std::string(1000, '(') + "1 + 2" + std::string(1000, ')');
   EXPECT_THAT(Parse(binary_expr, options), IsOkAndHolds(NotNull()));
+
+  std::string left_nested_calc_expr = std::string(1000, '(') + "1 + 2";
+  for (int i = 0; i < 1000; ++i) {
+    left_nested_calc_expr += ") + 1";
+  }
+  EXPECT_THAT(Parse(left_nested_calc_expr, options), IsOkAndHolds(NotNull()));
 }
 
 TEST(PrattParserRecursionDepthTest, NestedAndGroupingParensCombinations) {
@@ -1724,6 +1727,21 @@ TEST(PrattParserRecursionDepthTest, NestedAndGroupingParensCombinations) {
   EXPECT_THAT("f((((1))), (((2))))", AstEq("f(1, 2)"));
   EXPECT_THAT("[{((1)): ((2))}]", AstEq("[{1: 2}]"));
   EXPECT_THAT("(((a))).b[0]", AstEq("a.b[0]"));
+  EXPECT_THAT("((((a).b[0]) + 1) ? 2 : 3)", AstEq("(a.b[0] + 1) ? 2 : 3"));
+  EXPECT_THAT("a ? ((((b)))) : c", AstEq("a ? b : c"));
+  EXPECT_THAT("((((7) + 1) + 1) + 1)", AstEq("7 + 1 + 1 + 1"));
+  EXPECT_THAT("(true) || (true || (true || false))",
+              AstEq("true || (true || (true || false))"));
+  EXPECT_THAT("(1 + 1 + 1) + 1", AstEq("1 + 1 + 1 + 1"));
+  EXPECT_THAT("((1 + 1) + 1) + 1", AstEq("1 + 1 + 1 + 1"));
+  EXPECT_THAT("(((1 + 1 + 1))) + 1", AstEq("1 + 1 + 1 + 1"));
+  EXPECT_THAT("1 + (1 + 1 + 1)", AstEq("1 + (1 + 1 + 1)"));
+  EXPECT_THAT("((1 + ((7))))", AstEq("1 + 7"));
+  EXPECT_THAT("(a.b.c).d.e.f", AstEq("a.b.c.d.e.f"));
+  EXPECT_THAT("((a && b.c.d).e)", AstEq("(a && b.c.d).e"));
+  EXPECT_THAT("((a && b && c.d.e).f)", AstEq("(a && b && c.d.e).f"));
+  EXPECT_THAT("((a ? b : c).d[0] ? (e ? f : g) : h) + ((x).y)",
+              AstEq("((a ? b : c).d[0] ? (e ? f : g) : h) + x.y"));
 }
 
 TEST(PrattParserRecursionDepthTest, MismatchedParensStillReportErrors) {
@@ -1744,11 +1762,16 @@ TEST(PrattParserRecursionDepthTest, SequentialScopesDoNotAccumulateDepth) {
 
 TEST(PrattParserRecursionDepthTest, DeeplyNestedTernary) {
   cel::ParserOptions options;
-  options.max_recursion_depth = 4;
+  options.max_recursion_depth = 5;
   EXPECT_THAT(Parse("a ? b : a ? b : a ? b : a ? b : c", options),
               IsOkAndHolds(NotNull()));
   EXPECT_THAT(Parse("a ? b : a ? b : a ? b : a ? b : a ? b : c", options),
               StatusIs(absl::StatusCode::kCancelled));
+}
+
+TEST(PrattParserRecursionDepthTest, NestedParensWithTernaryAndSelectors) {
+  EXPECT_THAT(Parse("((a ? b : c).d[0] ? (e ? f : g) : h) + ((x).y)"),
+              IsOkAndHolds(NotNull()));
 }
 
 class TestParserWorker : public ParserWorker {

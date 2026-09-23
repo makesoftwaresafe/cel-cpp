@@ -123,7 +123,7 @@ std::string ParserWorker::GetTokenText(const Token& tok) const {
   return "";
 }
 
-Token ParserWorker::NextSignificantToken(bool report_error) {
+Token ParserWorker::NextSignificantToken() {
   if (is_recovery_limit_exceeded()) {
     return Token{.type = TokenType::kEnd, .start = 0, .end = 0};
   }
@@ -132,7 +132,7 @@ Token ParserWorker::NextSignificantToken(bool report_error) {
     if (tok.type == TokenType::kWhitespace || tok.type == TokenType::kComment) {
       continue;
     }
-    if (tok.type == TokenType::kError && report_error) {
+    if (tok.type == TokenType::kError) {
       ReportSyntaxError(tok, lexer_.GetError().message);
       if (is_recovery_limit_exceeded()) {
         return Token{.type = TokenType::kEnd, .start = 0, .end = 0};
@@ -159,7 +159,7 @@ bool ParserWorker::Expect(TokenType type, absl::string_view msg) {
     NextToken();
     return true;
   }
-  if (is_recovery_limit_exceeded()) {
+  if (recursion_limit_exceeded_ || is_recovery_limit_exceeded()) {
     return false;
   }
   if (peek_token_.type != TokenType::kError) {
@@ -184,7 +184,7 @@ bool ParserWorker::Expect(TokenType type, absl::string_view msg) {
 }
 
 void ParserWorker::SynchronizeOnDelimiter() {
-  if (is_recovery_limit_exceeded()) {
+  if (recursion_limit_exceeded_ || is_recovery_limit_exceeded()) {
     peek_token_ = Token{.type = TokenType::kEnd, .start = 0, .end = 0};
     return;
   }

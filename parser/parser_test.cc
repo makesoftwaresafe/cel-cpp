@@ -50,6 +50,7 @@ using ::cel::ConstantKindCase;
 using ::cel::ExprKindCase;
 using ::cel::ExprPrinter;
 using ::cel::expr::Expr;
+using ::testing::AnyOf;
 using ::testing::HasSubstr;
 using ::testing::Not;
 
@@ -1985,13 +1986,6 @@ TEST_P(ExpressionImplTest, DisableStandardMacros) {
       << adorned_string;
 }
 
-TEST_P(ExpressionImplTest, RecursionDepthIgnoresParentheses) {
-  options_.max_recursion_depth = options_.enable_pratt_parser ? 2 : 6;
-  auto result = Parse("(((1 + 2 + 3 + 4 + (5 + 6))))", "", options_);
-
-  EXPECT_THAT(result, IsOk());
-}
-
 class NewParserBuilderTest : public testing::TestWithParam<bool> {
  protected:
   NewParserBuilderTest() { options_.enable_pratt_parser = GetParam(); }
@@ -2319,6 +2313,302 @@ TEST_P(ParserTest, PrepareSourceForwardsCodepointLimit) {
                        parser->PrepareSource("1234567890"));
   EXPECT_EQ(source_default_desc->description(), "<input>");
 }
+
+// Test case pinning down the recursion depth that the parsers charge for
+// `source`.
+//
+// `antlr_min_recursion_depth` and `pratt_min_recursion_depth` are the smallest
+// `max_recursion_depth` values that still parse `source` with the respective
+// parser; parsing with a smaller limit is expected to be rejected. Both parsers
+// charge a level for every nesting level of the resulting AST, so the two
+// columns only differ by a constant: the ANTLR parser additionally recurses
+// through the grammar rules that wrap an expression, while the Pratt parser
+// parses operator chains, selector chains and runs of parentheses iteratively
+// and charges them against the depth they reach instead.
+struct RecursionDepthTestCase {
+  std::string name;
+  std::string source;
+  int antlr_min_recursion_depth;
+  int pratt_min_recursion_depth;
+};
+
+std::string Repeat(absl::string_view part, int count) {
+  std::string result;
+  for (int i = 0; i < count; ++i) {
+    absl::StrAppend(&result, part);
+  }
+  return result;
+}
+
+std::string WrapInParens(absl::string_view inner, int count) {
+  return absl::StrCat(Repeat("(", count), inner, Repeat(")", count));
+}
+
+std::vector<RecursionDepthTestCase> GetRecursionDepthTestCases() {
+  // Nesting level used by the generated expressions below.
+  constexpr int kDepth = 32;
+
+  return {
+      // `1 + 2 + ... + 34`: a flat chain of 33 binary operators.
+      {.name = "LargeCalc",
+       .source =
+           [] {
+             std::vector<std::string> terms;
+             terms.reserve(kDepth + 2);
+             for (int i = 1; i <= kDepth + 2; ++i) {
+               terms.push_back(absl::StrCat(i));
+             }
+             return absl::StrJoin(terms, " + ");
+           }(),
+       .antlr_min_recursion_depth = kDepth + 2,
+       .pratt_min_recursion_depth = kDepth + 1},
+      // Runs of parentheses are unwound iteratively by the Pratt parser, but
+      // each one is still a nesting level and is charged as such.
+      {.name = "NestedParens",
+       .source = WrapInParens("7", kDepth),
+       .antlr_min_recursion_depth = kDepth,
+       .pratt_min_recursion_depth = kDepth},
+      {.name = "NestedParensWithCalc",
+       .source = absl::StrCat(WrapInParens("7", kDepth), " + ",
+                              WrapInParens("7", kDepth - 1)),
+       .antlr_min_recursion_depth = kDepth,
+       .pratt_min_recursion_depth = kDepth},
+      // `a.f0.f1 ... .f32`: a flat chain of 33 field selections.
+      {.name = "FieldSelections",
+       .source =
+           [] {
+             std::string source = "a";
+             for (int i = 0; i <= kDepth; ++i) {
+               absl::StrAppend(&source, ".f", i);
+             }
+             return source;
+           }(),
+       .antlr_min_recursion_depth = kDepth + 2,
+       .pratt_min_recursion_depth = kDepth + 1},
+      // `a[1][2] ... [33]`: a flat chain of 33 index operations, each of which
+      // parses its index expression one level deeper.
+      {.name = "IndexOperations",
+       .source =
+           [] {
+             std::string source = "a";
+             for (int i = 1; i <= kDepth + 1; ++i) {
+               absl::StrAppend(&source, "[", i, "]");
+             }
+             return source;
+           }(),
+       .antlr_min_recursion_depth = kDepth + 2,
+       .pratt_min_recursion_depth = kDepth + 1},
+      // `a < 1 < 2 < ... < 33`: a flat chain of 33 relation operators.
+      {.name = "RelationOperators",
+       .source =
+           [] {
+             std::string source = "a";
+             for (int i = 1; i <= kDepth + 1; ++i) {
+               absl::StrAppend(&source, " < ", i);
+             }
+             return source;
+           }(),
+       .antlr_min_recursion_depth = kDepth + 2,
+       .pratt_min_recursion_depth = kDepth + 1},
+      // 14 operands with 20 index operations each, joined by relation
+      // operators.
+      {.name = "IndexRelationOperators",
+       .source =
+           [] {
+             std::string operand = "a";
+             for (int i = 1; i <= 20; ++i) {
+               absl::StrAppend(&operand, "[", i, "]");
+             }
+             return absl::StrJoin(std::vector<std::string>(14, operand),
+                                  " != ");
+           }(),
+       .antlr_min_recursion_depth = kDepth + 2,
+       .pratt_min_recursion_depth = kDepth + 1},
+      // `a ? b : a ? b : ... : c`: the false branch of a ternary is parsed
+      // recursively, so each link costs one level.
+      {.name = "Ternary",
+       .source = absl::StrCat(Repeat("a ? b : ", kDepth + 1), "c"),
+       .antlr_min_recursion_depth = kDepth + 2,
+       .pratt_min_recursion_depth = kDepth + 2},
+      {.name = "TernaryTrueBranchParens",
+       .source = absl::StrCat("a ? ", WrapInParens("b", kDepth), " : c"),
+       .antlr_min_recursion_depth = kDepth,
+       .pratt_min_recursion_depth = kDepth},
+      // `((((7) + 1) + 1) ... + 1)`: parentheses nested to the left, each level
+      // adding a binary operator.
+      {.name = "NestedLeftParensWithCalc",
+       .source =
+           absl::StrCat(Repeat("(", kDepth), "7", Repeat(") + 1", kDepth)),
+       .antlr_min_recursion_depth = kDepth + 1,
+       .pratt_min_recursion_depth = kDepth},
+      // `(true) || (true || ( ... || false) ... )`: parentheses nested to the
+      // right, so each level is parsed recursively as the right hand side
+      // operand.
+      {.name = "NestedRightParensWithLogicalOr",
+       .source = absl::StrCat("(true) || ", Repeat("(true || ", kDepth),
+                              "false", Repeat(")", kDepth)),
+       .antlr_min_recursion_depth = kDepth + 2,
+       .pratt_min_recursion_depth = kDepth},
+      // Parens nested inside an operand are charged against the depth reached
+      // so far rather than accumulating on top of the enclosing parens.
+      {.name = "GroupingParensAroundCalc",
+       .source = "((1 + ((7))))",
+       .antlr_min_recursion_depth = 4,
+       .pratt_min_recursion_depth = 3},
+      {.name = "GroupingParensAroundCalcChain",
+       .source = "(((1 + 2 + 3 + 4 + (5 + 6))))",
+       .antlr_min_recursion_depth = 5,
+       .pratt_min_recursion_depth = 5},
+      {.name = "ParenthesizedLhsCalc",
+       .source = "(1 + 1 + 1) + 1 + 1 + 1",
+       .antlr_min_recursion_depth = 6,
+       .pratt_min_recursion_depth = 5},
+      {.name = "NestedLeftParensLhsCalc",
+       .source = "((1 + 1) + 1) + 1 + 1 + 1",
+       .antlr_min_recursion_depth = 6,
+       .pratt_min_recursion_depth = 5},
+      {.name = "GroupingParensLhsCalc",
+       .source = "(((1 + 1 + 1))) + 1 + 1 + 1",
+       .antlr_min_recursion_depth = 6,
+       .pratt_min_recursion_depth = 5},
+      {.name = "ParenthesizedRhsCalc",
+       .source = "1 + (1 + 1 + 1 + 1 + 1)",
+       .antlr_min_recursion_depth = 6,
+       .pratt_min_recursion_depth = 5},
+      {.name = "ParenthesizedFieldSelections",
+       .source = "(a.b.c).d.e.f",
+       .antlr_min_recursion_depth = 6,
+       .pratt_min_recursion_depth = 5},
+      // Depth accumulated inside a call argument does not carry into the
+      // enclosing selector and operator chains that wrap the call.
+      {.name = "CallArgumentFieldSelections",
+       .source = "f(a.b.c.d).e",
+       .antlr_min_recursion_depth = 6,
+       .pratt_min_recursion_depth = 4},
+      {.name = "CallArgumentFieldSelectionsWithCalc",
+       .source = "x + f(a.b.c.d) + y",
+       .antlr_min_recursion_depth = 7,
+       .pratt_min_recursion_depth = 5},
+      {.name = "CallArgumentCalcWithCalc",
+       .source = "x + f(a + b + c + d) + y",
+       .antlr_min_recursion_depth = 7,
+       .pratt_min_recursion_depth = 5},
+      {.name = "IndexFieldSelectionsWithCalc",
+       .source = "x + a[b.c.d.e] + y",
+       .antlr_min_recursion_depth = 7,
+       .pratt_min_recursion_depth = 6},
+      {.name = "MemberCallArgumentFieldSelectionsWithCalc",
+       .source = "x + a.f(b.c.d.e) + y",
+       .antlr_min_recursion_depth = 7,
+       .pratt_min_recursion_depth = 6},
+      {.name = "StructFieldSelectionsWithCalc",
+       .source = "x + Msg{f: a.b.c.d} + y",
+       .antlr_min_recursion_depth = 7,
+       .pratt_min_recursion_depth = 5},
+      // A delimited construct contributes its deepest element, not its last
+      // one.
+      {.name = "CallArgumentDeepestNotLast",
+       .source = "x + f(a.b.c.d, 1) + y",
+       .antlr_min_recursion_depth = 7,
+       .pratt_min_recursion_depth = 5},
+      {.name = "MemberCallArgumentDeepestNotLast",
+       .source = "x + a.f(b.c.d.e, 1) + y",
+       .antlr_min_recursion_depth = 7,
+       .pratt_min_recursion_depth = 6},
+      {.name = "ListElementDeepestNotLast",
+       .source = "x + [a.b.c.d, 1][0] + y",
+       .antlr_min_recursion_depth = 8,
+       .pratt_min_recursion_depth = 6},
+      {.name = "MapValueDeepestNotLast",
+       .source = "x + {'k': a.b.c.d, 'j': 1}['k'] + y",
+       .antlr_min_recursion_depth = 8,
+       .pratt_min_recursion_depth = 6},
+      {.name = "MapKeyDeepestNotLast",
+       .source = "x + {a.b.c.d.e: 1, 'j': 2}['j'] + y",
+       .antlr_min_recursion_depth = 9,
+       .pratt_min_recursion_depth = 7},
+      {.name = "StructFieldDeepestNotLast",
+       .source = "x + Msg{f: a.b.c.d, g: 1} + y",
+       .antlr_min_recursion_depth = 7,
+       .pratt_min_recursion_depth = 5},
+      {.name = "NestedListElementDeepestNotLast",
+       .source = "x + [[a.b.c.d, 1], 1][0] + y",
+       .antlr_min_recursion_depth = 9,
+       .pratt_min_recursion_depth = 6},
+      {.name = "ParenthesizedLogicalAndFieldSelection",
+       .source = "((a && b.c.d).e)",
+       .antlr_min_recursion_depth = 5,
+       .pratt_min_recursion_depth = 3},
+      {.name = "ParenthesizedLogicalAndChainFieldSelection",
+       .source = "((a && b && c.d.e).f)",
+       .antlr_min_recursion_depth = 5,
+       .pratt_min_recursion_depth = 3},
+      {.name = "FieldSelectionsWithCalc",
+       .source = "a.b.c.d.e + f.g",
+       .antlr_min_recursion_depth = 6,
+       .pratt_min_recursion_depth = 5},
+  };
+}
+
+class RecursionDepthTest
+    : public testing::TestWithParam<std::tuple<RecursionDepthTestCase, bool>> {
+ protected:
+  RecursionDepthTest() {
+    options_.enable_pratt_parser = std::get<1>(GetParam());
+  }
+
+  const RecursionDepthTestCase& test_case() const {
+    return std::get<0>(GetParam());
+  }
+
+  int min_recursion_depth() const {
+    return options_.enable_pratt_parser ? test_case().pratt_min_recursion_depth
+                                        : test_case().antlr_min_recursion_depth;
+  }
+
+  ParserOptions options_;
+};
+
+TEST_P(RecursionDepthTest, AtMinRecursionDepthSucceeds) {
+  options_.max_recursion_depth = min_recursion_depth();
+
+  EXPECT_THAT(Parse(test_case().source, "<input>", options_), IsOk());
+}
+
+TEST_P(RecursionDepthTest, BelowMinRecursionDepthFails) {
+  if (min_recursion_depth() == 0) {
+    GTEST_SKIP() << "expression is parsed without recursing";
+  }
+  int limit = min_recursion_depth() - 1;
+  options_.max_recursion_depth = limit;
+
+  auto result = Parse(test_case().source, "<input>", options_);
+
+  ASSERT_THAT(result, Not(IsOk()));
+  // The ANTLR parser reports the limit either from the grammar rule listener
+  // or, if that one does not trip first, from the AST building visitor.
+  EXPECT_THAT(
+      result.status().message(),
+      AnyOf(HasSubstr(absl::StrFormat(
+                "Expression recursion limit exceeded. limit: %d", limit)),
+            HasSubstr(absl::StrFormat(
+                "Exceeded max recursion depth of %d when parsing", limit))));
+}
+
+std::string RecursionDepthTestName(
+    const testing::TestParamInfo<std::tuple<RecursionDepthTestCase, bool>>&
+        test_info) {
+  const RecursionDepthTestCase& test_case = std::get<0>(test_info.param);
+  bool enable_pratt = std::get<1>(test_info.param);
+  return absl::StrCat(test_info.index, "_", enable_pratt ? "Pratt_" : "Legacy_",
+                      test_case.name);
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    CelParserTest, RecursionDepthTest,
+    testing::Combine(testing::ValuesIn(GetRecursionDepthTestCases()),
+                     TestedParserImpls),
+    RecursionDepthTestName);
 
 std::string ExpressionTestName(
     const testing::TestParamInfo<std::tuple<TestInfo, bool>>& test_info) {

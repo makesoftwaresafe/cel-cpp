@@ -25,10 +25,8 @@
 #include <utility>
 #include <vector>
 
-#include "absl/base/attributes.h"
 #include "absl/base/nullability.h"
 #include "absl/base/optimization.h"
-#include "absl/cleanup/cleanup.h"
 #include "absl/container/flat_hash_map.h"
 #include "absl/status/statusor.h"
 #include "absl/strings/ascii.h"
@@ -74,7 +72,7 @@ class ParserWorker {
   const cel::ParserOptions& options() const { return options_; }
   // Token stream management
   void InitTokenStream();
-  Token NextSignificantToken(bool report_error = true);
+  Token NextSignificantToken();
   Token NextToken();
   bool Expect(TokenType type, absl::string_view msg = "");
   std::string GetTokenText(const Token& tok) const;
@@ -100,6 +98,27 @@ class ParserWorker {
     }
   }
 
+  // Recursion budget accounting.
+  //
+  // `recursion_depth_` tracks the levels currently held by live parse frames.
+  // Chains that are parsed iteratively (operator chains, selector chains, runs
+  // of parentheses or unary operators) do not add frames, so they report the
+  // levels they consume through `chain_depth` arguments and through
+  // `last_parsed_depth_` instead. Counting them keeps `max_recursion_depth` a
+  // bound on the depth of the resulting AST, as it is for the ANTLR parser.
+  //
+  // Returns true and trips the recursion limit if parsing `chain_depth` further
+  // levels on top of the current depth would exceed the configured limit.
+  bool CheckRecursion(int chain_depth) {
+    if (ABSL_PREDICT_FALSE(recursion_depth_ + chain_depth >
+                           options_.max_recursion_depth)) {
+      recursion_limit_exceeded_ = true;
+      peek_token_ = Token{.type = TokenType::kEnd, .start = 0, .end = 0};
+      return true;
+    }
+    return false;
+  }
+
   // Error reporting and recovery
   bool is_recovery_limit_exceeded() const {
     return error_count_ > options_.error_recovery_limit;
@@ -117,6 +136,9 @@ class ParserWorker {
   Token current_token_;
   Token peek_token_;
   int recursion_depth_ = 0;
+  // Depth of the subtree parsed most recently, reported upward so that callers
+  // can fold it into their own chain depth.
+  int last_parsed_depth_ = 0;
   int64_t next_id_ = 1;
   bool node_limit_exceeded_ = false;
   absl::flat_hash_map<int64_t, int32_t> positions_;
@@ -208,6 +230,12 @@ class PrattParserWorker : public ParserWorker {
   using CelOperator = ::google::api::expr::common::CelOperator;
 
   ExprNode ParseExpr();
+
+  // Parses one element of a delimited construct (list, map, struct or argument
+  // list), accumulating `last_parsed_depth_` to the deepest element seen so
+  // far. A construct is as deep as its deepest element, not its last one, so
+  // callers must reset `last_parsed_depth_` to 0 before the first element.
+  ExprNode ParseElementExpr();
   // Parses binary operator expressions and ternary conditional expressions
   // (`? :`) using operator-precedence (Pratt) parsing. Consumes operators from
   // the token stream whose binding precedence is greater than or equal to
@@ -221,6 +249,10 @@ class PrattParserWorker : public ParserWorker {
   // `?`, consumes `?`, and recurses with `ParseBinary(1)` for true branch `b`
   // and `ParseBinary(0)` for false branch `c`.
   ExprNode ParseBinaryAndTernary(int min_prec);
+  // `initial_chain_depth` is the depth already accumulated by `lhs`, which the
+  // operators consumed by this loop keep accumulating on top of.
+  void ParseBinaryAndTernaryFromLhs(ExprNode& lhs, int min_prec,
+                                    int initial_chain_depth);
 
   // Parses ternary conditional expressions (`condition ? true_expr :
   // false_expr`).
@@ -253,7 +285,11 @@ class PrattParserWorker : public ParserWorker {
   // `Type{field: val}`).
   //
   // Processes continuous postfix operation chains iteratively.
-  void ParseSelectorChainTail(ExprNode& lhs);
+  //
+  // `initial_chain_depth` is the depth already accumulated by `lhs`: a
+  // parenthesized primary such as `(a.b.c)` contributes its own depth, which
+  // the selectors trailing the closing `)` continue to accumulate on top of.
+  void ParseSelectorChainTail(ExprNode& lhs, int initial_chain_depth);
 
   // Parses prefix unary operators (logical NOT `!` and negation `-`). If a
   // numeric literal immediately follows `-`, folds it directly into a negative
@@ -322,8 +358,6 @@ class PrattParserWorker : public ParserWorker {
                        std::optional<ExprNode> target,
                        std::vector<ExprNode> arguments);
 
-  int CountGroupingParentheses();
-
   AstFactoryInterface<ExprNode>& ast_factory_;
   absl::flat_hash_map<int64_t, ExprNode> macro_calls_;
 };
@@ -346,8 +380,7 @@ ExprNode PrattParserWorker<ExprNode>::ParseExpr() {
   if (recursion_limit_exceeded_ || is_recovery_limit_exceeded()) {
     return ExprNode();
   }
-  if (recursion_depth_ > options_.max_recursion_depth) {
-    recursion_limit_exceeded_ = true;
+  if (CheckRecursion(1)) {
     return ExprNode();
   }
   recursion_depth_++;
@@ -357,13 +390,15 @@ ExprNode PrattParserWorker<ExprNode>::ParseExpr() {
 }
 
 template <typename ExprNode>
+ExprNode PrattParserWorker<ExprNode>::ParseElementExpr() {
+  int max_depth = last_parsed_depth_;
+  ExprNode expr = ParseExpr();
+  last_parsed_depth_ = std::max(max_depth, last_parsed_depth_);
+  return expr;
+}
+
+template <typename ExprNode>
 void PrattParserWorker<ExprNode>::ParseTernary(ExprNode& lhs) {
-  if (recursion_depth_ > options_.max_recursion_depth) {
-    recursion_limit_exceeded_ = true;
-    return;
-  }
-  recursion_depth_++;
-  absl::Cleanup depth_cleanup = [this] { recursion_depth_--; };
   int64_t op_id = NextId(NextToken());
   std::vector<ExprNode> args;
   args.reserve(3);
@@ -372,7 +407,7 @@ void PrattParserWorker<ExprNode>::ParseTernary(ExprNode& lhs) {
   if (!Expect(TokenType::kColon, "expected ':' in conditional expression")) {
     return;
   }
-  args.push_back(ParseBinaryAndTernary(0));
+  args.push_back(ParseExpr());
   lhs = ast_factory_.NewCall(op_id, CelOperator::CONDITIONAL, std::move(args));
 }
 
@@ -394,6 +429,14 @@ void PrattParserWorker<ExprNode>::BuildBinaryCall(int64_t op_id,
 template <typename ExprNode>
 ExprNode PrattParserWorker<ExprNode>::ParseBinaryAndTernary(int min_prec) {
   ExprNode lhs = ParseSelectorChain();
+  ParseBinaryAndTernaryFromLhs(lhs, min_prec, last_parsed_depth_);
+  return lhs;
+}
+
+template <typename ExprNode>
+void PrattParserWorker<ExprNode>::ParseBinaryAndTernaryFromLhs(
+    ExprNode& lhs, int min_prec, int initial_chain_depth) {
+  int chain_depth = initial_chain_depth;
   while (!recursion_limit_exceeded_ && !is_recovery_limit_exceeded()) {
     TokenType tok = peek_token_.type;
     if (tok == TokenType::kQuestion && min_prec <= 0) {
@@ -410,11 +453,20 @@ ExprNode PrattParserWorker<ExprNode>::ParseBinaryAndTernary(int min_prec) {
     }
 
     Token op_tok = NextToken();
+    if (CheckRecursion(chain_depth)) {
+      return;
+    }
+    chain_depth++;
     int64_t op_id = NextId(op_tok);
     BuildBinaryCall(op_id, op_info.name, lhs,
                     ParseBinaryAndTernary(op_info.precedence + 1));
+    // `last_parsed_depth_` is the depth of the rhs just parsed. It hangs one
+    // level below this operator, while `chain_depth` already covers the lhs, so
+    // the operator node is as deep as whichever side is deeper: `x + a.b.c.d`
+    // reaches 4 through its rhs and `a.b.c.d + x` reaches 4 through its lhs.
+    chain_depth = std::max(chain_depth, last_parsed_depth_ + 1);
+    last_parsed_depth_ = chain_depth;
   }
-  return lhs;
 }
 
 // Parses continuous chains of logical operators (`&&`, `||`) iteratively
@@ -433,15 +485,17 @@ void PrattParserWorker<ExprNode>::ParseBalancedLogicalChain(
   }
   lhs = BalanceLogical(op_info.name, std::move(terms), std::move(ops),
                        options_.enable_variadic_logical_operators);
+  last_parsed_depth_ = 0;
 }
 
 template <typename ExprNode>
 ExprNode PrattParserWorker<ExprNode>::ParseSelectorChain() {
+  last_parsed_depth_ = 0;
   ExprNode lhs = ParseUnary();
   TokenType tok = peek_token_.type;
   if (tok == TokenType::kDot || tok == TokenType::kLeftBracket ||
       tok == TokenType::kLeftBrace) {
-    ParseSelectorChainTail(lhs);
+    ParseSelectorChainTail(lhs, last_parsed_depth_);
   }
   return lhs;
 }
@@ -449,10 +503,16 @@ ExprNode PrattParserWorker<ExprNode>::ParseSelectorChain() {
 // Parses prefix and postfix member/indexing operations iteratively
 // (e.g., `!a.b[0].c(x)`).
 template <typename ExprNode>
-void PrattParserWorker<ExprNode>::ParseSelectorChainTail(ExprNode& lhs) {
+void PrattParserWorker<ExprNode>::ParseSelectorChainTail(
+    ExprNode& lhs, int initial_chain_depth) {
+  int chain_depth = initial_chain_depth;
   while (true) {
     TokenType tok = peek_token_.type;
     if (tok == TokenType::kDot) {
+      if (CheckRecursion(chain_depth)) {
+        return;
+      }
+      chain_depth++;
       Token dot_tok = NextToken();
       bool optional = false;
       if (peek_token_.type == TokenType::kQuestion) {
@@ -469,6 +529,7 @@ void PrattParserWorker<ExprNode>::ParseSelectorChainTail(ExprNode& lhs) {
           ReportSyntaxError(id_tok, "expected identifier after '.'");
         }
         SynchronizeOnDelimiter();
+        last_parsed_depth_ = chain_depth;
         return;
       }
       bool is_member_call = peek_token_.type == TokenType::kLeftParen;
@@ -495,10 +556,19 @@ void PrattParserWorker<ExprNode>::ParseSelectorChainTail(ExprNode& lhs) {
           lhs = ast_factory_.NewMemberCall(call_id, id_text, std::move(lhs),
                                            std::move(args));
         }
+        // `ParseArguments` leaves `last_parsed_depth_` at the deepest argument.
+        // Arguments hang one level below the call node, so `a.f(b.c.d.e)` is 4
+        // deep. The max preserves the selectors already walked when the
+        // arguments are shallower, as in `a.b.c.f(1)`.
+        chain_depth = std::max(chain_depth, last_parsed_depth_ + 1);
       } else {
         lhs = ast_factory_.NewSelect(NextId(dot_tok), std::move(lhs), id_text);
       }
     } else if (tok == TokenType::kLeftBracket) {
+      if (CheckRecursion(chain_depth)) {
+        return;
+      }
+      chain_depth++;
       Token bracket_tok = NextToken();
       int64_t op_id = NextId(bracket_tok);
       bool optional = false;
@@ -518,10 +588,22 @@ void PrattParserWorker<ExprNode>::ParseSelectorChainTail(ExprNode& lhs) {
       lhs = ast_factory_.NewCall(
           op_id, optional ? CelOperator::OPT_INDEX : CelOperator::INDEX,
           std::move(args));
+      // `last_parsed_depth_` is the depth of the index expression just parsed.
+      // It hangs one level below the index node, so `a[b.c.d.e]` is 4 deep. The
+      // max preserves the selectors already walked when the index is shallower,
+      // as in `a.b.c[0]`.
+      chain_depth = std::max(chain_depth, last_parsed_depth_ + 1);
     } else if (tok == TokenType::kLeftBrace) {
       int32_t struct_pos = GetLeftmostPosition(lhs);
       if (auto struct_name = ExtractStructName(lhs); struct_name.has_value()) {
         lhs = ParseStruct(NextId(struct_pos), *struct_name);
+        // `ParseStruct` leaves `last_parsed_depth_` at the deepest field value,
+        // which carries through unchanged: `Msg{f: a.b.c.d}` is 3 deep. There
+        // is no `+ 1` here because struct creation is a primary rather than a
+        // chain link, so it adds no level of its own. The max preserves the
+        // selectors already walked when the fields are shallower, as in
+        // `a.b.Msg{f: 1}`.
+        chain_depth = std::max(chain_depth, last_parsed_depth_);
       } else {
         break;
       }
@@ -529,6 +611,7 @@ void PrattParserWorker<ExprNode>::ParseSelectorChainTail(ExprNode& lhs) {
       break;
     }
   }
+  last_parsed_depth_ = chain_depth;
 }
 
 template <typename ExprNode>
@@ -568,20 +651,37 @@ ExprNode PrattParserWorker<ExprNode>::ParseUnaryOpsChain(Token first_op) {
     op.id = NextId(op.token);
   }
 
+  const bool is_negative_numeric_literal =
+      has_solitary_trailing_minus && (peek_token_.type == TokenType::kInt ||
+                                      peek_token_.type == TokenType::kFloat);
+  int64_t negative_literal_op_id = 0;
+  if (is_negative_numeric_literal) {
+    negative_literal_op_id = ops.back().id;
+    ops.pop_back();
+  }
+
   ExprNode operand;
+  // Every retained operator wraps the operand in one more call node, so the run
+  // costs as many levels as it has operators even though it is parsed by a
+  // loop. The outermost one is the deepest, so checking it covers the rest.
+  if (!ops.empty() && CheckRecursion(static_cast<int>(ops.size()) - 1)) {
+    return ExprNode();
+  }
+  recursion_depth_ += static_cast<int>(ops.size());
   // Match the ANTLR parser behavior where `-(-)+` prefers to match as
   // repeated negate operators instead of a negation of an int literal.
   // ---9223372036854775808 will fail to parse.
-  if (has_solitary_trailing_minus && (peek_token_.type == TokenType::kInt ||
-                                      peek_token_.type == TokenType::kFloat)) {
-    int64_t op_id = ops.back().id;
-    ops.pop_back();
+  if (is_negative_numeric_literal) {
     operand = (peek_token_.type == TokenType::kInt)
-                  ? ParseNegativeIntLiteral(op_id)
-                  : ParseNegativeDoubleLiteral(op_id);
-    ParseSelectorChainTail(operand);
+                  ? ParseNegativeIntLiteral(negative_literal_op_id)
+                  : ParseNegativeDoubleLiteral(negative_literal_op_id);
+    ParseSelectorChainTail(operand, /*initial_chain_depth=*/0);
   } else {
     operand = ParseSelectorChain();
+  }
+  recursion_depth_ -= static_cast<int>(ops.size());
+  if (recursion_limit_exceeded_) {
+    return ExprNode();
   }
 
   for (int i = static_cast<int>(ops.size()) - 1; i >= 0; --i) {
@@ -626,8 +726,16 @@ ExprNode PrattParserWorker<ExprNode>::ParseUnaryOps() {
     }
   }
 
+  if (CheckRecursion(0)) {
+    return ExprNode();
+  }
   int64_t op_id = NextId(op);
+  recursion_depth_++;
   ExprNode operand = ParseSelectorChain();
+  recursion_depth_--;
+  if (recursion_limit_exceeded_) {
+    return ExprNode();
+  }
   std::vector<ExprNode> args;
   args.push_back(std::move(operand));
   absl::string_view op_name = (op_type == TokenType::kExclamation)
@@ -686,14 +794,50 @@ template <typename ExprNode>
 ExprNode PrattParserWorker<ExprNode>::ParsePrimary() {
   switch (peek_token_.type) {
     case TokenType::kLeftParen: {
-      int grouping_paren_count = CountGroupingParentheses();
-      for (int i = 0; i < grouping_paren_count; ++i) {
+      if (recursion_limit_exceeded_ || is_recovery_limit_exceeded()) {
+        return ExprNode();
+      }
+      // To avoid deep call-stack recursion on heavily nested parentheses (e.g.
+      // "((((a))))" or "((((a + 1) + 1) + 1))"), consume all consecutive
+      // leading '(' tokens upfront, parse the innermost expression once, and
+      // then iteratively unwind each enclosing '(' from innermost to outermost.
+      // After consuming each matching ')', if more enclosing '(' remain open
+      // and the next token is not another ')', continue parsing any trailing
+      // selectors or binary/ternary operators belonging to that enclosing
+      // parenthesized level using the already-parsed inner expression as the
+      // LHS.
+      int open_parens = 0;
+      while (peek_token_.type == TokenType::kLeftParen) {
+        open_parens++;
         NextToken();
       }
-      ExprNode expr = ParseExpr();
-      for (int i = 0; i < grouping_paren_count; ++i) {
-        Expect(TokenType::kRightParen);
+      // Every '(' is a nesting level and costs one unit of recursion budget, so
+      // charge all of them here. `recursion_depth_` is already 1 for the
+      // enclosing expression (as in ParseUnaryOpsChain), so `open_parens`
+      // parentheses reach depth `recursion_depth_ + open_parens - 1`.
+      // `recursion_depth_` itself only advances by 1 because the parens are
+      // unwound iteratively and entering ParseBinaryAndTernary() below adds
+      // just one stack frame.
+      if (CheckRecursion(open_parens - 1)) {
+        return ExprNode();
       }
+      recursion_depth_++;
+      ExprNode expr = ParseBinaryAndTernary(0);
+      int chain_depth = last_parsed_depth_;
+      for (int i = 0; i < open_parens; ++i) {
+        Expect(TokenType::kRightParen);
+        if (i < open_parens - 1 && peek_token_.type != TokenType::kRightParen) {
+          TokenType tok = peek_token_.type;
+          if (tok == TokenType::kDot || tok == TokenType::kLeftBracket ||
+              tok == TokenType::kLeftBrace) {
+            ParseSelectorChainTail(expr, chain_depth);
+          }
+          ParseBinaryAndTernaryFromLhs(expr, 0, last_parsed_depth_);
+          chain_depth = last_parsed_depth_;
+        }
+      }
+      recursion_depth_--;
+      last_parsed_depth_ = chain_depth;
       return expr;
     }
     case TokenType::kNull:
@@ -743,6 +887,7 @@ ExprNode PrattParserWorker<ExprNode>::ParseList() {
   Token open_tok = NextToken();
   int64_t list_id = NextId(open_tok);
   ListNodeBuilder<ExprNode> builder = ast_factory_.NewListBuilder(list_id);
+  last_parsed_depth_ = 0;
   while (peek_token_.type != TokenType::kRightBracket &&
          peek_token_.type != TokenType::kEnd) {
     bool optional = false;
@@ -753,7 +898,7 @@ ExprNode PrattParserWorker<ExprNode>::ParseList() {
         ReportError(q, "unsupported syntax '?'");
       }
     }
-    builder.Add(ParseExpr(), optional);
+    builder.Add(ParseElementExpr(), optional);
     if (peek_token_.type == TokenType::kComma) {
       NextToken();
     } else {
@@ -772,6 +917,7 @@ ExprNode PrattParserWorker<ExprNode>::ParseMap() {
   Token open_tok = NextToken();
   int64_t map_id = NextId(open_tok);
   MapNodeBuilder<ExprNode> builder = ast_factory_.NewMapBuilder(map_id);
+  last_parsed_depth_ = 0;
   while (peek_token_.type != TokenType::kRightBrace &&
          peek_token_.type != TokenType::kEnd) {
     bool optional = false;
@@ -785,13 +931,13 @@ ExprNode PrattParserWorker<ExprNode>::ParseMap() {
       key_start = peek_token_;
     }
     int64_t entry_id = NextId();
-    ExprNode key = ParseExpr();
+    ExprNode key = ParseElementExpr();
     Token colon = peek_token_;
     if (!Expect(TokenType::kColon, "expected ':' in map entry")) {
       break;
     }
     SetPosition(entry_id, colon);
-    builder.Add(entry_id, std::move(key), ParseExpr(), optional);
+    builder.Add(entry_id, std::move(key), ParseElementExpr(), optional);
     if (peek_token_.type == TokenType::kComma) {
       NextToken();
     } else {
@@ -811,6 +957,7 @@ ExprNode PrattParserWorker<ExprNode>::ParseStruct(
   Token open_tok = NextToken();
   StructNodeBuilder<ExprNode> builder =
       ast_factory_.NewStructBuilder(obj_id, std::string(struct_name));
+  last_parsed_depth_ = 0;
   while (peek_token_.type != TokenType::kRightBrace &&
          peek_token_.type != TokenType::kEnd) {
     bool optional = false;
@@ -834,7 +981,7 @@ ExprNode PrattParserWorker<ExprNode>::ParseStruct(
       break;
     }
     int64_t field_id = NextId(colon);
-    builder.Add(field_id, std::move(field_name), ParseExpr(), optional);
+    builder.Add(field_id, std::move(field_name), ParseElementExpr(), optional);
     if (peek_token_.type == TokenType::kComma) {
       NextToken();
     } else {
@@ -857,9 +1004,10 @@ template <typename ExprNode>
 std::vector<ExprNode> PrattParserWorker<ExprNode>::ParseArguments(
     TokenType close_token) {
   std::vector<ExprNode> args;
+  last_parsed_depth_ = 0;
   if (peek_token_.type != close_token && peek_token_.type != TokenType::kEnd) {
     while (true) {
-      args.push_back(ParseExpr());
+      args.push_back(ParseElementExpr());
       if (peek_token_.type == TokenType::kComma) {
         NextToken();
         if (peek_token_.type == close_token) {
@@ -1211,75 +1359,6 @@ void PrattParserWorker<ExprNode>::RecordMacroCall(
         ast_factory_.NewCall(0, std::string(function), std::move(arguments));
   }
   macro_calls_.insert({macro_id, std::move(call_expr)});
-}
-
-// Scans ahead in the token stream to detect contiguous grouping
-// parentheses (e.g., `((((expr))))`). By determining the number of outermost
-// parentheses that enclose the exact same expression and close contiguously,
-// the parser unnests them in a single C++ stack frame, avoiding deep recursive
-// descent.
-template <typename ExprNode>
-int PrattParserWorker<ExprNode>::CountGroupingParentheses() {
-  if (peek_token_.type != TokenType::kLeftParen) {
-    return 0;
-  }
-
-  // Save lexer position to restore after scanning ahead.
-  const int32_t saved_pos = lexer_.SavePosition();
-  auto restore_lexer = absl::MakeCleanup(
-      [this, saved_pos] { lexer_.RestorePosition(saved_pos); });
-
-  int leading_open_parens = 1;
-  Token tok = this->NextSignificantToken(/*report_error=*/false);
-  while (tok.type == TokenType::kLeftParen) {
-    leading_open_parens++;
-    tok = this->NextSignificantToken(/*report_error=*/false);
-  }
-  if (leading_open_parens == 1) {
-    return 1;
-  }
-
-  int open_parens = leading_open_parens;
-  int consecutive_leading_closed = 0;
-
-  while (open_parens > 0) {
-    if (tok.type == TokenType::kEnd || tok.type == TokenType::kError) {
-      // Return 1 to ensure the parser consumes '(' and standard error handling
-      // catches incomplete expressions like `(ident`.
-      return 1;
-    }
-
-    if (tok.type == TokenType::kLeftParen) {
-      // An inner parenthesis opens within the expression
-      // (e.g. `(x` in `((1 + (x) ))`).
-      open_parens++;
-      consecutive_leading_closed = 0;
-    } else if (tok.type == TokenType::kRightParen) {
-      if (leading_open_parens == open_parens) {
-        // All inner parentheses are balanced, so this ')' closes one of the
-        // initial leading '(' parentheses (e.g. trailing ')' in `(((expr)))`).
-        leading_open_parens--;
-        consecutive_leading_closed++;
-      } else {
-        // This ')' closes an inner nested parenthesis (e.g. `(1 + 2)` in
-        // `((1 + 2) * 3)`), not one of the outermost leading parentheses.
-        consecutive_leading_closed = 0;
-      }
-      open_parens--;
-    } else {
-      // Non-parenthesis token (identifier, operator, literal, etc.). Any
-      // preceding ')' did not close the entire expression, so reset the
-      // contiguous outer closing count.
-      consecutive_leading_closed = 0;
-    }
-
-    if (open_parens > 0) {
-      tok = this->NextSignificantToken(/*report_error=*/false);
-    }
-  }
-
-  // Return at least 1 to make sure we catch unclosed expressions like `(ident`.
-  return std::max(1, consecutive_leading_closed);
 }
 
 }  // namespace cel::parser_internal

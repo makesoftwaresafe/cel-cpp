@@ -222,8 +222,45 @@ void BM_Antlr_ParseNestedParentheses(benchmark::State& state) {
   BM_ParseNestedParentheses(state, ParserImplType::kAntlr);
 }
 
-BENCHMARK(BM_Pratt_ParseNestedParentheses)->Arg(10)->Arg(50);
+BENCHMARK(BM_Pratt_ParseNestedParentheses)->Arg(10)->Arg(50)->Arg(200);
 BENCHMARK(BM_Antlr_ParseNestedParentheses)->Arg(10)->Arg(50);
+
+// -----------------------------------------------------------------------------
+// Workload 5b: Deeply Nested Left Parentheses with Calc ("((((a + 1) + 1))")
+// -----------------------------------------------------------------------------
+std::string BuildNestedLeftParenthesesCalc(int depth) {
+  std::string expr(depth, '(');
+  absl::StrAppend(&expr, "1 + 2");
+  for (int i = 0; i < depth; ++i) {
+    absl::StrAppend(&expr, ") + 1");
+  }
+  return expr;
+}
+
+void BM_ParseNestedLeftParenthesesCalc(benchmark::State& state,
+                                       ParserImplType type) {
+  cel::ParserOptions options;
+  auto parser = CreateParser(type, options);
+  std::string expr = BuildNestedLeftParenthesesCalc(state.range(0));
+
+  for (auto _ : state) {
+    auto source = cel::NewSource(expr);
+    ABSL_DCHECK_OK(source.status());
+    auto ast = parser->Parse(**source);
+    ABSL_DCHECK_OK(ast.status());
+    benchmark::DoNotOptimize(ast);
+  }
+}
+
+void BM_Pratt_ParseNestedLeftParenthesesCalc(benchmark::State& state) {
+  BM_ParseNestedLeftParenthesesCalc(state, ParserImplType::kPratt);
+}
+void BM_Antlr_ParseNestedLeftParenthesesCalc(benchmark::State& state) {
+  BM_ParseNestedLeftParenthesesCalc(state, ParserImplType::kAntlr);
+}
+
+BENCHMARK(BM_Pratt_ParseNestedLeftParenthesesCalc)->Arg(10)->Arg(50)->Arg(200);
+BENCHMARK(BM_Antlr_ParseNestedLeftParenthesesCalc)->Arg(10)->Arg(50);
 
 // -----------------------------------------------------------------------------
 // Workload 6: Common Representative Expressions with Syntax Errors
