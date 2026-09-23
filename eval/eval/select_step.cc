@@ -211,10 +211,10 @@ class SelectStep : public ExpressionStepBase {
       : ExpressionStepBase(expr_id),
         field_value_(std::move(value)),
         field_(field_value_.ToString()),
-        test_field_presence_(test_field_presence),
         unboxing_option_(enable_wrapper_type_null_unboxing
                              ? ProtoWrapperTypeOptions::kUnsetNull
                              : ProtoWrapperTypeOptions::kUnsetProtoDefault),
+        test_field_presence_(test_field_presence),
         enable_optional_types_(enable_optional_types) {}
 
   absl::Status Evaluate(ExecutionFrame* frame) const override;
@@ -222,8 +222,8 @@ class SelectStep : public ExpressionStepBase {
  protected:
   cel::StringValue field_value_;
   std::string field_;
-  bool test_field_presence_;
   ProtoWrapperTypeOptions unboxing_option_;
+  bool test_field_presence_;
   bool enable_optional_types_;
 };
 
