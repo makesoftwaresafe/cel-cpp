@@ -16,8 +16,11 @@
 #define THIRD_PARTY_CEL_CPP_BASE_FUNCTION_RESULT_H_
 
 #include <cstdint>
+#include <string>
 #include <utility>
 
+#include "absl/base/attributes.h"
+#include "absl/strings/string_view.h"
 #include "base/function_descriptor.h"
 
 namespace cel {
@@ -32,29 +35,21 @@ class FunctionResult final {
   FunctionResult& operator=(const FunctionResult&) = default;
   FunctionResult& operator=(FunctionResult&&) = default;
 
-  FunctionResult(FunctionDescriptor descriptor, int64_t expr_id)
-      : descriptor_(std::move(descriptor)), expr_id_(expr_id) {}
+  explicit FunctionResult(std::string_view name) : name_(name) {}
 
-  // The descriptor of the called function that return Unknown.
-  const FunctionDescriptor& descriptor() const { return descriptor_; }
-
-  // The id of the |Expr| that triggered the function call step. Provided
-  // informationally -- if two different |Expr|s generate the same unknown call,
-  // they will be treated as the same unknown function result.
-  int64_t call_expr_id() const { return expr_id_; }
+  absl::string_view name() const ABSL_ATTRIBUTE_LIFETIME_BOUND { return name_; }
 
   // Equality operator provided for testing. Compatible with set less-than
   // comparator.
   // Compares descriptor then arguments elementwise.
   bool IsEqualTo(const FunctionResult& other) const {
-    return descriptor() == other.descriptor();
+    return name() == other.name();
   }
 
   // TODO(uncreated-issue/5): re-implement argument capture
 
  private:
-  FunctionDescriptor descriptor_;
-  int64_t expr_id_;
+  std::string name_;
 };
 
 inline bool operator==(const FunctionResult& lhs, const FunctionResult& rhs) {
@@ -62,7 +57,7 @@ inline bool operator==(const FunctionResult& lhs, const FunctionResult& rhs) {
 }
 
 inline bool operator<(const FunctionResult& lhs, const FunctionResult& rhs) {
-  return lhs.descriptor() < rhs.descriptor();
+  return lhs.name() < rhs.name();
 }
 
 }  // namespace cel

@@ -120,7 +120,11 @@ cc_library(
     hdrs = [
         "function_result.h",
     ],
-    deps = [":function_descriptor"],
+    deps = [
+        ":function_descriptor",
+        "@com_google_absl//absl/base:core_headers",
+        "@com_google_absl//absl/strings:string_view",
+    ],
 )
 
 cc_library(

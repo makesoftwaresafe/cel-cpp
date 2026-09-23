@@ -219,7 +219,7 @@ UnknownValue AttributeUtility::CreateUnknownSet(
     const cel::FunctionDescriptor& fn_descriptor, int64_t expr_id,
     absl::Span<const cel::Value> args) const {
   return cel::common_internal::MakeUnknownValue(
-      cel::Unknown(FunctionResultSet(FunctionResult(fn_descriptor, expr_id))));
+      cel::Unknown(FunctionResultSet(FunctionResult(fn_descriptor.name()))));
 }
 
 void AttributeUtility::Add(Accumulator& a, const cel::UnknownValue& v) const {

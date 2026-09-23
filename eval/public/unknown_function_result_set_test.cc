@@ -38,15 +38,15 @@ CelFunctionDescriptor kTwoInt("TwoInt", false,
 CelFunctionDescriptor kOneInt("OneInt", false, {CelValue::Type::kInt64});
 
 TEST(UnknownFunctionResult, Equals) {
-  UnknownFunctionResult call1(kTwoInt, /*expr_id=*/0);
+  UnknownFunctionResult call1(kTwoInt.name());
 
-  UnknownFunctionResult call2(kTwoInt, /*expr_id=*/0);
+  UnknownFunctionResult call2(kTwoInt.name());
 
   EXPECT_TRUE(call1.IsEqualTo(call2));
 
-  UnknownFunctionResult call3(kOneInt, /*expr_id=*/0);
+  UnknownFunctionResult call3(kOneInt.name());
 
-  UnknownFunctionResult call4(kOneInt, /*expr_id=*/0);
+  UnknownFunctionResult call4(kOneInt.name());
 
   EXPECT_TRUE(call3.IsEqualTo(call4));
 
@@ -57,25 +57,16 @@ TEST(UnknownFunctionResult, Equals) {
 }
 
 TEST(UnknownFunctionResult, InequalDescriptor) {
-  UnknownFunctionResult call1(kTwoInt, /*expr_id=*/0);
+  UnknownFunctionResult call1(kTwoInt.name());
 
-  UnknownFunctionResult call2(kOneInt, /*expr_id=*/0);
+  UnknownFunctionResult call2(kOneInt.name());
 
   EXPECT_FALSE(call1.IsEqualTo(call2));
 
-  CelFunctionDescriptor one_uint("OneInt", false, {CelValue::Type::kUint64});
-
-  UnknownFunctionResult call3(kOneInt, /*expr_id=*/0);
-
-  UnknownFunctionResult call4(one_uint, /*expr_id=*/0);
-
-  EXPECT_FALSE(call3.IsEqualTo(call4));
-
-  UnknownFunctionResultSet call_set({call1, call3, call4});
-  EXPECT_EQ(call_set.size(), 3);
+  UnknownFunctionResultSet call_set({call1, call2});
+  EXPECT_EQ(call_set.size(), 2);
   auto it = call_set.begin();
-  EXPECT_EQ(*it++, call3);
-  EXPECT_EQ(*it++, call4);
+  EXPECT_EQ(*it++, call2);
   EXPECT_EQ(*it++, call1);
 }
 

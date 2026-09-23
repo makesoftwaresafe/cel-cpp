@@ -22,7 +22,7 @@ using ::testing::UnorderedElementsAre;
 
 UnknownFunctionResultSet MakeFunctionResult(Arena* arena, int64_t id) {
   CelFunctionDescriptor desc("OneInt", false, {CelValue::Type::kInt64});
-  return UnknownFunctionResultSet(UnknownFunctionResult(desc, /*expr_id=*/0));
+  return UnknownFunctionResultSet(UnknownFunctionResult(desc.name()));
 }
 
 UnknownAttributeSet MakeAttribute(Arena* arena, int64_t id) {

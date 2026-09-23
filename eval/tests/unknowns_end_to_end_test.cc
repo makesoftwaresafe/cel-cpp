@@ -133,7 +133,7 @@ class UnknownsTest : public testing::Test {
 
 MATCHER_P(FunctionCallIs, fn_name, "") {
   const cel::FunctionResult& result = arg;
-  return result.descriptor().name() == fn_name;
+  return result.name() == fn_name;
 }
 
 MATCHER_P(AttributeIs, attr, "") {
