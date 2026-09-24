@@ -115,6 +115,28 @@ cc_library(
 )
 
 cc_library(
+    name = "cel_value_clone",
+    srcs = ["cel_value_clone.cc"],
+    hdrs = ["cel_value_clone.h"],
+    deps = [
+        ":cel_value",
+        ":message_wrapper",
+        ":unknown_set",
+        "//eval/public/containers:container_backed_list_impl",
+        "//eval/public/containers:container_backed_map_impl",
+        "//internal:status_macros",
+        "@com_google_absl//absl/log:absl_check",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:cord",
+        "@com_google_absl//absl/time",
+        "@com_google_absl//absl/types:optional",
+        "@com_google_protobuf//:protobuf",
+    ],
+)
+
+cc_library(
     name = "cel_attribute",
     srcs = [
         "cel_attribute.cc",
