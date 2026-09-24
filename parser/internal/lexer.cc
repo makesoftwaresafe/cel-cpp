@@ -27,7 +27,6 @@
 #include "absl/functional/function_ref.h"
 #include "absl/log/absl_check.h"
 #include "absl/strings/ascii.h"
-#include "absl/strings/str_cat.h"
 #include "absl/strings/string_view.h"
 
 namespace cel::parser_internal {
@@ -168,8 +167,6 @@ Token Lexer::Lex() {
   char32_t c = content_.at(position_);
   switch (c) {
     case '\f':
-      ABSL_FALLTHROUGH_INTENDED;
-    case '\v':
       ABSL_FALLTHROUGH_INTENDED;
     case '\t':
       ABSL_FALLTHROUGH_INTENDED;
@@ -466,8 +463,6 @@ void Lexer::ConsumeWhitespace() {
         ABSL_FALLTHROUGH_INTENDED;
       case '\r':
         ABSL_FALLTHROUGH_INTENDED;
-      case '\v':
-        ABSL_FALLTHROUGH_INTENDED;
       case '\t':
         Advance(1);
         break;
@@ -638,12 +633,6 @@ Token Lexer::ConsumeNumericLiteral() {
               "integral literal missing digits after hexadecimal separator");
         }
         auto token_type = ConsumeIntegralSuffix();
-        if (ConsumeIf(IsIdentTrailing)) {
-          return SetError(
-              start, GetPosition(),
-              absl::StrCat(TokenTypeToString(token_type),
-                           " literal has unexpected trailing characters"));
-        }
         return MakeToken(token_type, start, GetPosition());
       }
     }
@@ -667,12 +656,6 @@ Token Lexer::ConsumeNumericLiteral() {
   }
   auto token_type =
       floating_point ? TokenType::kFloat : ConsumeIntegralSuffix();
-  if (ConsumeIf(IsIdentTrailing)) {
-    return SetError(
-        start, GetPosition(),
-        absl::StrCat(TokenTypeToString(token_type),
-                     " literal has unexpected trailing characters"));
-  }
   return MakeToken(token_type, start, GetPosition());
 }
 

@@ -72,11 +72,17 @@ class ParserWorker {
   const cel::ParserOptions& options() const { return options_; }
   // Token stream management
   void InitTokenStream();
-  Token NextSignificantToken();
+  Token NextSignificantToken(bool report_error = true);
   Token NextToken();
   bool Expect(TokenType type, absl::string_view msg = "");
   std::string GetTokenText(const Token& tok) const;
   void SynchronizeOnDelimiter();
+  // Returns true if the tokens following the current identifier form the
+  // remainder of a struct/message creation type name (e.g. `.Foo.Bar{...}`).
+  // Used to disambiguate between selectors and struct creation expressions
+  // based on the grammar rule, which permits CEL reserved words in message type
+  // names.
+  bool IsStructCreationAhead();
 
   // ID and Position tracking
   int64_t NextId(int32_t position);
@@ -269,16 +275,23 @@ class PrattParserWorker : public ParserWorker {
   // frames for each term.
   void ParseBalancedLogicalChain(ExprNode& lhs, const BinaryOpInfo& op_info);
 
-  // Parses prefix unary operators (`!`, `-`) and trailing postfix
-  // member/indexing operations (`.field`, `[index]`, `.method(args)`). First
-  // calls `ParseUnary()` to obtain the base operand, then consumes trailing
-  // selector
-  // (`.`) and bracket (`[` or `{`) operations in an iterative loop.
+  // Parses prefix unary operators (`!`, `-`) via `ParseUnaryOps()`, or
+  // delegates to `ParseMember()` to parse a primary expression and any
+  // trailing postfix operations.
   //
-  // Example (`!a.b[0].c(x)`): `ParseUnary()` consumes `!` and calls
-  // `ParseSelectorChain()` for `a.b[0].c(x)`, which parses primary `a` and
-  // then loops iteratively through `.b`, `[0]`, and `.c(x)`.
+  // Example (`!a.b[0].c(x)`): `ParseUnaryOps()` consumes `!` and calls
+  // `ParseMember()` for `a.b[0].c(x)`.
   ExprNode ParseSelectorChain();
+
+  // Parses a primary expression (`ParsePrimary()`) followed by any trailing
+  // postfix member, indexing, method call, or struct initializer operations
+  // (`ParseSelectorChainTail()`), capturing the start offset of the member
+  // expression for source position tracking in optional field selections.
+  //
+  // Example (`a.b[0].c(x)`): Calls `ParsePrimary()` to obtain `a`, then calls
+  // `ParseSelectorChainTail()` to loop iteratively through `.b`, `[0]`, and
+  // `.c(x)`.
+  ExprNode ParseMember();
 
   // Handler for postfix member, index, receiver method, and
   // struct initializer operations (`.field`, `[index]`, `.method(args)`,
@@ -289,25 +302,11 @@ class PrattParserWorker : public ParserWorker {
   // `initial_chain_depth` is the depth already accumulated by `lhs`: a
   // parenthesized primary such as `(a.b.c)` contributes its own depth, which
   // the selectors trailing the closing `)` continue to accumulate on top of.
-  void ParseSelectorChainTail(ExprNode& lhs, int initial_chain_depth);
+  void ParseSelectorChainTail(ExprNode& lhs, int32_t member_start_position,
+                              bool can_be_struct_name, int initial_chain_depth);
 
-  // Parses prefix unary operators (logical NOT `!` and negation `-`). If a
-  // numeric literal immediately follows `-`, folds it directly into a negative
-  // constant node (`-42`, `-3.14`). Otherwise, wraps the operand in a `_!_` or
-  // `_-_` function call node. Delegates to `ParseSelectorChain()` for the
-  // operand to naturally support chained prefix operations (`!!x`, `-!y`), or
-  // falls back to `ParsePrimary()` if no prefix operator is encountered.
-  //
-  // Example (`-42`): Folds directly into a negative integer constant `-42`.
-  // Example (`!has(x.y)`): Consumes `!` and creates a `LOGICAL_NOT` call node
-  // wrapping `has(x.y)`.
-  ExprNode ParseUnary();
-
-  // Parses unary operators (`!`, `-`).
+  // Parses prefix unary operators (`!`, `-`).
   ExprNode ParseUnaryOps();
-
-  // Parses unary operator chains (`!`, `-`).
-  ExprNode ParseUnaryOpsChain(Token first_op);
 
   // Parses primary leaf expressions (`nud` atomic atoms), including
   // parenthesized expressions (`(expr)`), literal constants (`null`, `true`,
@@ -324,7 +323,7 @@ class PrattParserWorker : public ParserWorker {
   // Example (`(a + b)`): Consumes `(`, recurses to `ParseExpr()`, and expects
   // `)`. Example (`has(x.y)`): Consumes `has`, parses arguments `(x.y)`, and
   // expands the `has` macro.
-  ExprNode ParsePrimary();
+  ExprNode ParsePrimary(bool* absl_nullable can_be_struct_name = nullptr);
 
   ExprNode ParseList();
   ExprNode ParseMap();
@@ -339,8 +338,9 @@ class PrattParserWorker : public ParserWorker {
   ExprNode ParseBytesLiteral();
   void BuildBinaryCall(int64_t op_id, absl::string_view op_name, ExprNode& lhs,
                        ExprNode rhs);
-  ExprNode ParseIdentOrCall();
-  std::string NormalizeIdent(const Token& tok, bool allow_quoted);
+  ExprNode ParseIdentOrCall(bool* absl_nullable can_be_struct_name = nullptr);
+  std::string NormalizeIdent(const Token& tok, bool allow_quoted,
+                             bool* absl_nullable is_quoted = nullptr);
   std::optional<std::string> ExtractStructName(const ExprNode& expr);
   int32_t GetLeftmostPosition(const ExprNode& expr);
   ExprNode BalancedTree(absl::string_view op, std::vector<ExprNode>& terms,
@@ -491,11 +491,24 @@ void PrattParserWorker<ExprNode>::ParseBalancedLogicalChain(
 template <typename ExprNode>
 ExprNode PrattParserWorker<ExprNode>::ParseSelectorChain() {
   last_parsed_depth_ = 0;
-  ExprNode lhs = ParseUnary();
+  TokenType tok = peek_token_.type;
+  if (tok == TokenType::kExclamation || tok == TokenType::kMinus) {
+    return ParseUnaryOps();
+  }
+  return ParseMember();
+}
+
+template <typename ExprNode>
+ExprNode PrattParserWorker<ExprNode>::ParseMember() {
+  last_parsed_depth_ = 0;
+  int32_t member_start = peek_token_.start;
+  bool can_be_struct_name = false;
+  ExprNode lhs = ParsePrimary(&can_be_struct_name);
   TokenType tok = peek_token_.type;
   if (tok == TokenType::kDot || tok == TokenType::kLeftBracket ||
       tok == TokenType::kLeftBrace) {
-    ParseSelectorChainTail(lhs, last_parsed_depth_);
+    ParseSelectorChainTail(lhs, member_start, can_be_struct_name,
+                           last_parsed_depth_);
   }
   return lhs;
 }
@@ -504,7 +517,8 @@ ExprNode PrattParserWorker<ExprNode>::ParseSelectorChain() {
 // (e.g., `!a.b[0].c(x)`).
 template <typename ExprNode>
 void PrattParserWorker<ExprNode>::ParseSelectorChainTail(
-    ExprNode& lhs, int initial_chain_depth) {
+    ExprNode& lhs, int32_t member_start_position, bool can_be_struct_name,
+    int initial_chain_depth) {
   int chain_depth = initial_chain_depth;
   while (true) {
     TokenType tok = peek_token_.type;
@@ -533,17 +547,24 @@ void PrattParserWorker<ExprNode>::ParseSelectorChainTail(
         return;
       }
       bool is_member_call = peek_token_.type == TokenType::kLeftParen;
+      bool is_quoted = false;
       std::string id_text =
-          NormalizeIdent(id_tok, /*allow_quoted=*/!is_member_call);
+          NormalizeIdent(id_tok, /*allow_quoted=*/!is_member_call, &is_quoted);
       if (optional) {
         int64_t op_id = NextId(dot_tok);
         std::vector<ExprNode> args;
         args.reserve(2);
         args.push_back(std::move(lhs));
+        int64_t field_id = NextId(member_start_position);
+        SetNodeRange(field_id, member_start_position,
+                     id_tok.end > member_start_position
+                         ? id_tok.end - 1
+                         : member_start_position);
         args.push_back(
-            ast_factory_.NewStringConst(NextId(id_tok), std::move(id_text)));
+            ast_factory_.NewStringConst(field_id, std::move(id_text)));
         lhs = ast_factory_.NewCall(op_id, CelOperator::OPT_SELECT,
                                    std::move(args));
+        can_be_struct_name = false;
       } else if (peek_token_.type == TokenType::kLeftParen) {
         Token lparen = NextToken();
         int64_t call_id = NextId(lparen);
@@ -561,8 +582,10 @@ void PrattParserWorker<ExprNode>::ParseSelectorChainTail(
         // deep. The max preserves the selectors already walked when the
         // arguments are shallower, as in `a.b.c.f(1)`.
         chain_depth = std::max(chain_depth, last_parsed_depth_ + 1);
+        can_be_struct_name = false;
       } else {
         lhs = ast_factory_.NewSelect(NextId(dot_tok), std::move(lhs), id_text);
+        can_be_struct_name = can_be_struct_name && !is_quoted;
       }
     } else if (tok == TokenType::kLeftBracket) {
       if (CheckRecursion(chain_depth)) {
@@ -593,7 +616,11 @@ void PrattParserWorker<ExprNode>::ParseSelectorChainTail(
       // max preserves the selectors already walked when the index is shallower,
       // as in `a.b.c[0]`.
       chain_depth = std::max(chain_depth, last_parsed_depth_ + 1);
+      can_be_struct_name = false;
     } else if (tok == TokenType::kLeftBrace) {
+      if (!can_be_struct_name) {
+        break;
+      }
       int32_t struct_pos = GetLeftmostPosition(lhs);
       if (auto struct_name = ExtractStructName(lhs); struct_name.has_value()) {
         lhs = ParseStruct(NextId(struct_pos), *struct_name);
@@ -604,6 +631,7 @@ void PrattParserWorker<ExprNode>::ParseSelectorChainTail(
         // selectors already walked when the fields are shallower, as in
         // `a.b.Msg{f: 1}`.
         chain_depth = std::max(chain_depth, last_parsed_depth_);
+        can_be_struct_name = false;
       } else {
         break;
       }
@@ -615,52 +643,47 @@ void PrattParserWorker<ExprNode>::ParseSelectorChainTail(
 }
 
 template <typename ExprNode>
-ExprNode PrattParserWorker<ExprNode>::ParseUnaryOpsChain(Token first_op) {
+ExprNode PrattParserWorker<ExprNode>::ParseUnaryOps() {
   struct UnaryOp {
     Token token;
     int64_t id = 0;
   };
+  Token first_op = NextToken();
+  TokenType op_type = first_op.type;
   std::vector<UnaryOp> ops;
   ops.push_back({first_op});
-  while (peek_token_.type == TokenType::kExclamation ||
-         peek_token_.type == TokenType::kMinus) {
+  while (peek_token_.type == op_type) {
     ops.push_back({NextToken()});
   }
 
-  const bool has_solitary_trailing_minus =
-      !ops.empty() && ops.back().token.type == TokenType::kMinus &&
-      (ops.size() == 1 || ops[ops.size() - 2].token.type != TokenType::kMinus);
+  if (op_type == TokenType::kMinus && ops.size() == 1 &&
+      (peek_token_.type == TokenType::kInt ||
+       peek_token_.type == TokenType::kFloat)) {
+    ExprNode lhs = (peek_token_.type == TokenType::kInt)
+                       ? ParseNegativeIntLiteral(NextId(first_op))
+                       : ParseNegativeDoubleLiteral(NextId(first_op));
+    TokenType tok = peek_token_.type;
+    if (tok == TokenType::kDot || tok == TokenType::kLeftBracket ||
+        tok == TokenType::kLeftBrace) {
+      ParseSelectorChainTail(lhs, first_op.start,
+                             /*can_be_struct_name=*/false,
+                             /*initial_chain_depth=*/0);
+    }
+    return lhs;
+  }
 
   if (options_.fold_unary_operators) {
-    size_t write = 0;
-    for (size_t read = 0; read < ops.size();) {
-      size_t next = read;
-      while (next < ops.size() &&
-             ops[next].token.type == ops[read].token.type) {
-        next++;
-      }
-      if ((next - read) % 2 != 0) {
-        ops[write++] = ops[read];
-      }
-      read = next;
+    if (ops.size() % 2 == 0) {
+      ops.clear();
+    } else {
+      ops.resize(1);
     }
-    ops.resize(write);
   }
 
   for (auto& op : ops) {
     op.id = NextId(op.token);
   }
 
-  const bool is_negative_numeric_literal =
-      has_solitary_trailing_minus && (peek_token_.type == TokenType::kInt ||
-                                      peek_token_.type == TokenType::kFloat);
-  int64_t negative_literal_op_id = 0;
-  if (is_negative_numeric_literal) {
-    negative_literal_op_id = ops.back().id;
-    ops.pop_back();
-  }
-
-  ExprNode operand;
   // Every retained operator wraps the operand in one more call node, so the run
   // costs as many levels as it has operators even though it is parsed by a
   // loop. The outermost one is the deepest, so checking it covers the rest.
@@ -668,16 +691,27 @@ ExprNode PrattParserWorker<ExprNode>::ParseUnaryOpsChain(Token first_op) {
     return ExprNode();
   }
   recursion_depth_ += static_cast<int>(ops.size());
-  // Match the ANTLR parser behavior where `-(-)+` prefers to match as
-  // repeated negate operators instead of a negation of an int literal.
-  // ---9223372036854775808 will fail to parse.
-  if (is_negative_numeric_literal) {
-    operand = (peek_token_.type == TokenType::kInt)
-                  ? ParseNegativeIntLiteral(negative_literal_op_id)
-                  : ParseNegativeDoubleLiteral(negative_literal_op_id);
-    ParseSelectorChainTail(operand, /*initial_chain_depth=*/0);
+
+  ExprNode operand;
+  if (op_type == TokenType::kExclamation &&
+      peek_token_.type == TokenType::kMinus) {
+    Token minus_tok = NextToken();
+    if (peek_token_.type == TokenType::kInt) {
+      operand = ParseNegativeIntLiteral(NextId(minus_tok));
+      ParseSelectorChainTail(operand, minus_tok.start,
+                             /*can_be_struct_name=*/false,
+                             /*initial_chain_depth=*/0);
+    } else if (peek_token_.type == TokenType::kFloat) {
+      operand = ParseNegativeDoubleLiteral(NextId(minus_tok));
+      ParseSelectorChainTail(operand, minus_tok.start,
+                             /*can_be_struct_name=*/false,
+                             /*initial_chain_depth=*/0);
+    } else {
+      ReportSyntaxError(minus_tok, "unexpected '-'");
+      operand = ParseMember();
+    }
   } else {
-    operand = ParseSelectorChain();
+    operand = ParseMember();
   }
   recursion_depth_ -= static_cast<int>(ops.size());
   if (recursion_limit_exceeded_) {
@@ -697,57 +731,11 @@ ExprNode PrattParserWorker<ExprNode>::ParseUnaryOpsChain(Token first_op) {
   return operand;
 }
 
-// Parses prefix unary operators (`!`, `-`) iteratively and folds negative
-// numeric literals (e.g., `-42`, `!has(x.y)`).
-template <typename ExprNode>
-ExprNode PrattParserWorker<ExprNode>::ParseUnary() {
-  TokenType tok = peek_token_.type;
-  if (tok == TokenType::kExclamation || tok == TokenType::kMinus) {
-    return ParseUnaryOps();
-  }
-  return ParsePrimary();
-}
-
-template <typename ExprNode>
-ExprNode PrattParserWorker<ExprNode>::ParseUnaryOps() {
-  Token op = NextToken();
-  TokenType op_type = op.type;
-  if (peek_token_.type == TokenType::kExclamation ||
-      peek_token_.type == TokenType::kMinus) {
-    return ParseUnaryOpsChain(op);
-  }
-
-  if (op_type == TokenType::kMinus) {
-    if (peek_token_.type == TokenType::kInt) {
-      return ParseNegativeIntLiteral(NextId(op));
-    }
-    if (peek_token_.type == TokenType::kFloat) {
-      return ParseNegativeDoubleLiteral(NextId(op));
-    }
-  }
-
-  if (CheckRecursion(0)) {
-    return ExprNode();
-  }
-  int64_t op_id = NextId(op);
-  recursion_depth_++;
-  ExprNode operand = ParseSelectorChain();
-  recursion_depth_--;
-  if (recursion_limit_exceeded_) {
-    return ExprNode();
-  }
-  std::vector<ExprNode> args;
-  args.push_back(std::move(operand));
-  absl::string_view op_name = (op_type == TokenType::kExclamation)
-                                  ? CelOperator::LOGICAL_NOT
-                                  : CelOperator::NEGATE;
-  return ast_factory_.NewCall(op_id, std::string(op_name), std::move(args));
-}
-
 // Parses identifiers (e.g., `foo`, `.foo`) and global function or macro calls
 // (e.g., `foo(args)`, `has(x.y)`).
 template <typename ExprNode>
-ExprNode PrattParserWorker<ExprNode>::ParseIdentOrCall() {
+ExprNode PrattParserWorker<ExprNode>::ParseIdentOrCall(
+    bool* absl_nullable can_be_struct_name) {
   TokenType tok_type = peek_token_.type;
   bool leading_dot = false;
   Token first_tok = peek_token_;
@@ -763,9 +751,11 @@ ExprNode PrattParserWorker<ExprNode>::ParseIdentOrCall() {
     }
     return ast_factory_.NewUnspecified(NextId(id_tok));
   }
-  std::string id_text = NormalizeIdent(id_tok, /*allow_quoted=*/false);
+  bool is_quoted = false;
+  std::string id_text =
+      NormalizeIdent(id_tok, /*allow_quoted=*/false, &is_quoted);
   if (ABSL_PREDICT_FALSE(id_tok.type == TokenType::kReservedWord)) {
-    if (cel::internal::LexisIsReserved(id_text)) {
+    if (cel::internal::LexisIsReserved(id_text) && !IsStructCreationAhead()) {
       ReportError(id_tok, absl::StrFormat("reserved identifier: %s", id_text));
     }
   }
@@ -781,6 +771,9 @@ ExprNode PrattParserWorker<ExprNode>::ParseIdentOrCall() {
     }
     return ast_factory_.NewCall(call_id, name, std::move(args));
   }
+  if (can_be_struct_name != nullptr) {
+    *can_be_struct_name = !is_quoted;
+  }
   int64_t id = NextId(leading_dot ? first_tok : id_tok);
   return ast_factory_.NewIdent(id, std::move(name));
 }
@@ -791,7 +784,11 @@ ExprNode PrattParserWorker<ExprNode>::ParseIdentOrCall() {
 // (`[...]`, `{...}`), and identifiers/global function calls (`foo`,
 // `has(x.y)`).
 template <typename ExprNode>
-ExprNode PrattParserWorker<ExprNode>::ParsePrimary() {
+ExprNode PrattParserWorker<ExprNode>::ParsePrimary(
+    bool* absl_nullable can_be_struct_name) {
+  if (can_be_struct_name != nullptr) {
+    *can_be_struct_name = false;
+  }
   switch (peek_token_.type) {
     case TokenType::kLeftParen: {
       if (recursion_limit_exceeded_ || is_recovery_limit_exceeded()) {
@@ -806,8 +803,11 @@ ExprNode PrattParserWorker<ExprNode>::ParsePrimary() {
       // selectors or binary/ternary operators belonging to that enclosing
       // parenthesized level using the already-parsed inner expression as the
       // LHS.
-      int open_parens = 0;
+      int open_parens = 1;
+      NextToken();
+      std::vector<int32_t> extra_paren_starts;
       while (peek_token_.type == TokenType::kLeftParen) {
+        extra_paren_starts.push_back(peek_token_.start);
         open_parens++;
         NextToken();
       }
@@ -828,9 +828,10 @@ ExprNode PrattParserWorker<ExprNode>::ParsePrimary() {
         Expect(TokenType::kRightParen);
         if (i < open_parens - 1 && peek_token_.type != TokenType::kRightParen) {
           TokenType tok = peek_token_.type;
-          if (tok == TokenType::kDot || tok == TokenType::kLeftBracket ||
-              tok == TokenType::kLeftBrace) {
-            ParseSelectorChainTail(expr, chain_depth);
+          if (tok == TokenType::kDot || tok == TokenType::kLeftBracket) {
+            ParseSelectorChainTail(expr,
+                                   extra_paren_starts[open_parens - 2 - i],
+                                   /*can_be_struct_name=*/false, chain_depth);
           }
           ParseBinaryAndTernaryFromLhs(expr, 0, last_parsed_depth_);
           chain_depth = last_parsed_depth_;
@@ -865,7 +866,7 @@ ExprNode PrattParserWorker<ExprNode>::ParsePrimary() {
     case TokenType::kDot:
     case TokenType::kIdent:
     case TokenType::kReservedWord:
-      return ParseIdentOrCall();
+      return ParseIdentOrCall(can_be_struct_name);
     default: {
       Token bad_tok = NextToken();
       if (bad_tok.type != TokenType::kError) {
@@ -1147,11 +1148,15 @@ ExprNode PrattParserWorker<ExprNode>::ParseBytesLiteral() {
 
 // Normalizes regular & quoted identifiers (e.g., `foo`, `` `quoted.ident` ``).
 template <typename ExprNode>
-std::string PrattParserWorker<ExprNode>::NormalizeIdent(const Token& tok,
-                                                        bool allow_quoted) {
+std::string PrattParserWorker<ExprNode>::NormalizeIdent(
+    const Token& tok, bool allow_quoted, bool* absl_nullable is_quoted) {
   std::string text = GetTokenText(tok);
-  if (text.empty()) return "";
+  if (text.empty()) {
+    if (is_quoted != nullptr) *is_quoted = false;
+    return "";
+  }
   if (text.front() == '`') {
+    if (is_quoted != nullptr) *is_quoted = true;
     if (!allow_quoted) {
       ReportError(tok, "unexpected quoted identifier");
       return "";
@@ -1179,6 +1184,7 @@ std::string PrattParserWorker<ExprNode>::NormalizeIdent(const Token& tok,
     }
     return std::string(inner);
   }
+  if (is_quoted != nullptr) *is_quoted = false;
   return std::string(text);
 }
 

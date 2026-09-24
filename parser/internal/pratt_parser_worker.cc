@@ -20,6 +20,7 @@
 
 #include "absl/base/nullability.h"
 #include "absl/base/optimization.h"
+#include "absl/cleanup/cleanup.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_format.h"
 #include "absl/strings/string_view.h"
@@ -123,7 +124,7 @@ std::string ParserWorker::GetTokenText(const Token& tok) const {
   return "";
 }
 
-Token ParserWorker::NextSignificantToken() {
+Token ParserWorker::NextSignificantToken(bool report_error) {
   if (is_recovery_limit_exceeded()) {
     return Token{.type = TokenType::kEnd, .start = 0, .end = 0};
   }
@@ -132,7 +133,7 @@ Token ParserWorker::NextSignificantToken() {
     if (tok.type == TokenType::kWhitespace || tok.type == TokenType::kComment) {
       continue;
     }
-    if (tok.type == TokenType::kError) {
+    if (tok.type == TokenType::kError && report_error) {
       ReportSyntaxError(tok, lexer_.GetError().message);
       if (is_recovery_limit_exceeded()) {
         return Token{.type = TokenType::kEnd, .start = 0, .end = 0};
@@ -197,6 +198,36 @@ void ParserWorker::SynchronizeOnDelimiter() {
     }
     NextToken();
   }
+}
+
+// Checks whether the current identifier is the root of a struct/message
+// creation expression (`CreateMessage` in grammar: `'.'? IDENTIFIER ('.'
+// IDENTIFIER)* '{' ... '}'`). Unlike standalone identifiers or selector
+// chains, reserved identifiers (e.g. `import{}` or `import.Foo{}`) are
+// permitted in message type names.
+bool ParserWorker::IsStructCreationAhead() {
+  if (peek_token_.type == TokenType::kLeftBrace) {
+    return true;
+  }
+  if (peek_token_.type != TokenType::kDot) {
+    return false;
+  }
+  const int32_t saved_pos = lexer_.SavePosition();
+  auto restore_lexer = absl::MakeCleanup(
+      [this, saved_pos] { lexer_.RestorePosition(saved_pos); });
+  Token tok = peek_token_;
+  while (tok.type == TokenType::kDot) {
+    tok = NextSignificantToken(/*report_error=*/false);
+    if (tok.type != TokenType::kIdent && tok.type != TokenType::kReservedWord) {
+      return false;
+    }
+    // quoted identifiers are not allowed in struct creation expressions
+    if (tok.start < tok.end && source_.content().at(tok.start) == '`') {
+      return false;
+    }
+    tok = NextSignificantToken(/*report_error=*/false);
+  }
+  return tok.type == TokenType::kLeftBrace;
 }
 
 int64_t ParserWorker::NextId(int32_t position) {
