@@ -178,7 +178,18 @@ class ExecutionFrameBase {
                            activation.GetMissingAttributes()),
         slots_(&ComprehensionSlots::GetEmptyInstance()),
         max_iterations_(options.comprehension_max_iterations),
-        iterations_(0) {
+        iterations_(0),
+        attribute_tracking_enabled_(
+            options_->unknown_processing !=
+                cel::UnknownProcessingOptions::kDisabled ||
+            options_->enable_missing_attribute_errors),
+        missing_attribute_errors_enabled_(
+            options_->enable_missing_attribute_errors),
+        unknown_processing_enabled_(options_->unknown_processing !=
+                                    cel::UnknownProcessingOptions::kDisabled),
+        unknown_function_results_enabled_(
+            options_->unknown_processing ==
+            cel::UnknownProcessingOptions::kAttributeAndFunction) {
     if (unknown_processing_enabled()) {
       if (auto matcher = cel::runtime_internal::
               ActivationAttributeMatcherAccess::GetAttributeMatcher(activation);
@@ -209,7 +220,18 @@ class ExecutionFrameBase {
                            activation.GetMissingAttributes()),
         slots_(&slots),
         max_iterations_(options.comprehension_max_iterations),
-        iterations_(0) {
+        iterations_(0),
+        attribute_tracking_enabled_(
+            options_->unknown_processing !=
+                cel::UnknownProcessingOptions::kDisabled ||
+            options_->enable_missing_attribute_errors),
+        missing_attribute_errors_enabled_(
+            options_->enable_missing_attribute_errors),
+        unknown_processing_enabled_(options_->unknown_processing !=
+                                    cel::UnknownProcessingOptions::kDisabled),
+        unknown_function_results_enabled_(
+            options_->unknown_processing ==
+            cel::UnknownProcessingOptions::kAttributeAndFunction) {
     if (unknown_processing_enabled()) {
       if (auto matcher = cel::runtime_internal::
               ActivationAttributeMatcherAccess::GetAttributeMatcher(activation);
@@ -246,23 +268,19 @@ class ExecutionFrameBase {
   }
 
   bool attribute_tracking_enabled() const {
-    return options_->unknown_processing !=
-               cel::UnknownProcessingOptions::kDisabled ||
-           options_->enable_missing_attribute_errors;
+    return attribute_tracking_enabled_;
   }
 
   bool missing_attribute_errors_enabled() const {
-    return options_->enable_missing_attribute_errors;
+    return missing_attribute_errors_enabled_;
   }
 
   bool unknown_processing_enabled() const {
-    return options_->unknown_processing !=
-           cel::UnknownProcessingOptions::kDisabled;
+    return unknown_processing_enabled_;
   }
 
   bool unknown_function_results_enabled() const {
-    return options_->unknown_processing ==
-           cel::UnknownProcessingOptions::kAttributeAndFunction;
+    return unknown_function_results_enabled_;
   }
 
   ComprehensionSlots& comprehension_slots() { return *slots_; }
@@ -294,6 +312,10 @@ class ExecutionFrameBase {
   ComprehensionSlots* absl_nonnull slots_;
   const int max_iterations_;
   int iterations_;
+  const bool attribute_tracking_enabled_;
+  const bool missing_attribute_errors_enabled_;
+  const bool unknown_processing_enabled_;
+  const bool unknown_function_results_enabled_;
 };
 
 // ExecutionFrame manages the context needed for expression evaluation.
