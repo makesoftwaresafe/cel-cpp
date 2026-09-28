@@ -206,10 +206,9 @@ absl::Status PerformOptionalGet(const Value& target, absl::string_view field,
 // message.
 class SelectStep : public ExpressionStepBase {
  public:
-  SelectStep(absl::string_view field, bool test_field_presence, int64_t expr_id,
+  SelectStep(absl::string_view field, bool test_field_presence,
              bool enable_wrapper_type_null_unboxing, bool enable_optional_types)
-      : ExpressionStepBase(expr_id),
-        field_(field),
+      : field_(field),
         unboxing_option_(enable_wrapper_type_null_unboxing
                              ? ProtoWrapperTypeOptions::kUnsetNull
                              : ProtoWrapperTypeOptions::kUnsetProtoDefault),
@@ -461,12 +460,12 @@ bool SupportsCachedFieldDescriptor(
 
 class ProtoSelectStep : public SelectStep {
  public:
-  ProtoSelectStep(absl::string_view value, int64_t expr_id,
+  ProtoSelectStep(absl::string_view value,
                   bool enable_wrapper_type_null_unboxing,
                   bool enable_optional_types,
                   const google::protobuf::Descriptor* descriptor,
                   const google::protobuf::FieldDescriptor* field_descriptor)
-      : SelectStep(value, /*test_field_presence=*/false, expr_id,
+      : SelectStep(value, /*test_field_presence=*/false,
                    enable_wrapper_type_null_unboxing, enable_optional_types),
         descriptor_(descriptor),
         field_descriptor_(field_descriptor) {
@@ -541,11 +540,10 @@ absl::Status ProtoSelectStep::EvaluateMessageFieldGet(
 
 class ProtoHasStep : public SelectStep {
  public:
-  ProtoHasStep(absl::string_view field, int64_t expr_id,
-               bool enable_wrapper_type_null_unboxing,
+  ProtoHasStep(absl::string_view field, bool enable_wrapper_type_null_unboxing,
                bool enable_optional_types, const google::protobuf::Descriptor* descriptor,
                const google::protobuf::FieldDescriptor* field_descriptor)
-      : SelectStep(field, /*test_field_presence=*/true, expr_id,
+      : SelectStep(field, /*test_field_presence=*/true,
                    enable_wrapper_type_null_unboxing, enable_optional_types),
         descriptor_(descriptor),
         field_descriptor_(field_descriptor) {
@@ -611,25 +609,24 @@ std::unique_ptr<DirectExpressionStep> CreateDirectSelectStep(
 }
 
 // Factory method for Select - based Execution step
-absl::StatusOr<std::unique_ptr<ExpressionStep>> CreateSelectStep(
-    absl::string_view field, bool test_only, int64_t expr_id,
+absl::StatusOr<std::unique_ptr<ExpressionStepLogic>> CreateSelectStep(
+    absl::string_view field, bool test_only,
     bool enable_wrapper_type_null_unboxing, bool enable_optional_types) {
-  return std::make_unique<SelectStep>(std::move(field), test_only, expr_id,
+  return std::make_unique<SelectStep>(field, test_only,
                                       enable_wrapper_type_null_unboxing,
                                       enable_optional_types);
 }
 
 // Factory method for Select - based Execution step
-absl::StatusOr<std::unique_ptr<ExpressionStep>> CreateTypedSelectStep(
+absl::StatusOr<std::unique_ptr<ExpressionStepLogic>> CreateTypedSelectStep(
     absl::string_view field, cel::StructType resolved_operand_type,
-    cel::StructTypeField resolved_field, bool test_only, int64_t expr_id,
+    cel::StructTypeField resolved_field, bool test_only,
     bool enable_wrapper_type_null_unboxing, bool enable_optional_types) {
   if (!resolved_operand_type.IsMessage()) {
     // The specialization only supports messages. Fallback to the generic
     // implementation for other types.
     // TODO(uncreated-issue/89): support optional select and chaining.
-    return CreateSelectStep(std::move(field), test_only, expr_id,
-                            enable_wrapper_type_null_unboxing,
+    return CreateSelectStep(field, test_only, enable_wrapper_type_null_unboxing,
                             enable_optional_types);
   }
   const google::protobuf::Descriptor* descriptor =
@@ -648,20 +645,19 @@ absl::StatusOr<std::unique_ptr<ExpressionStep>> CreateTypedSelectStep(
     // crash.
     //
     // Fallback to the generic implementation.
-    return CreateSelectStep(std::move(field), test_only, expr_id,
-                            enable_wrapper_type_null_unboxing,
+    return CreateSelectStep(field, test_only, enable_wrapper_type_null_unboxing,
                             enable_optional_types);
   }
 
   if (test_only) {
     return std::make_unique<ProtoHasStep>(
-        std::move(field), expr_id, enable_wrapper_type_null_unboxing,
-        enable_optional_types, descriptor, field_descriptor);
+        field, enable_wrapper_type_null_unboxing, enable_optional_types,
+        descriptor, field_descriptor);
   }
 
   return std::make_unique<ProtoSelectStep>(
-      std::move(field), expr_id, enable_wrapper_type_null_unboxing,
-      enable_optional_types, descriptor, field_descriptor);
+      field, enable_wrapper_type_null_unboxing, enable_optional_types,
+      descriptor, field_descriptor);
 }
 
 }  // namespace google::api::expr::runtime
