@@ -216,8 +216,9 @@ absl::StatusOr<Value> ListFlatten(
     google::protobuf::MessageFactory* absl_nonnull message_factory,
     google::protobuf::Arena* absl_nonnull arena) {
   if (depth < 0) {
-    return ErrorValue(
-        absl::InvalidArgumentError("flatten(): level must be non-negative"));
+    return ErrorValue::From(
+        absl::InvalidArgumentError("flatten(): level must be non-negative"),
+        arena);
   }
   auto builder = NewListValueBuilder(arena);
   CEL_RETURN_IF_ERROR(ListFlattenImpl(list, depth, descriptor_pool,
@@ -231,13 +232,17 @@ absl::StatusOr<Value> ListRange(
     google::protobuf::MessageFactory* absl_nonnull message_factory,
     google::protobuf::Arena* absl_nonnull arena) {
   if (end < 0) {
-    return ErrorValue(absl::InvalidArgumentError(absl::StrFormat(
-        "lists.range: size must be non-negative, got %d", end)));
+    return ErrorValue::From(
+        absl::InvalidArgumentError(absl::StrFormat(
+            "lists.range: size must be non-negative, got %d", end)),
+        arena);
   }
   if (end > max_range_size) {
-    return ErrorValue(absl::InvalidArgumentError(
-        absl::StrFormat("lists.range: size %d exceeds maximum allowed (%d)",
-                        end, max_range_size)));
+    return ErrorValue::From(
+        absl::InvalidArgumentError(
+            absl::StrFormat("lists.range: size %d exceeds maximum allowed (%d)",
+                            end, max_range_size)),
+        arena);
   }
   auto builder = NewListValueBuilder(arena);
   builder->Reserve(end);
@@ -269,18 +274,25 @@ absl::StatusOr<Value> ListSlice(
     google::protobuf::Arena* absl_nonnull arena) {
   CEL_ASSIGN_OR_RETURN(size_t size, list.Size());
   if (start < 0 || end < 0) {
-    return ErrorValue(absl::InvalidArgumentError(absl::StrFormat(
-        "cannot slice(%d, %d), negative indexes not supported", start, end)));
+    return ErrorValue::From(
+        absl::InvalidArgumentError(absl::StrFormat(
+            "cannot slice(%d, %d), negative indexes not supported", start,
+            end)),
+        arena);
   }
   if (start > end) {
-    return cel::ErrorValue(absl::InvalidArgumentError(
-        absl::StrFormat("cannot slice(%d, %d), start index must be less than "
-                        "or equal to end index",
-                        start, end)));
+    return cel::ErrorValue::From(
+        absl::InvalidArgumentError(absl::StrFormat(
+            "cannot slice(%d, %d), start index must be less than "
+            "or equal to end index",
+            start, end)),
+        arena);
   }
   if (size < end) {
-    return cel::ErrorValue(absl::InvalidArgumentError(absl::StrFormat(
-        "cannot slice(%d, %d), list is length %d", start, end, size)));
+    return cel::ErrorValue::From(
+        absl::InvalidArgumentError(absl::StrFormat(
+            "cannot slice(%d, %d), list is length %d", start, end, size)),
+        arena);
   }
   auto builder = NewListValueBuilder(arena);
   for (int64_t i = start; i < end; ++i) {
@@ -315,7 +327,7 @@ absl::StatusOr<Value> ListSortByAssociatedKeysNative(
       },
       descriptor_pool, message_factory, arena);
   if (!status.ok()) {
-    return ErrorValue(status);
+    return ErrorValue::From(status, arena);
   }
   ABSL_ASSERT(keys_vec.size() == size);  // Already checked by the caller.
   std::vector<int64_t> sorted_indices(keys_vec.size());
@@ -357,11 +369,13 @@ absl::StatusOr<Value> ListSortByAssociatedKeys(
   CEL_ASSIGN_OR_RETURN(size_t list_size, list.Size());
   CEL_ASSIGN_OR_RETURN(size_t keys_size, keys.Size());
   if (list_size != keys_size) {
-    return ErrorValue(absl::InvalidArgumentError(
-        absl::StrFormat("@sortByAssociatedKeys() expected a list of the same "
-                        "size as the associated keys list, but got %d and %d "
-                        "elements respectively.",
-                        list_size, keys_size)));
+    return ErrorValue::From(
+        absl::InvalidArgumentError(absl::StrFormat(
+            "@sortByAssociatedKeys() expected a list of the same "
+            "size as the associated keys list, but got %d and %d "
+            "elements respectively.",
+            list_size, keys_size)),
+        arena);
   }
   // Empty lists are already sorted.
   // We don't check for size == 1 because the list could contain a single
@@ -397,8 +411,10 @@ absl::StatusOr<Value> ListSortByAssociatedKeys(
       return ListSortByAssociatedKeysNative<BytesValue>(
           list, keys, descriptor_pool, message_factory, arena);
     default:
-      return ErrorValue(absl::InvalidArgumentError(
-          absl::StrFormat("sort(): unsupported type %s", first.GetTypeName())));
+      return ErrorValue::From(
+          absl::InvalidArgumentError(absl::StrFormat(
+              "sort(): unsupported type %s", first.GetTypeName())),
+          arena);
   }
 }
 

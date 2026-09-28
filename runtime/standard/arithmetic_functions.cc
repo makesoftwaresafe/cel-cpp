@@ -24,6 +24,7 @@
 #include "common/value.h"
 #include "internal/overflow.h"
 #include "internal/status_macros.h"
+#include "runtime/function.h"
 #include "runtime/function_registry.h"
 #include "runtime/runtime_options.h"
 
@@ -32,93 +33,100 @@ namespace {
 
 // Template functions providing arithmetic operations
 template <class Type>
-Value Add(Type v0, Type v1);
+Value Add(Type v0, Type v1, const Function::InvokeContext& context);
 
 template <>
-Value Add<int64_t>(int64_t v0, int64_t v1) {
+Value Add<int64_t>(int64_t v0, int64_t v1,
+                   const Function::InvokeContext& context) {
   auto sum = cel::internal::CheckedAdd(v0, v1);
   if (!sum.ok()) {
-    return ErrorValue(sum.status());
+    return ErrorValue::From(sum.status(), context.arena());
   }
   return IntValue(*sum);
 }
 
 template <>
-Value Add<uint64_t>(uint64_t v0, uint64_t v1) {
+Value Add<uint64_t>(uint64_t v0, uint64_t v1,
+                    const Function::InvokeContext& context) {
   auto sum = cel::internal::CheckedAdd(v0, v1);
   if (!sum.ok()) {
-    return ErrorValue(sum.status());
+    return ErrorValue::From(sum.status(), context.arena());
   }
   return UintValue(*sum);
 }
 
 template <>
-Value Add<double>(double v0, double v1) {
+Value Add<double>(double v0, double v1, const Function::InvokeContext&) {
   return DoubleValue(v0 + v1);
 }
 
 template <class Type>
-Value Sub(Type v0, Type v1);
+Value Sub(Type v0, Type v1, const Function::InvokeContext& context);
 
 template <>
-Value Sub<int64_t>(int64_t v0, int64_t v1) {
+Value Sub<int64_t>(int64_t v0, int64_t v1,
+                   const Function::InvokeContext& context) {
   auto diff = cel::internal::CheckedSub(v0, v1);
   if (!diff.ok()) {
-    return ErrorValue(diff.status());
+    return ErrorValue::From(diff.status(), context.arena());
   }
   return IntValue(*diff);
 }
 
 template <>
-Value Sub<uint64_t>(uint64_t v0, uint64_t v1) {
+Value Sub<uint64_t>(uint64_t v0, uint64_t v1,
+                    const Function::InvokeContext& context) {
   auto diff = cel::internal::CheckedSub(v0, v1);
   if (!diff.ok()) {
-    return ErrorValue(diff.status());
+    return ErrorValue::From(diff.status(), context.arena());
   }
   return UintValue(*diff);
 }
 
 template <>
-Value Sub<double>(double v0, double v1) {
+Value Sub<double>(double v0, double v1, const Function::InvokeContext&) {
   return DoubleValue(v0 - v1);
 }
 
 template <class Type>
-Value Mul(Type v0, Type v1);
+Value Mul(Type v0, Type v1, const Function::InvokeContext& context);
 
 template <>
-Value Mul<int64_t>(int64_t v0, int64_t v1) {
+Value Mul<int64_t>(int64_t v0, int64_t v1,
+                   const Function::InvokeContext& context) {
   auto prod = cel::internal::CheckedMul(v0, v1);
   if (!prod.ok()) {
-    return ErrorValue(prod.status());
+    return ErrorValue::From(prod.status(), context.arena());
   }
   return IntValue(*prod);
 }
 
 template <>
-Value Mul<uint64_t>(uint64_t v0, uint64_t v1) {
+Value Mul<uint64_t>(uint64_t v0, uint64_t v1,
+                    const Function::InvokeContext& context) {
   auto prod = cel::internal::CheckedMul(v0, v1);
   if (!prod.ok()) {
-    return ErrorValue(prod.status());
+    return ErrorValue::From(prod.status(), context.arena());
   }
   return UintValue(*prod);
 }
 
 template <>
-Value Mul<double>(double v0, double v1) {
+Value Mul<double>(double v0, double v1, const Function::InvokeContext&) {
   return DoubleValue(v0 * v1);
 }
 
 template <class Type>
-Value Div(Type v0, Type v1);
+Value Div(Type v0, Type v1, const Function::InvokeContext& context);
 
 // Division operations for integer types should check for
 // division by 0
 template <>
-Value Div<int64_t>(int64_t v0, int64_t v1) {
+Value Div<int64_t>(int64_t v0, int64_t v1,
+                   const Function::InvokeContext& context) {
   auto quot = cel::internal::CheckedDiv(v0, v1);
   if (!quot.ok()) {
-    return ErrorValue(quot.status());
+    return ErrorValue::From(quot.status(), context.arena());
   }
   return IntValue(*quot);
 }
@@ -126,16 +134,17 @@ Value Div<int64_t>(int64_t v0, int64_t v1) {
 // Division operations for integer types should check for
 // division by 0
 template <>
-Value Div<uint64_t>(uint64_t v0, uint64_t v1) {
+Value Div<uint64_t>(uint64_t v0, uint64_t v1,
+                    const Function::InvokeContext& context) {
   auto quot = cel::internal::CheckedDiv(v0, v1);
   if (!quot.ok()) {
-    return ErrorValue(quot.status());
+    return ErrorValue::From(quot.status(), context.arena());
   }
   return UintValue(*quot);
 }
 
 template <>
-Value Div<double>(double v0, double v1) {
+Value Div<double>(double v0, double v1, const Function::InvokeContext&) {
   static_assert(std::numeric_limits<double>::is_iec559,
                 "Division by zero for doubles must be supported");
 
@@ -145,24 +154,26 @@ Value Div<double>(double v0, double v1) {
 
 // Modulo operation
 template <class Type>
-Value Modulo(Type v0, Type v1);
+Value Modulo(Type v0, Type v1, const Function::InvokeContext& context);
 
 // Modulo operations for integer types should check for
 // division by 0
 template <>
-Value Modulo<int64_t>(int64_t v0, int64_t v1) {
+Value Modulo<int64_t>(int64_t v0, int64_t v1,
+                      const Function::InvokeContext& context) {
   auto mod = cel::internal::CheckedMod(v0, v1);
   if (!mod.ok()) {
-    return ErrorValue(mod.status());
+    return ErrorValue::From(mod.status(), context.arena());
   }
   return IntValue(*mod);
 }
 
 template <>
-Value Modulo<uint64_t>(uint64_t v0, uint64_t v1) {
+Value Modulo<uint64_t>(uint64_t v0, uint64_t v1,
+                       const Function::InvokeContext& context) {
   auto mod = cel::internal::CheckedMod(v0, v1);
   if (!mod.ok()) {
-    return ErrorValue(mod.status());
+    return ErrorValue::From(mod.status(), context.arena());
   }
   return UintValue(*mod);
 }
@@ -211,17 +222,17 @@ absl::Status RegisterArithmeticFunctions(FunctionRegistry& registry,
           &Modulo<uint64_t>)));
 
   // Negation group
-  CEL_RETURN_IF_ERROR(
-      registry.Register(UnaryFunctionAdapter<Value, int64_t>::CreateDescriptor(
-                            cel::builtin::kNeg, false),
-                        UnaryFunctionAdapter<Value, int64_t>::WrapFunction(
-                            [](int64_t value) -> Value {
-                              auto inv = cel::internal::CheckedNegation(value);
-                              if (!inv.ok()) {
-                                return ErrorValue(inv.status());
-                              }
-                              return IntValue(*inv);
-                            })));
+  CEL_RETURN_IF_ERROR(registry.Register(
+      UnaryFunctionAdapter<Value, int64_t>::CreateDescriptor(cel::builtin::kNeg,
+                                                             false),
+      UnaryFunctionAdapter<Value, int64_t>::WrapFunction(
+          [](int64_t value, const Function::InvokeContext& context) -> Value {
+            auto inv = cel::internal::CheckedNegation(value);
+            if (!inv.ok()) {
+              return ErrorValue::From(inv.status(), context.arena());
+            }
+            return IntValue(*inv);
+          })));
 
   return registry.Register(
       UnaryFunctionAdapter<double, double>::CreateDescriptor(cel::builtin::kNeg,

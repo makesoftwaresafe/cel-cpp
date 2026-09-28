@@ -33,6 +33,7 @@
 #include "internal/casts.h"
 #include "internal/number.h"
 #include "internal/status_macros.h"
+#include "runtime/function.h"
 #include "runtime/function_registry.h"
 #include "runtime/internal/errors.h"
 #include "runtime/internal/runtime_friend_access.h"
@@ -66,19 +67,24 @@ Value OptionalOfNonZeroValue(
   return OptionalOf(value, descriptor_pool, message_factory, arena);
 }
 
-absl::StatusOr<Value> OptionalGetValue(const OpaqueValue& opaque_value) {
+absl::StatusOr<Value> OptionalGetValue(const OpaqueValue& opaque_value,
+                                       const Function::InvokeContext& context) {
   if (auto optional_value = opaque_value.AsOptional(); optional_value) {
     return optional_value->Value();
   }
-  return ErrorValue{runtime_internal::CreateNoMatchingOverloadError("value")};
+  return ErrorValue::From(
+      runtime_internal::CreateNoMatchingOverloadError("value"),
+      context.arena());
 }
 
-absl::StatusOr<Value> OptionalHasValue(const OpaqueValue& opaque_value) {
+absl::StatusOr<Value> OptionalHasValue(const OpaqueValue& opaque_value,
+                                       const Function::InvokeContext& context) {
   if (auto optional_value = opaque_value.AsOptional(); optional_value) {
     return BoolValue{optional_value->HasValue()};
   }
-  return ErrorValue{
-      runtime_internal::CreateNoMatchingOverloadError("hasValue")};
+  return ErrorValue::From(
+      runtime_internal::CreateNoMatchingOverloadError("hasValue"),
+      context.arena());
 }
 
 absl::StatusOr<Value> SelectOptionalFieldStruct(
@@ -132,7 +138,8 @@ absl::StatusOr<Value> SelectOptionalField(
                                        message_factory, arena);
     }
   }
-  return ErrorValue{runtime_internal::CreateNoMatchingOverloadError("_[?_]")};
+  return ErrorValue::From(
+      runtime_internal::CreateNoMatchingOverloadError("_[?_]"), arena);
 }
 
 absl::StatusOr<Value> MapOptIndexOptionalValue(
@@ -226,7 +233,8 @@ absl::StatusOr<Value> OptionalOptIndexOptionalValue(
       }
     }
   }
-  return ErrorValue{runtime_internal::CreateNoMatchingOverloadError("_[?_]")};
+  return ErrorValue::From(
+      runtime_internal::CreateNoMatchingOverloadError("_[?_]"), arena);
 }
 
 absl::StatusOr<Value> ListFirst(const cel::ListValue& list,
@@ -281,7 +289,7 @@ absl::StatusOr<Value> ListUnwrapOpt(
       },
       descriptor_pool, message_factory, arena);
   if (!status.ok()) {
-    return ErrorValue(status);
+    return ErrorValue::From(status, arena);
   }
   return std::move(*builder).Build();
 }

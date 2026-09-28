@@ -343,9 +343,10 @@ absl::StatusOr<Value> ApplyQualifier(
       absl::Overload(
           [&](const FieldSpecifier& field_specifier) -> absl::StatusOr<Value> {
             if (!operand.Is<StructValue>()) {
-              return cel::ErrorValue(
+              return cel::ErrorValue::From(
                   cel::runtime_internal::CreateNoMatchingOverloadError(
-                      "<select>"));
+                      "<select>"),
+                  arena);
             }
             return WrappedStructGet(operand, field_specifier.name,
                                     descriptor_pool, message_factory, arena,
@@ -355,21 +356,22 @@ absl::StatusOr<Value> ApplyQualifier(
             if (operand.Is<ListValue>()) {
               auto index_or = ListIndexFromQualifier(qualifier);
               if (!index_or.ok()) {
-                return cel::ErrorValue(index_or.status());
+                return cel::ErrorValue::From(index_or.status(), arena);
               }
               return operand.GetList().Get(*index_or, descriptor_pool,
                                            message_factory, arena);
             } else if (operand.Is<MapValue>()) {
               auto key_or = MapKeyFromQualifier(qualifier, arena);
               if (!key_or.ok()) {
-                return cel::ErrorValue(key_or.status());
+                return cel::ErrorValue::From(key_or.status(), arena);
               }
               return operand.GetMap().Get(*key_or, descriptor_pool,
                                           message_factory, arena);
             }
-            return cel::ErrorValue(
+            return cel::ErrorValue::From(
                 cel::runtime_internal::CreateNoMatchingOverloadError(
-                    cel::builtin::kIndex));
+                    cel::builtin::kIndex),
+                arena);
           }),
       qualifier);
 }
@@ -403,9 +405,10 @@ absl::StatusOr<Value> FallbackSelect(
             [&](const FieldSpecifier& field_specifier)
                 -> absl::StatusOr<Value> {
               if (!elem->Is<StructValue>()) {
-                return cel::ErrorValue(
+                return cel::ErrorValue::From(
                     cel::runtime_internal::CreateNoMatchingOverloadError(
-                        "<select>"));
+                        "<select>"),
+                    arena);
               }
               CEL_ASSIGN_OR_RETURN(
                   bool present,
@@ -414,9 +417,9 @@ absl::StatusOr<Value> FallbackSelect(
             },
             [&](const AttributeQualifier& qualifier) -> absl::StatusOr<Value> {
               if (!elem->Is<MapValue>() || qualifier.kind() != Kind::kString) {
-                return cel::ErrorValue(
-                    cel::runtime_internal::CreateNoMatchingOverloadError(
-                        "has"));
+                return cel::ErrorValue::From(
+                    cel::runtime_internal::CreateNoMatchingOverloadError("has"),
+                    arena);
               }
 
               return elem->GetMap().Has(

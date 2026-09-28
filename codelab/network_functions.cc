@@ -312,7 +312,8 @@ cel::Value parseAddress(
   absl::string_view addr = str.ToStringView(&buf);
   std::optional<NetworkAddressRep> rep = NetworkAddressRep::Parse(addr);
   if (!rep.has_value()) {
-    return cel::ErrorValue(absl::InvalidArgumentError("invalid address"));
+    return cel::ErrorValue::From(absl::InvalidArgumentError("invalid address"),
+                                 arena);
   }
   return NetworkAddressRep::MakeValue(*rep);
 }
@@ -337,21 +338,25 @@ cel::Value parseAddressMatcher(
   absl::string_view addr = str.ToStringView(&buf);
   std::optional<NetworkAddressMatcher> rep = NetworkAddressMatcher::Parse(addr);
   if (!rep.has_value()) {
-    return cel::ErrorValue(
-        absl::InvalidArgumentError("invalid address matcher"));
+    return cel::ErrorValue::From(
+        absl::InvalidArgumentError("invalid address matcher"), arena);
   }
 
   return NetworkAddressMatcher::MakeValue(arena, std::move(rep).value());
 }
 
-cel::Value containsAddress(const cel::OpaqueValue& matcher,
-                           const cel::OpaqueValue& addr) {
+cel::Value containsAddress(
+    const cel::OpaqueValue& matcher, const cel::OpaqueValue& addr,
+    const google::protobuf::DescriptorPool* absl_nonnull descriptor_pool,
+    google::protobuf::MessageFactory* absl_nonnull message_factory,
+    google::protobuf::Arena* absl_nonnull arena) {
   const auto* matcher_rep = NetworkAddressMatcher::Unwrap(matcher);
   auto addr_rep = NetworkAddressRep::Unwrap(addr);
   if (matcher_rep == nullptr || !addr_rep.has_value()) {
     // dispatcher should catch this, but right now only distiguishes at the
     // kind level.
-    return cel::ErrorValue(absl::InvalidArgumentError("no matching overload"));
+    return cel::ErrorValue::From(
+        absl::InvalidArgumentError("no matching overload"), arena);
   }
   return cel::BoolValue(matcher_rep->Match(*addr_rep));
 }

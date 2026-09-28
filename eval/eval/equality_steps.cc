@@ -69,8 +69,10 @@ absl::StatusOr<Value> EvaluateEquality(
                        ValueEqualImpl(lhs, rhs, frame.descriptor_pool(),
                                       frame.message_factory(), frame.arena()));
   if (!is_equal.has_value()) {
-    return cel::ErrorValue(cel::runtime_internal::CreateNoMatchingOverloadError(
-        negation ? cel::builtin::kInequal : cel::builtin::kEqual));
+    return cel::ErrorValue::From(
+        cel::runtime_internal::CreateNoMatchingOverloadError(
+            negation ? cel::builtin::kInequal : cel::builtin::kEqual),
+        frame.arena());
   }
   return negation ? BoolValue(!*is_equal) : BoolValue(*is_equal);
 }
@@ -140,9 +142,10 @@ absl::StatusOr<Value> EvaluateInMap(ExecutionFrameBase& frame,
     case ValueKind::kDouble:
       break;
     default:
-      return cel::ErrorValue(
+      return cel::ErrorValue::From(
           cel::runtime_internal::CreateNoMatchingOverloadError(
-              cel::builtin::kIn));
+              cel::builtin::kIn),
+          frame.arena());
   }
   Value result;
   CEL_RETURN_IF_ERROR(container.Has(item, frame.descriptor_pool(),
@@ -210,8 +213,9 @@ absl::StatusOr<Value> EvaluateIn(ExecutionFrameBase& frame, const Value& item,
   if (container.IsMap()) {
     return EvaluateInMap(frame, item, container.GetMap());
   }
-  return cel::ErrorValue(
-      cel::runtime_internal::CreateNoMatchingOverloadError(cel::builtin::kIn));
+  return cel::ErrorValue::From(
+      cel::runtime_internal::CreateNoMatchingOverloadError(cel::builtin::kIn),
+      frame.arena());
 }
 
 class DirectInStep : public DirectExpressionStep {

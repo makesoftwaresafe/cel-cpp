@@ -48,7 +48,8 @@ absl::StatusOr<Value> Base64Decode(
   std::string in;
   std::string out;
   if (!absl::Base64Unescape(value.NativeString(in), &out)) {
-    return ErrorValue{absl::InvalidArgumentError("invalid base64 data")};
+    return ErrorValue::From(absl::InvalidArgumentError("invalid base64 data"),
+                            arena);
   }
   return BytesValue(arena, std::move(out));
 }

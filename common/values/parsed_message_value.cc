@@ -289,7 +289,7 @@ class ParsedMessageValueQualifyState final
 
  private:
   void SetResultFromError(absl::Status status, cel::MemoryManagerRef) override {
-    result_ = ErrorValue(std::move(status));
+    result_ = ErrorValue::From(std::move(status), arena_);
   }
 
   void SetResultFromBool(bool value) override { result_ = BoolValue(value); }

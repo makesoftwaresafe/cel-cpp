@@ -168,7 +168,8 @@ absl::Status ComprehensionDirectStep::Evaluate1(ExecutionFrameBase& frame,
       result = std::move(range);
       return absl::OkStatus();
     default:
-      result = cel::ErrorValue(CreateNoMatchingOverloadError("<iter_range>"));
+      result = cel::ErrorValue::From(
+          CreateNoMatchingOverloadError("<iter_range>"), frame.arena());
       return absl::OkStatus();
   }
   ABSL_DCHECK(range_iter != nullptr);
@@ -262,8 +263,8 @@ absl::StatusOr<bool> ComprehensionDirectStep::Evaluate1Unknown(
         result = std::move(condition);
         return true;
       default:
-        result =
-            cel::ErrorValue(CreateNoMatchingOverloadError("<loop_condition>"));
+        result = cel::ErrorValue::From(
+            CreateNoMatchingOverloadError("<loop_condition>"), frame.arena());
         return true;
     }
 
@@ -308,8 +309,8 @@ absl::StatusOr<bool> ComprehensionDirectStep::Evaluate1Known(
         result = std::move(condition);
         return true;
       default:
-        result =
-            cel::ErrorValue(CreateNoMatchingOverloadError("<loop_condition>"));
+        result = cel::ErrorValue::From(
+            CreateNoMatchingOverloadError("<loop_condition>"), frame.arena());
         return true;
     }
 
@@ -353,7 +354,8 @@ absl::Status ComprehensionDirectStep::Evaluate2(ExecutionFrameBase& frame,
       result = std::move(range);
       return absl::OkStatus();
     default:
-      result = cel::ErrorValue(CreateNoMatchingOverloadError("<iter_range>"));
+      result = cel::ErrorValue::From(
+          CreateNoMatchingOverloadError("<iter_range>"), frame.arena());
       return absl::OkStatus();
   }
   ABSL_DCHECK(range_iter != nullptr);
@@ -417,8 +419,8 @@ absl::Status ComprehensionDirectStep::Evaluate2(ExecutionFrameBase& frame,
         should_skip_result = true;
         goto finish;
       default:
-        result =
-            cel::ErrorValue(CreateNoMatchingOverloadError("<loop_condition>"));
+        result = cel::ErrorValue::From(
+            CreateNoMatchingOverloadError("<loop_condition>"), frame.arena());
         should_skip_result = true;
         goto finish;
     }
@@ -475,8 +477,8 @@ absl::Status ComprehensionInitStep::Evaluate(ExecutionFrame* frame) const {
     default:
       // Replace <iter_range> with an error and jump past
       // ComprehensionFinishStep.
-      frame->value_stack().PopAndPush(
-          cel::ErrorValue(CreateNoMatchingOverloadError("<iter_range>")));
+      frame->value_stack().PopAndPush(cel::ErrorValue::From(
+          CreateNoMatchingOverloadError("<iter_range>"), frame->arena()));
       return frame->JumpTo(error_jump_offset_);
   }
 
@@ -613,8 +615,9 @@ absl::Status ComprehensionCondStep::Evaluate1(ExecutionFrame* frame) const {
       return frame->JumpTo(error_jump_offset_);
     default:
       frame->value_stack().PopAndPush(
-          2,
-          cel::ErrorValue(CreateNoMatchingOverloadError("<loop_condition>")));
+          2, cel::ErrorValue::From(
+                 CreateNoMatchingOverloadError("<loop_condition>"),
+                 frame->arena()));
       frame->comprehension_slots().ClearSlot(iter_slot_);
       frame->comprehension_slots().ClearSlot(accu_slot_);
       frame->iterator_stack().Pop();
@@ -647,8 +650,9 @@ absl::Status ComprehensionCondStep::Evaluate2(ExecutionFrame* frame) const {
       return frame->JumpTo(error_jump_offset_);
     default:
       frame->value_stack().PopAndPush(
-          2,
-          cel::ErrorValue(CreateNoMatchingOverloadError("<loop_condition>")));
+          2, cel::ErrorValue::From(
+                 CreateNoMatchingOverloadError("<loop_condition>"),
+                 frame->arena()));
       frame->comprehension_slots().ClearSlot(iter_slot_);
       frame->comprehension_slots().ClearSlot(iter2_slot_);
       frame->comprehension_slots().ClearSlot(accu_slot_);

@@ -31,6 +31,7 @@
 #include "eval/public/cel_number.h"
 #include "eval/public/cel_options.h"
 #include "internal/status_macros.h"
+#include "runtime/function.h"
 #include "runtime/function_adapter.h"
 #include "runtime/function_registry.h"
 #include "runtime/runtime_options.h"
@@ -102,15 +103,16 @@ absl::StatusOr<Value> MinList(
     google::protobuf::Arena* absl_nonnull arena) {
   CEL_ASSIGN_OR_RETURN(auto iterator, values.NewIterator());
   if (!iterator->HasNext()) {
-    return ErrorValue(
-        absl::InvalidArgumentError("math.@min argument must not be empty"));
+    return ErrorValue::From(
+        absl::InvalidArgumentError("math.@min argument must not be empty"),
+        arena);
   }
   Value value;
   CEL_RETURN_IF_ERROR(
       iterator->Next(descriptor_pool, message_factory, arena, &value));
   absl::StatusOr<CelNumber> current = ValueToNumber(value, kMathMin);
   if (!current.ok()) {
-    return ErrorValue{current.status()};
+    return ErrorValue::From(current.status(), arena);
   }
   CelNumber min = *current;
   while (iterator->HasNext()) {
@@ -118,7 +120,7 @@ absl::StatusOr<Value> MinList(
         iterator->Next(descriptor_pool, message_factory, arena, &value));
     absl::StatusOr<CelNumber> other = ValueToNumber(value, kMathMin);
     if (!other.ok()) {
-      return ErrorValue{other.status()};
+      return ErrorValue::From(other.status(), arena);
     }
     min = MinNumber(min, *other);
   }
@@ -148,8 +150,9 @@ absl::StatusOr<Value> MaxList(
     google::protobuf::Arena* absl_nonnull arena) {
   CEL_ASSIGN_OR_RETURN(auto iterator, values.NewIterator());
   if (!iterator->HasNext()) {
-    return ErrorValue(
-        absl::InvalidArgumentError("math.@max argument must not be empty"));
+    return ErrorValue::From(
+        absl::InvalidArgumentError("math.@max argument must not be empty"),
+        arena);
   }
   Value value;
   CEL_RETURN_IF_ERROR(
@@ -219,9 +222,10 @@ bool IsFiniteDouble(double value) { return std::isfinite(value); }
 
 double AbsDouble(double value) { return std::fabs(value); }
 
-Value AbsInt(int64_t value) {
+Value AbsInt(int64_t value, const Function::InvokeContext& context) {
   if (ABSL_PREDICT_FALSE(value == std::numeric_limits<int64_t>::min())) {
-    return ErrorValue(absl::InvalidArgumentError("integer overflow"));
+    return ErrorValue::From(absl::InvalidArgumentError("integer overflow"),
+                            context.arena());
   }
   return IntValue(value < 0 ? -value : value);
 }
@@ -258,10 +262,13 @@ int64_t BitNotInt(int64_t value) { return ~value; }
 
 uint64_t BitNotUint(uint64_t value) { return ~value; }
 
-Value BitShiftLeftInt(int64_t lhs, int64_t rhs) {
+Value BitShiftLeftInt(int64_t lhs, int64_t rhs,
+                      const Function::InvokeContext& context) {
   if (ABSL_PREDICT_FALSE(rhs < 0)) {
-    return ErrorValue(absl::InvalidArgumentError(
-        absl::StrCat("math.bitShiftLeft() invalid negative shift: ", rhs)));
+    return ErrorValue::From(
+        absl::InvalidArgumentError(
+            absl::StrCat("math.bitShiftLeft() invalid negative shift: ", rhs)),
+        context.arena());
   }
   if (rhs > 63) {
     return IntValue(0);
@@ -273,10 +280,13 @@ Value BitShiftLeftInt(int64_t lhs, int64_t rhs) {
                                           << static_cast<int>(rhs)));
 }
 
-Value BitShiftLeftUint(uint64_t lhs, int64_t rhs) {
+Value BitShiftLeftUint(uint64_t lhs, int64_t rhs,
+                       const Function::InvokeContext& context) {
   if (ABSL_PREDICT_FALSE(rhs < 0)) {
-    return ErrorValue(absl::InvalidArgumentError(
-        absl::StrCat("math.bitShiftLeft() invalid negative shift: ", rhs)));
+    return ErrorValue::From(
+        absl::InvalidArgumentError(
+            absl::StrCat("math.bitShiftLeft() invalid negative shift: ", rhs)),
+        context.arena());
   }
   if (rhs > 63) {
     return UintValue(0);
@@ -284,10 +294,13 @@ Value BitShiftLeftUint(uint64_t lhs, int64_t rhs) {
   return UintValue(lhs << static_cast<int>(rhs));
 }
 
-Value BitShiftRightInt(int64_t lhs, int64_t rhs) {
+Value BitShiftRightInt(int64_t lhs, int64_t rhs,
+                       const Function::InvokeContext& context) {
   if (ABSL_PREDICT_FALSE(rhs < 0)) {
-    return ErrorValue(absl::InvalidArgumentError(
-        absl::StrCat("math.bitShiftRight() invalid negative shift: ", rhs)));
+    return ErrorValue::From(
+        absl::InvalidArgumentError(
+            absl::StrCat("math.bitShiftRight() invalid negative shift: ", rhs)),
+        context.arena());
   }
   if (rhs > 63) {
     return IntValue(0);
@@ -298,10 +311,13 @@ Value BitShiftRightInt(int64_t lhs, int64_t rhs) {
                                           static_cast<int>(rhs)));
 }
 
-Value BitShiftRightUint(uint64_t lhs, int64_t rhs) {
+Value BitShiftRightUint(uint64_t lhs, int64_t rhs,
+                        const Function::InvokeContext& context) {
   if (ABSL_PREDICT_FALSE(rhs < 0)) {
-    return ErrorValue(absl::InvalidArgumentError(
-        absl::StrCat("math.bitShiftRight() invalid negative shift: ", rhs)));
+    return ErrorValue::From(
+        absl::InvalidArgumentError(
+            absl::StrCat("math.bitShiftRight() invalid negative shift: ", rhs)),
+        context.arena());
   }
   if (rhs > 63) {
     return UintValue(0);

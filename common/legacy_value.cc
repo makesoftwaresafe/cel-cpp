@@ -532,7 +532,8 @@ absl::Status LegacyListValue::Get(
     google::protobuf::MessageFactory* absl_nonnull message_factory,
     google::protobuf::Arena* absl_nonnull arena, Value* absl_nonnull result) const {
   if (ABSL_PREDICT_FALSE(index < 0 || index >= impl_->size())) {
-    *result = ErrorValue(absl::InvalidArgumentError("index out of bounds"));
+    *result = ErrorValue::From(
+        absl::InvalidArgumentError("index out of bounds"), arena);
     return absl::OkStatus();
   }
   CEL_RETURN_IF_ERROR(
@@ -714,7 +715,7 @@ absl::Status LegacyMapValue::Get(
     case ValueKind::kString:
       break;
     default:
-      *result = ErrorValue(InvalidMapKeyTypeError(key.kind()));
+      *result = ErrorValue::From(InvalidMapKeyTypeError(key.kind()), arena);
       return absl::OkStatus();
   }
   CEL_ASSIGN_OR_RETURN(auto cel_key, LegacyValue(arena, key));
@@ -747,7 +748,7 @@ absl::StatusOr<bool> LegacyMapValue::Find(
     case ValueKind::kString:
       break;
     default:
-      *result = ErrorValue(InvalidMapKeyTypeError(key.kind()));
+      *result = ErrorValue::From(InvalidMapKeyTypeError(key.kind()), arena);
   }
   CEL_ASSIGN_OR_RETURN(auto cel_key, LegacyValue(arena, key));
   auto cel_value = impl_->Get(arena, cel_key);
@@ -779,13 +780,13 @@ absl::Status LegacyMapValue::Has(
     case ValueKind::kString:
       break;
     default:
-      *result = ErrorValue(InvalidMapKeyTypeError(key.kind()));
+      *result = ErrorValue::From(InvalidMapKeyTypeError(key.kind()), arena);
       return absl::OkStatus();
   }
   CEL_ASSIGN_OR_RETURN(auto cel_key, LegacyValue(arena, key));
   absl::StatusOr<bool> has = impl_->Has(cel_key);
   if (!has.ok()) {
-    *result = ErrorValue(std::move(has).status());
+    *result = ErrorValue::From(std::move(has).status(), arena);
     return absl::OkStatus();
   }
 
@@ -1192,7 +1193,7 @@ absl::StatusOr<Value> FromLegacyValue(google::protobuf::Arena* arena,
       return CreateTypeValueFromView(arena,
                                      legacy_value.CelTypeOrDie().value());
     case CelValue::Type::kError:
-      return ErrorValue(*legacy_value.ErrorOrDie());
+      return ErrorValue::From(*legacy_value.ErrorOrDie(), arena);
     case CelValue::Type::kAny:
       return absl::InternalError(absl::StrCat(
           "illegal attempt to convert special CelValue type ",

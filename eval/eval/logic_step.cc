@@ -77,8 +77,10 @@ absl::Status ReturnLogicResult(ExecutionFrameBase& frame, OpType op_type,
 
   // Otherwise, add a no overload error.
   attribute_trail = AttributeTrail();
-  lhs_result = cel::ErrorValue(CreateNoMatchingOverloadError(
-      op_type == OpType::kOr ? cel::builtin::kOr : cel::builtin::kAnd));
+  lhs_result = cel::ErrorValue::From(
+      CreateNoMatchingOverloadError(
+          op_type == OpType::kOr ? cel::builtin::kOr : cel::builtin::kAnd),
+      frame.arena());
   return absl::OkStatus();
 }
 
@@ -243,8 +245,11 @@ class LogicalOpStep : public ExpressionStepBase {
 
     result = args[error_pos.value()];
     if (!result.IsError()) {
-      result = cel::ErrorValue(CreateNoMatchingOverloadError(
-          (op_type_ == OpType::kOr) ? cel::builtin::kOr : cel::builtin::kAnd));
+      result = cel::ErrorValue::From(
+          CreateNoMatchingOverloadError((op_type_ == OpType::kOr)
+                                            ? cel::builtin::kOr
+                                            : cel::builtin::kAnd),
+          frame->arena());
     }
   }
 
@@ -314,8 +319,8 @@ absl::Status DirectNotStep::Evaluate(ExecutionFrameBase& frame, Value& result,
       // just forward.
       break;
     default:
-      result =
-          cel::ErrorValue(CreateNoMatchingOverloadError(cel::builtin::kNot));
+      result = cel::ErrorValue::From(
+          CreateNoMatchingOverloadError(cel::builtin::kNot), frame.arena());
       break;
   }
 
@@ -356,8 +361,8 @@ absl::Status IterativeNotStep::Evaluate(ExecutionFrame* frame) const {
       // just forward.
       break;
     default:
-      frame->value_stack().PopAndPush(
-          cel::ErrorValue(CreateNoMatchingOverloadError(cel::builtin::kNot)));
+      frame->value_stack().PopAndPush(cel::ErrorValue::From(
+          CreateNoMatchingOverloadError(cel::builtin::kNot), frame->arena()));
       break;
   }
 
@@ -390,8 +395,8 @@ absl::Status DirectNotStrictlyFalseStep::Evaluate(
       result = BoolValue(true);
       break;
     default:
-      result =
-          cel::ErrorValue(CreateNoMatchingOverloadError(cel::builtin::kNot));
+      result = cel::ErrorValue::From(
+          CreateNoMatchingOverloadError(cel::builtin::kNot), frame.arena());
       break;
   }
 
@@ -422,8 +427,8 @@ absl::Status IterativeNotStrictlyFalseStep::Evaluate(
       frame->value_stack().PopAndPush(BoolValue(true));
       break;
     default:
-      frame->value_stack().PopAndPush(
-          cel::ErrorValue(CreateNoMatchingOverloadError(cel::builtin::kNot)));
+      frame->value_stack().PopAndPush(cel::ErrorValue::From(
+          CreateNoMatchingOverloadError(cel::builtin::kNot), frame->arena()));
       break;
   }
 

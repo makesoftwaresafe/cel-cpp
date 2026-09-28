@@ -102,8 +102,11 @@ class Value final : private common_internal::ValueMixin<Value> {
   // enums, returns `cel::IntValue`. For closed enums, returns `cel::ErrorValue`
   // if the value is not present in the enum otherwise returns `cel::IntValue`.
   static Value Enum(const google::protobuf::EnumValueDescriptor* absl_nonnull value);
+  ABSL_DEPRECATED("Use overload which takes an arena pointer")
   static Value Enum(const google::protobuf::EnumDescriptor* absl_nonnull type,
                     int32_t number);
+  static Value Enum(const google::protobuf::EnumDescriptor* absl_nonnull type,
+                    int32_t number, google::protobuf::Arena* absl_nonnull arena);
 
   // SFINAE overload for generated protobuf enums which are not well-known.
   // Always returns `cel::IntValue`.

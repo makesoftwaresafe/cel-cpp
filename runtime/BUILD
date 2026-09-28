@@ -575,6 +575,7 @@ cc_library(
     srcs = ["optional_types.cc"],
     hdrs = ["optional_types.h"],
     deps = [
+        ":function",
         ":function_registry",
         ":runtime_builder",
         ":runtime_options",

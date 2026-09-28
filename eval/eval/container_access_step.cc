@@ -102,7 +102,8 @@ void LookupInMap(const MapValue& cel_map, const Value& key,
             cel_map.Find(key, frame.descriptor_pool(), frame.message_factory(),
                          frame.arena(), &result);
         if (!lookup.ok()) {
-          result = cel::ErrorValue(std::move(lookup).status());
+          result =
+              cel::ErrorValue::From(std::move(lookup).status(), frame.arena());
           return;
         }
         if (*lookup) {
@@ -116,7 +117,8 @@ void LookupInMap(const MapValue& cel_map, const Value& key,
             cel_map.Find(IntValue(number->AsInt()), frame.descriptor_pool(),
                          frame.message_factory(), frame.arena(), &result);
         if (!lookup.ok()) {
-          result = cel::ErrorValue(std::move(lookup).status());
+          result =
+              cel::ErrorValue::From(std::move(lookup).status(), frame.arena());
           return;
         }
         if (*lookup) {
@@ -130,7 +132,8 @@ void LookupInMap(const MapValue& cel_map, const Value& key,
             cel_map.Find(UintValue(number->AsUint()), frame.descriptor_pool(),
                          frame.message_factory(), frame.arena(), &result);
         if (!lookup.ok()) {
-          result = cel::ErrorValue(std::move(lookup).status());
+          result =
+              cel::ErrorValue::From(std::move(lookup).status(), frame.arena());
           return;
         }
         if (*lookup) {
@@ -138,14 +141,15 @@ void LookupInMap(const MapValue& cel_map, const Value& key,
           return;
         }
       }
-      result = cel::ErrorValue(CreateNoSuchKeyError(key->DebugString()));
+      result = cel::ErrorValue::From(CreateNoSuchKeyError(key->DebugString()),
+                                     frame.arena());
       return;
     }
   }
 
   absl::Status status = CheckMapKeyType(key);
   if (!status.ok()) {
-    result = cel::ErrorValue(std::move(status));
+    result = cel::ErrorValue::From(std::move(status), frame.arena());
     return;
   }
 
@@ -153,7 +157,7 @@ void LookupInMap(const MapValue& cel_map, const Value& key,
       cel_map.Get(key, frame.descriptor_pool(), frame.message_factory(),
                   frame.arena(), &result);
   if (!lookup.ok()) {
-    result = cel::ErrorValue(std::move(lookup));
+    result = cel::ErrorValue::From(std::move(lookup), frame.arena());
   }
   ABSL_DCHECK(!result.IsUnknown());
 }
@@ -171,21 +175,25 @@ void LookupInList(const ListValue& cel_list, const Value& key,
   }
 
   if (!maybe_idx.has_value()) {
-    result = cel::ErrorValue(absl::UnknownError(
-        absl::StrCat("Index error: expected integer type, got ",
-                     cel::KindToString(ValueKindToKind(key->kind())))));
+    result = cel::ErrorValue::From(
+        absl::UnknownError(
+            absl::StrCat("Index error: expected integer type, got ",
+                         cel::KindToString(ValueKindToKind(key->kind())))),
+        frame.arena());
     return;
   }
 
   int64_t idx = *maybe_idx;
   auto size = cel_list.Size();
   if (!size.ok()) {
-    result = cel::ErrorValue(size.status());
+    result = cel::ErrorValue::From(size.status(), frame.arena());
     return;
   }
   if (idx < 0 || idx >= *size) {
-    result = cel::ErrorValue(absl::UnknownError(
-        absl::StrCat("Index error: index=", idx, " size=", *size)));
+    result =
+        cel::ErrorValue::From(absl::UnknownError(absl::StrCat(
+                                  "Index error: index=", idx, " size=", *size)),
+                              frame.arena());
     return;
   }
 
@@ -194,7 +202,7 @@ void LookupInList(const ListValue& cel_list, const Value& key,
                    frame.arena(), &result);
 
   if (!lookup.ok()) {
-    result = cel::ErrorValue(std::move(lookup));
+    result = cel::ErrorValue::From(std::move(lookup), frame.arena());
   }
   ABSL_DCHECK(!result.IsUnknown());
 }
@@ -212,9 +220,11 @@ void LookupInContainer(const Value& container, const Value& key,
       return;
     }
     default:
-      result = cel::ErrorValue(absl::InvalidArgumentError(
-          absl::StrCat("Invalid container type: '",
-                       ValueKindToString(container->kind()), "'")));
+      result =
+          cel::ErrorValue::From(absl::InvalidArgumentError(absl::StrCat(
+                                    "Invalid container type: '",
+                                    ValueKindToString(container->kind()), "'")),
+                                frame.arena());
       return;
   }
 }

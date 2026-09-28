@@ -129,8 +129,8 @@ class BoolCheckJumpStep : public JumpStepBase {
     }
 
     // Neither bool, error, nor unknown set.
-    Value error_value =
-        cel::ErrorValue(CreateNoMatchingOverloadError("<jump_condition>"));
+    Value error_value = cel::ErrorValue::From(
+        CreateNoMatchingOverloadError("<jump_condition>"), frame->arena());
 
     frame->value_stack().PopAndPush(std::move(error_value));
     return Jump(frame);

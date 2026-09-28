@@ -18,12 +18,14 @@
 
 #include "absl/base/attributes.h"
 #include "absl/base/casts.h"
+#include "absl/base/no_destructor.h"
 #include "absl/base/nullability.h"
 #include "absl/log/absl_check.h"
 #include "absl/status/status.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/string_view.h"
 #include "absl/time/time.h"
+#include "absl/types/source_location.h"
 #include "common/arena.h"
 #include "common/native_type.h"
 #include "common/type.h"
@@ -141,8 +143,10 @@ bool OptionalValueHasNoValue(const OptionalValueDispatcher* absl_nonnull,
 void EmptyOptionalValueValue(const OptionalValueDispatcher* absl_nonnull,
                              CustomValueContent content,
                              cel::Value* absl_nonnull result) {
-  *result =
-      ErrorValue(absl::FailedPreconditionError("optional.none() dereference"));
+  static const absl::NoDestructor<absl::Status> error(
+      absl::FailedPreconditionError("optional.none() dereference",
+                                    absl::SourceLocation()));
+  *result = ErrorValue::WrapUnsafe(&*error);
 }
 
 void NullOptionalValueValue(const OptionalValueDispatcher* absl_nonnull,

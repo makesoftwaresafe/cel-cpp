@@ -71,7 +71,7 @@ absl::optional<Value> CheckForMarkedAttributes(const AttributeTrail& trail,
     // Log and return a CelError.
     ABSL_LOG(ERROR) << "Invalid attribute pattern matched select path: "
                     << result.status().ToString();  // NOLINT: OSS compatibility
-    return cel::ErrorValue(std::move(result).status());
+    return cel::ErrorValue::From(std::move(result).status(), frame.arena());
   }
 
   return std::nullopt;
@@ -119,7 +119,7 @@ absl::Status PerformHas(const Value& target, absl::string_view field,
     case ValueKind::kStruct: {
       auto has_field = target.GetStruct().HasFieldByName(field);
       if (!has_field.ok()) {
-        result = ErrorValue(std::move(has_field).status());
+        result = ErrorValue::From(std::move(has_field).status(), arena);
       } else {
         result = BoolValue{*has_field};
       }
@@ -143,7 +143,7 @@ absl::Status PerformGet(const Value& target, absl::string_view field,
       auto status = target.GetMap().Get(field_value, descriptor_pool,
                                         message_factory, arena, &result);
       if (!status.ok()) {
-        result = ErrorValue(std::move(status));
+        result = ErrorValue::From(std::move(status), arena);
       }
       return absl::OkStatus();
     }
@@ -152,7 +152,7 @@ absl::Status PerformGet(const Value& target, absl::string_view field,
           target, field, unboxing_option, descriptor_pool, message_factory,
           arena, enable_use_new_field_select_implementation, &result);
       if (!status.ok()) {
-        result = ErrorValue(std::move(status));
+        result = ErrorValue::From(std::move(status), arena);
       }
       return absl::OkStatus();
     }
@@ -255,8 +255,9 @@ absl::Status SelectStep::Evaluate(ExecutionFrame* frame) const {
   }
 
   if (!(optional_arg || arg.IsMap() || arg.IsStruct())) {
-    frame->value_stack().PopAndPush(cel::ErrorValue(InvalidSelectTargetError()),
-                                    std::move(result_trail));
+    frame->value_stack().PopAndPush(
+        cel::ErrorValue::From(InvalidSelectTargetError(), frame->arena()),
+        std::move(result_trail));
     return absl::OkStatus();
   }
 
@@ -300,7 +301,7 @@ absl::Status SelectStep::Evaluate(ExecutionFrame* frame) const {
         frame->message_factory(), frame->arena(),
         frame->options().enable_use_new_field_select_implementation, result);
     if (!status.ok()) {
-      result = ErrorValue(std::move(status));
+      result = ErrorValue::From(std::move(status), frame->arena());
     }
     frame->value_stack().PopAndPush(std::move(result), std::move(result_trail));
     return absl::OkStatus();
@@ -363,7 +364,8 @@ class DirectSelectStep : public DirectExpressionStep {
         if (optional_arg) {
           break;
         }
-        result = cel::ErrorValue(InvalidSelectTargetError());
+        result =
+            cel::ErrorValue::From(InvalidSelectTargetError(), frame.arena());
         return absl::OkStatus();
     }
 
@@ -394,7 +396,7 @@ class DirectSelectStep : public DirectExpressionStep {
           frame.descriptor_pool(), frame.message_factory(), frame.arena(),
           frame.options().enable_use_new_field_select_implementation, result);
       if (!status.ok()) {
-        result = ErrorValue(std::move(status));
+        result = ErrorValue::From(std::move(status), frame.arena());
       }
       return absl::OkStatus();
     }

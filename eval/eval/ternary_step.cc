@@ -59,7 +59,8 @@ class ExhaustiveDirectTernaryStep : public DirectExpressionStep {
     }
 
     if (!condition.IsBool()) {
-      result = cel::ErrorValue(CreateNoMatchingOverloadError(kTernary));
+      result = cel::ErrorValue::From(CreateNoMatchingOverloadError(kTernary),
+                                     frame.arena());
       return absl::OkStatus();
     }
 
@@ -105,7 +106,8 @@ class ShortcircuitingDirectTernaryStep : public DirectExpressionStep {
     }
 
     if (!condition.IsBool()) {
-      result = cel::ErrorValue(CreateNoMatchingOverloadError(kTernary));
+      result = cel::ErrorValue::From(CreateNoMatchingOverloadError(kTernary),
+                                     frame.arena());
       return absl::OkStatus();
     }
 
@@ -157,7 +159,8 @@ absl::Status TernaryStep::Evaluate(ExecutionFrame* frame) const {
 
   cel::Value result;
   if (!condition.IsBool()) {
-    result = cel::ErrorValue(CreateNoMatchingOverloadError(kTernary));
+    result = cel::ErrorValue::From(CreateNoMatchingOverloadError(kTernary),
+                                   frame->arena());
   } else if (condition.GetBool().NativeValue()) {
     result = args[kTernaryStepTrue];
   } else {

@@ -426,7 +426,7 @@ absl::Status CustomMapValueInterface::ForEach(
     CEL_ASSIGN_OR_RETURN(
         bool found, Find(key, descriptor_pool, message_factory, arena, &value));
     if (!found) {
-      value = ErrorValue(NoSuchKeyError(key));
+      value = ErrorValue::From(NoSuchKeyError(key), arena);
     }
     CEL_ASSIGN_OR_RETURN(auto ok, callback(key, value));
     if (!ok) {
@@ -639,7 +639,7 @@ absl::Status CustomMapValue::Get(
       case ValueKind::kUnknown:
         break;
       default:
-        *result = ErrorValue(NoSuchKeyError(key));
+        *result = ErrorValue::From(NoSuchKeyError(key), arena);
         break;
     }
   }
@@ -671,7 +671,7 @@ absl::StatusOr<bool> CustomMapValue::Find(
     case ValueKind::kString:
       break;
     default:
-      *result = ErrorValue(InvalidMapKeyTypeError(key.kind()));
+      *result = ErrorValue::From(InvalidMapKeyTypeError(key.kind()), arena);
       return false;
   }
 
@@ -682,7 +682,7 @@ absl::StatusOr<bool> CustomMapValue::Find(
     auto status_or_found = content.interface->Find(
         key, descriptor_pool, message_factory, arena, result);
     if (!status_or_found.ok()) {
-      *result = ErrorValue(std::move(status_or_found).status());
+      *result = ErrorValue::From(std::move(status_or_found).status(), arena);
       return false;
     }
     if (!*status_or_found) {
@@ -695,7 +695,7 @@ absl::StatusOr<bool> CustomMapValue::Find(
       dispatcher_->find(dispatcher_, content_, key, descriptor_pool,
                         message_factory, arena, result);
   if (!status_or_found.ok()) {
-    *result = ErrorValue(std::move(status_or_found).status());
+    *result = ErrorValue::From(std::move(status_or_found).status(), arena);
     return false;
   }
   if (!*status_or_found) {
@@ -730,7 +730,7 @@ absl::Status CustomMapValue::Has(
     case ValueKind::kString:
       break;
     default:
-      *result = ErrorValue(InvalidMapKeyTypeError(key.kind()));
+      *result = ErrorValue::From(InvalidMapKeyTypeError(key.kind()), arena);
       return absl::OkStatus();
   }
   if (dispatcher_ == nullptr) {
@@ -740,7 +740,7 @@ absl::Status CustomMapValue::Has(
     auto status_or_has =
         content.interface->Has(key, descriptor_pool, message_factory, arena);
     if (!status_or_has.ok()) {
-      *result = ErrorValue(std::move(status_or_has).status());
+      *result = ErrorValue::From(std::move(status_or_has).status(), arena);
       return absl::OkStatus();
     }
     *result = BoolValue(*status_or_has);
@@ -749,7 +749,7 @@ absl::Status CustomMapValue::Has(
   auto status_or_has = dispatcher_->has(
       dispatcher_, content_, key, descriptor_pool, message_factory, arena);
   if (!status_or_has.ok()) {
-    *result = ErrorValue(std::move(status_or_has).status());
+    *result = ErrorValue::From(std::move(status_or_has).status(), arena);
     return absl::OkStatus();
   }
   *result = BoolValue(*status_or_has);
@@ -814,7 +814,7 @@ absl::Status CustomMapValue::ForEach(
         dispatcher_->find(dispatcher_, content_, key, descriptor_pool,
                           message_factory, arena, &value));
     if (!found) {
-      value = ErrorValue(NoSuchKeyError(key));
+      value = ErrorValue::From(NoSuchKeyError(key), arena);
     }
     CEL_ASSIGN_OR_RETURN(auto ok, callback(key, value));
     if (!ok) {

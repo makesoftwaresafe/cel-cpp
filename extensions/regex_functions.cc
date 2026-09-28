@@ -69,8 +69,9 @@ Value ExtractString(int regex_max_program_size, const StringValue& target,
   std::string output;
   bool result = RE2::Extract(target_view, re2, rewrite_view, &output);
   if (!result) {
-    return ErrorValue(absl::InvalidArgumentError(
-        "Unable to extract string for the given regex"));
+    return ErrorValue::From(absl::InvalidArgumentError(
+                                "Unable to extract string for the given regex"),
+                            arena);
   }
   return StringValue::From(std::move(output), arena);
 }
@@ -92,8 +93,9 @@ Value CaptureString(int regex_max_program_size, const StringValue& target,
   std::string output;
   bool result = RE2::FullMatch(target_view, re2, &output);
   if (!result) {
-    return ErrorValue(absl::InvalidArgumentError(
-        "Unable to capture groups for the given regex"));
+    return ErrorValue::From(absl::InvalidArgumentError(
+                                "Unable to capture groups for the given regex"),
+                            arena);
   } else {
     return StringValue::From(std::move(output), arena);
   }
@@ -119,8 +121,10 @@ absl::StatusOr<Value> CaptureStringN(
   const int capturing_groups_count = re2.NumberOfCapturingGroups();
   const auto& named_capturing_groups_map = re2.CapturingGroupNames();
   if (capturing_groups_count <= 0) {
-    return ErrorValue(absl::InvalidArgumentError(
-        "Capturing groups were not found in the given regex."));
+    return ErrorValue::From(
+        absl::InvalidArgumentError(
+            "Capturing groups were not found in the given regex."),
+        arena);
   }
   std::vector<std::string> captured_strings(capturing_groups_count);
   std::vector<RE2::Arg> captured_string_addresses(capturing_groups_count);
@@ -132,8 +136,9 @@ absl::StatusOr<Value> CaptureStringN(
   bool result =
       RE2::FullMatchN(target_view, re2, argv.data(), capturing_groups_count);
   if (!result) {
-    return ErrorValue(absl::InvalidArgumentError(
-        "Unable to capture groups for the given regex"));
+    return ErrorValue::From(absl::InvalidArgumentError(
+                                "Unable to capture groups for the given regex"),
+                            arena);
   }
   auto builder = cel::NewMapValueBuilder(arena);
   builder->Reserve(capturing_groups_count);

@@ -68,9 +68,11 @@ Value Extract(int regex_max_program_size, const StringValue& target,
       .With(ErrorValueReturn());
   const int group_count = re2.NumberOfCapturingGroups();
   if (group_count > 1) {
-    return ErrorValue(absl::InvalidArgumentError(absl::StrFormat(
-        "regular expression has more than one capturing group: %s",
-        regex_view)));
+    return ErrorValue::From(
+        absl::InvalidArgumentError(absl::StrFormat(
+            "regular expression has more than one capturing group: %s",
+            regex_view)),
+        arena);
   }
 
   // Space for the full match (\0) and the first capture group (\1).
@@ -100,9 +102,11 @@ Value ExtractAll(int regex_max_program_size, const StringValue& target,
       .With(ErrorValueReturn());
   const int group_count = re2.NumberOfCapturingGroups();
   if (group_count > 1) {
-    return ErrorValue(absl::InvalidArgumentError(absl::StrFormat(
-        "regular expression has more than one capturing group: %s",
-        regex_view)));
+    return ErrorValue::From(
+        absl::InvalidArgumentError(absl::StrFormat(
+            "regular expression has more than one capturing group: %s",
+            regex_view)),
+        arena);
   }
 
   auto builder = NewListValueBuilder(arena);
@@ -135,7 +139,7 @@ Value ExtractAll(int regex_max_program_size, const StringValue& target,
     absl::Status status =
         builder->Add(StringValue::From(desired_capture, arena));
     if (!status.ok()) {
-      return ErrorValue(status);
+      return ErrorValue::From(status, arena);
     }
     temp_target.remove_prefix(full_match.data() - temp_target.data() +
                               full_match.length());
@@ -161,8 +165,10 @@ Value ReplaceAll(int regex_max_program_size, const StringValue& target,
       .With(ErrorValueReturn());
   std::string error_string;
   if (!re2.CheckRewriteString(replacement_view, &error_string)) {
-    return ErrorValue(absl::InvalidArgumentError(
-        absl::StrFormat("invalid replacement string: %s", error_string)));
+    return ErrorValue::From(
+        absl::InvalidArgumentError(
+            absl::StrFormat("invalid replacement string: %s", error_string)),
+        arena);
   }
 
   std::string output(target_view);
@@ -197,8 +203,10 @@ Value ReplaceN(int regex_max_program_size, const StringValue& target,
       .With(ErrorValueReturn());
   std::string error_string;
   if (!re2.CheckRewriteString(replacement_view, &error_string)) {
-    return ErrorValue(absl::InvalidArgumentError(
-        absl::StrFormat("invalid replacement string: %s", error_string)));
+    return ErrorValue::From(
+        absl::InvalidArgumentError(
+            absl::StrFormat("invalid replacement string: %s", error_string)),
+        arena);
   }
 
   std::string output;
@@ -217,7 +225,8 @@ Value ReplaceN(int regex_max_program_size, const StringValue& target,
 
     if (!re2.Rewrite(&output, replacement_view, match, nmatch)) {
       // This should ideally not happen given CheckRewriteString passed
-      return ErrorValue(absl::InternalError("rewrite failed unexpectedly"));
+      return ErrorValue::From(
+          absl::InternalError("rewrite failed unexpectedly"), arena);
     }
 
     temp_target.remove_prefix(full_match.data() - temp_target.data() +

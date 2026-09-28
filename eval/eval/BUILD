@@ -254,7 +254,6 @@ cc_library(
         ":direct_expression_step",
         ":evaluator_core",
         ":expression_step_base",
-        "//common:expr",
         "//common:value",
         "//eval/internal:errors",
         "//internal:status_macros",
@@ -1249,6 +1248,7 @@ cc_library(
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/types:optional",
         "@com_google_absl//absl/types:span",
+        "@com_google_protobuf//:protobuf",
     ],
 )
 

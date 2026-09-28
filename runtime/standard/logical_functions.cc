@@ -20,6 +20,7 @@
 #include "base/function_adapter.h"
 #include "common/value.h"
 #include "internal/status_macros.h"
+#include "runtime/function.h"
 #include "runtime/function_registry.h"
 #include "runtime/internal/errors.h"
 #include "runtime/register_function_helper.h"
@@ -30,7 +31,8 @@ namespace {
 
 using ::cel::runtime_internal::CreateNoMatchingOverloadError;
 
-Value NotStrictlyFalseImpl(const Value& value) {
+Value NotStrictlyFalseImpl(const Value& value,
+                           const Function::InvokeContext& context) {
   if (value.IsBool()) {
     return value;
   }
@@ -40,7 +42,9 @@ Value NotStrictlyFalseImpl(const Value& value) {
   }
 
   // Should only accept bool unknown or error.
-  return ErrorValue(CreateNoMatchingOverloadError(builtin::kNotStrictlyFalse));
+  return ErrorValue::From(
+      CreateNoMatchingOverloadError(builtin::kNotStrictlyFalse),
+      context.arena());
 }
 
 }  // namespace

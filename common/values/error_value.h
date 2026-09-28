@@ -66,6 +66,12 @@ class ABSL_ATTRIBUTE_TRIVIAL_ABI ErrorValue final
         arena, google::protobuf::Arena::Create<absl::Status>(arena, std::move(value)));
   }
 
+  [[nodiscard]]
+  static ErrorValue WrapUnsafe(const absl::Status* absl_nonnull value) {
+    ABSL_DCHECK(!value->ok()) << "ErrorValue requires a non-OK absl::Status";
+    return ErrorValue(nullptr, value);
+  }
+
   ABSL_DEPRECATED("Use From")
   explicit ErrorValue(absl::Status value)
       : arena_(nullptr), status_ptr_(nullptr) {

@@ -34,6 +34,7 @@
 #include "eval/public/cel_options.h"
 #include "extensions/formatting.h"
 #include "internal/status_macros.h"
+#include "runtime/function.h"
 #include "runtime/function_adapter.h"
 #include "runtime/function_registry.h"
 #include "runtime/runtime_options.h"
@@ -116,10 +117,11 @@ int64_t IndexOf2(const StringValue& haystack, const StringValue& needle) {
 }
 
 Value IndexOf3(const StringValue& haystack, const StringValue& needle,
-               int64_t pos) {
+               int64_t pos, const Function::InvokeContext& context) {
   if (pos > haystack.Size()) {
-    return ErrorValue{
-        absl::InvalidArgumentError(absl::StrCat("index out of range: ", pos))};
+    return ErrorValue::From(
+        absl::InvalidArgumentError(absl::StrCat("index out of range: ", pos)),
+        context.arena());
   }
   return IntValue(haystack.IndexOf(needle, pos).value_or(-1));
 }
@@ -129,10 +131,11 @@ int64_t LastIndexOf2(const StringValue& haystack, const StringValue& needle) {
 }
 
 Value LastIndexOf3(const StringValue& haystack, const StringValue& needle,
-                   int64_t pos) {
+                   int64_t pos, const Function::InvokeContext& context) {
   if (pos < 0 || pos > haystack.Size()) {
-    return ErrorValue{
-        absl::InvalidArgumentError(absl::StrCat("index out of range: ", pos))};
+    return ErrorValue::From(
+        absl::InvalidArgumentError(absl::StrCat("index out of range: ", pos)),
+        context.arena());
   }
   return IntValue(haystack.LastIndexOf(needle, pos).value_or(-1));
 }

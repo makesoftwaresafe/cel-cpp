@@ -229,16 +229,21 @@ Value NoOverloadResult(absl::string_view name,
     if (args.empty()) {
       // Should not be possible, but return a sensible error in case of logic
       // error.
-      return ErrorValue(
-          CreateNoMatchingOverloadError(absl::StrCat("().", name, "()")));
+      return ErrorValue::From(
+          CreateNoMatchingOverloadError(absl::StrCat("().", name, "()")),
+          frame.arena());
     }
-    return ErrorValue(CreateNoMatchingOverloadError(absl::StrCat(
-        "(",
-        ToLegacyKindName(cel::KindToString(ValueKindToKind(args[0].kind()))),
-        ").", name, CallArgTypeString(args.subspan(1)))));
+    return ErrorValue::From(
+        CreateNoMatchingOverloadError(absl::StrCat(
+            "(",
+            ToLegacyKindName(
+                cel::KindToString(ValueKindToKind(args[0].kind()))),
+            ").", name, CallArgTypeString(args.subspan(1)))),
+        frame.arena());
   }
-  return cel::ErrorValue(CreateNoMatchingOverloadError(
-      absl::StrCat(name, CallArgTypeString(args))));
+  return cel::ErrorValue::From(CreateNoMatchingOverloadError(
+                                   absl::StrCat(name, CallArgTypeString(args))),
+                               frame.arena());
 }
 
 absl::StatusOr<Value> AbstractFunctionStep::DoEvaluate(

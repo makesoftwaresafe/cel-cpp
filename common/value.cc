@@ -26,6 +26,7 @@
 
 #include "google/protobuf/struct.pb.h"
 #include "absl/base/attributes.h"
+#include "absl/base/no_destructor.h"
 #include "absl/base/nullability.h"
 #include "absl/base/optimization.h"
 #include "absl/functional/overload.h"
@@ -39,6 +40,7 @@
 #include "absl/strings/string_view.h"
 #include "absl/time/time.h"
 #include "absl/types/optional.h"
+#include "absl/types/source_location.h"
 #include "absl/types/variant.h"
 #include "common/allocator.h"
 #include "common/memory.h"
@@ -322,12 +324,20 @@ Value NonNullEnumValue(const google::protobuf::EnumValueDescriptor* absl_nonnull
 }
 
 Value NonNullEnumValue(const google::protobuf::EnumDescriptor* absl_nonnull type,
-                       int32_t number) {
+                       int32_t number, google::protobuf::Arena* absl_nullable arena) {
   ABSL_DCHECK(type != nullptr);
   if (type->is_closed()) {
     if (ABSL_PREDICT_FALSE(type->FindValueByNumber(number) == nullptr)) {
-      return ErrorValue(absl::InvalidArgumentError(absl::StrCat(
-          "closed enum has no such value: ", type->full_name(), ".", number)));
+      if (arena == nullptr) {
+        static const absl::NoDestructor<absl::Status> error(
+            absl::InvalidArgumentError("closed enum has no such value",
+                                       absl::SourceLocation()));
+        return ErrorValue::WrapUnsafe(&*error);
+      }
+      return ErrorValue::From(absl::InvalidArgumentError(absl::StrCat(
+                                  "closed enum has no such value: ",
+                                  type->full_name(), ".", number)),
+                              arena);
     }
   }
   return IntValue(number);
@@ -351,7 +361,18 @@ Value Value::Enum(const google::protobuf::EnumDescriptor* absl_nonnull type,
     ABSL_DCHECK_EQ(number, 0);
     return NullValue();
   }
-  return NonNullEnumValue(type, number);
+  return NonNullEnumValue(type, number, nullptr);
+}
+
+Value Value::Enum(const google::protobuf::EnumDescriptor* absl_nonnull type,
+                  int32_t number, google::protobuf::Arena* absl_nonnull arena) {
+  ABSL_DCHECK(type != nullptr);
+  ABSL_DCHECK(arena != nullptr);
+  if (type->full_name() == "google.protobuf.NullValue") {
+    ABSL_DCHECK_EQ(number, 0);
+    return NullValue();
+  }
+  return NonNullEnumValue(type, number, arena);
 }
 
 namespace common_internal {
@@ -669,7 +690,7 @@ void EnumMapFieldValueAccessor(
   ABSL_DCHECK(!field->is_repeated());
   ABSL_DCHECK_EQ(field->cpp_type(), google::protobuf::FieldDescriptor::CPPTYPE_ENUM);
 
-  *result = NonNullEnumValue(field->enum_type(), value.GetEnumValue());
+  *result = NonNullEnumValue(field->enum_type(), value.GetEnumValue(), arena);
 }
 
 void NullMapFieldValueAccessor(
@@ -1044,7 +1065,7 @@ void EnumRepeatedFieldAccessor(
 
   *result = NonNullEnumValue(
       field->enum_type(),
-      reflection->GetRepeatedEnumValue(*message, field, index));
+      reflection->GetRepeatedEnumValue(*message, field, index), arena);
 }
 
 void NullRepeatedFieldAccessor(
@@ -1363,7 +1384,7 @@ Value Value::FromMessage(
   auto status_or_adapted = well_known_types::AdaptFromMessage(
       arena, message, descriptor_pool, message_factory, scratch);
   if (ABSL_PREDICT_FALSE(!status_or_adapted.ok())) {
-    return ErrorValue(std::move(status_or_adapted).status());
+    return ErrorValue::From(std::move(status_or_adapted).status(), arena);
   }
   return absl::visit(
       absl::Overload(OwningWellKnownTypesValueVisitor{
@@ -1391,7 +1412,7 @@ Value Value::FromMessage(
   auto status_or_adapted = well_known_types::AdaptFromMessage(
       arena, message, descriptor_pool, message_factory, scratch);
   if (ABSL_PREDICT_FALSE(!status_or_adapted.ok())) {
-    return ErrorValue(std::move(status_or_adapted).status());
+    return ErrorValue::From(std::move(status_or_adapted).status(), arena);
   }
   return absl::visit(
       absl::Overload(OwningWellKnownTypesValueVisitor{
@@ -1421,7 +1442,7 @@ Value Value::WrapMessage(
       well_known_types::AdaptFromMessage(arena, *message, descriptor_pool,
                                          message_factory, scratch);
   if (ABSL_PREDICT_FALSE(!adapted_value.ok())) {
-    return ErrorValue(std::move(adapted_value).status());
+    return ErrorValue::From(std::move(adapted_value).status(), arena);
   }
   return absl::visit(
       absl::Overload(BorrowingWellKnownTypesValueVisitor{
@@ -1455,7 +1476,7 @@ Value Value::WrapMessageUnsafe(
       well_known_types::AdaptFromMessage(arena, *message, descriptor_pool,
                                          message_factory, scratch);
   if (ABSL_PREDICT_FALSE(!adapted_value.ok())) {
-    return ErrorValue(std::move(adapted_value).status());
+    return ErrorValue::From(std::move(adapted_value).status(), arena);
   }
   return absl::visit(
       absl::Overload(BorrowingWellKnownTypesValueVisitor{
@@ -1519,9 +1540,10 @@ Value WrapFieldImpl(
   if (ABSL_PREDICT_FALSE(reflection == nullptr)) {
     // This only happens for special implementations of Message that
     // should not normally be used with CEL.
-    return ErrorValue(absl::InvalidArgumentError(
-        absl::StrCat("failed to get reflection for message type: ",
-                     message->GetDescriptor()->full_name())));
+    return ErrorValue::From(absl::InvalidArgumentError(absl::StrCat(
+                                "failed to get reflection for message type: ",
+                                message->GetDescriptor()->full_name())),
+                            arena);
   }
   if (field->is_map()) {
     if constexpr (Unsafe::value) {
@@ -1631,9 +1653,11 @@ Value WrapFieldImpl(
     case google::protobuf::FieldDescriptor::TYPE_SINT64:
       return IntValue(reflection->GetInt64(*message, field));
     default:
-      return ErrorValue(absl::InvalidArgumentError(
-          absl::StrCat("unexpected protocol buffer message field type: ",
-                       field->type_name())));
+      return ErrorValue::From(
+          absl::InvalidArgumentError(
+              absl::StrCat("unexpected protocol buffer message field type: ",
+                           field->type_name())),
+          arena);
   }
 }
 
@@ -1661,14 +1685,16 @@ Value WrapRepeatedFieldImpl(
   if (ABSL_PREDICT_FALSE(reflection == nullptr)) {
     // This only happens for special implementations of Message that
     // should not normally be used with CEL.
-    return ErrorValue(absl::InvalidArgumentError(
-        absl::StrCat("failed to get reflection for message type: ",
-                     message->GetDescriptor()->full_name())));
+    return ErrorValue::From(absl::InvalidArgumentError(absl::StrCat(
+                                "failed to get reflection for message type: ",
+                                message->GetDescriptor()->full_name())),
+                            arena);
   }
   const int size = reflection->FieldSize(*message, field);
   if (ABSL_PREDICT_FALSE(index < 0 || index >= size)) {
-    return ErrorValue(absl::InvalidArgumentError(
-        absl::StrCat("index out of bounds: ", index)));
+    return ErrorValue::From(absl::InvalidArgumentError(
+                                absl::StrCat("index out of bounds: ", index)),
+                            arena);
   }
   switch (field->type()) {
     case google::protobuf::FieldDescriptor::TYPE_DOUBLE:
@@ -1757,8 +1783,10 @@ Value WrapRepeatedFieldImpl(
       return Value::Enum(field->enum_type(), reflection->GetRepeatedEnumValue(
                                                  *message, field, index));
     default:
-      return ErrorValue(absl::InvalidArgumentError(
-          absl::StrCat("unexpected message field type: ", field->type_name())));
+      return ErrorValue::From(
+          absl::InvalidArgumentError(absl::StrCat(
+              "unexpected message field type: ", field->type_name())),
+          arena);
   }
 }
 
@@ -1837,8 +1865,10 @@ Value WrapMapFieldValueImpl(
     case google::protobuf::FieldDescriptor::TYPE_ENUM:
       return Value::Enum(field->enum_type(), value.GetEnumValue());
     default:
-      return ErrorValue(absl::InvalidArgumentError(
-          absl::StrCat("unexpected message field type: ", field->type_name())));
+      return ErrorValue::From(
+          absl::InvalidArgumentError(absl::StrCat(
+              "unexpected message field type: ", field->type_name())),
+          arena);
   }
 }
 

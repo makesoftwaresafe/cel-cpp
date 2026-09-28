@@ -95,8 +95,9 @@ Value ParsedJsonValue(const google::protobuf::Message* absl_nonnull message,
       return ParsedJsonMapValue(&reflection.GetStructValue(*message),
                                 MessageArenaOr(message, arena));
     default:
-      return ErrorValue(absl::InvalidArgumentError(
-          absl::StrCat("unexpected value kind case: ", kind_case)));
+      return ErrorValue::From(absl::InvalidArgumentError(absl::StrCat(
+                                  "unexpected value kind case: ", kind_case)),
+                              arena);
   }
 }
 

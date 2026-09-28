@@ -92,8 +92,9 @@ absl::StatusOr<Value> CreateStructStepForStruct::DoEvaluate(
                        frame->type_provider().NewValueBuilder(
                            name_, frame->message_factory(), frame->arena()));
   if (builder == nullptr) {
-    return ErrorValue(
-        absl::NotFoundError(absl::StrCat("Unable to find builder: ", name_)));
+    return ErrorValue::From(
+        absl::NotFoundError(absl::StrCat("Unable to find builder: ", name_)),
+        frame->arena());
   }
 
   for (int i = 0; i < entries_size; ++i) {
@@ -174,8 +175,9 @@ absl::Status DirectCreateStructStep::Evaluate(ExecutionFrameBase& frame,
                        frame.type_provider().NewValueBuilder(
                            name_, frame.message_factory(), frame.arena()));
   if (builder == nullptr) {
-    result = cel::ErrorValue(
-        absl::NotFoundError(absl::StrCat("Unable to find builder: ", name_)));
+    result = cel::ErrorValue::From(
+        absl::NotFoundError(absl::StrCat("Unable to find builder: ", name_)),
+        frame.arena());
     return absl::OkStatus();
   }
 

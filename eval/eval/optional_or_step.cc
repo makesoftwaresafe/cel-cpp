@@ -32,6 +32,7 @@
 #include "eval/eval/jump_step.h"
 #include "internal/status_macros.h"
 #include "runtime/internal/errors.h"
+#include "google/protobuf/arena.h"
 
 namespace google::api::expr::runtime {
 
@@ -47,12 +48,12 @@ using ::cel::runtime_internal::CreateNoMatchingOverloadError;
 
 enum class OptionalOrKind { kOrOptional, kOrValue };
 
-ErrorValue MakeNoOverloadError(OptionalOrKind kind) {
+ErrorValue MakeNoOverloadError(OptionalOrKind kind, google::protobuf::Arena* arena) {
   switch (kind) {
     case OptionalOrKind::kOrOptional:
-      return ErrorValue(CreateNoMatchingOverloadError("or"));
+      return ErrorValue::From(CreateNoMatchingOverloadError("or"), arena);
     case OptionalOrKind::kOrValue:
-      return ErrorValue(CreateNoMatchingOverloadError("orValue"));
+      return ErrorValue::From(CreateNoMatchingOverloadError("orValue"), arena);
   }
 
   ABSL_UNREACHABLE();
@@ -126,7 +127,7 @@ class OptionalOrStep : public ExpressionStepBase {
 absl::Status EvalOptionalOr(OptionalOrKind kind, const Value& lhs,
                             const Value& rhs, const AttributeTrail& lhs_attr,
                             const AttributeTrail& rhs_attr, Value& result,
-                            AttributeTrail& result_attr) {
+                            AttributeTrail& result_attr, google::protobuf::Arena* arena) {
   if (InstanceOf<ErrorValue>(lhs) || InstanceOf<UnknownValue>(lhs)) {
     result = lhs;
     result_attr = lhs_attr;
@@ -135,7 +136,7 @@ absl::Status EvalOptionalOr(OptionalOrKind kind, const Value& lhs,
 
   auto lhs_optional_value = As<OptionalValue>(lhs);
   if (!lhs_optional_value.has_value()) {
-    result = MakeNoOverloadError(kind);
+    result = MakeNoOverloadError(kind, arena);
     result_attr = AttributeTrail();
     return absl::OkStatus();
   }
@@ -152,7 +153,7 @@ absl::Status EvalOptionalOr(OptionalOrKind kind, const Value& lhs,
 
   if (kind == OptionalOrKind::kOrOptional && !InstanceOf<ErrorValue>(rhs) &&
       !InstanceOf<UnknownValue>(rhs) && !InstanceOf<OptionalValue>(rhs)) {
-    result = MakeNoOverloadError(kind);
+    result = MakeNoOverloadError(kind, arena);
     result_attr = AttributeTrail();
     return absl::OkStatus();
   }
@@ -174,7 +175,8 @@ absl::Status OptionalOrStep::Evaluate(ExecutionFrame* frame) const {
   Value result;
   AttributeTrail result_attr;
   CEL_RETURN_IF_ERROR(EvalOptionalOr(kind_, args[0], args[1], args_attr[0],
-                                     args_attr[1], result, result_attr));
+                                     args_attr[1], result, result_attr,
+                                     frame->arena()));
 
   frame->value_stack().PopAndPush(2, std::move(result), std::move(result_attr));
   return absl::OkStatus();
@@ -207,7 +209,7 @@ absl::Status ExhaustiveDirectOptionalOrStep::Evaluate(
   AttributeTrail rhs_attr;
   CEL_RETURN_IF_ERROR(alternative_->Evaluate(frame, rhs, rhs_attr));
   CEL_RETURN_IF_ERROR(EvalOptionalOr(kind_, result, rhs, attribute, rhs_attr,
-                                     result, attribute));
+                                     result, attribute, frame.arena()));
   return absl::OkStatus();
 }
 
@@ -245,7 +247,7 @@ absl::Status DirectOptionalOrStep::Evaluate(ExecutionFrameBase& frame,
 
   auto optional_value = As<OptionalValue>(static_cast<const Value&>(result));
   if (!optional_value.has_value()) {
-    result = MakeNoOverloadError(kind_);
+    result = MakeNoOverloadError(kind_, frame.arena());
     return absl::OkStatus();
   }
 
@@ -264,7 +266,7 @@ absl::Status DirectOptionalOrStep::Evaluate(ExecutionFrameBase& frame,
   if (kind_ == OptionalOrKind::kOrOptional) {
     if (!InstanceOf<OptionalValue>(result) && !InstanceOf<ErrorValue>(result) &&
         !InstanceOf<UnknownValue>(result)) {
-      result = MakeNoOverloadError(kind_);
+      result = MakeNoOverloadError(kind_, frame.arena());
     }
   }
 

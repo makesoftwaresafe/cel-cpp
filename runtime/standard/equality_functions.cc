@@ -284,8 +284,8 @@ WrapComparison(Op op, absl::string_view name) {
       return BoolValue(*result);
     }
 
-    return ErrorValue(
-        cel::runtime_internal::CreateNoMatchingOverloadError(name));
+    return ErrorValue::From(
+        cel::runtime_internal::CreateNoMatchingOverloadError(name), arena);
   };
 }
 
@@ -317,8 +317,8 @@ auto ComplexEquality(Op&& op) {
     CEL_ASSIGN_OR_RETURN(absl::optional<bool> result,
                          op(t1, t2, descriptor_pool, message_factory, arena));
     if (!result.has_value()) {
-      return ErrorValue(
-          cel::runtime_internal::CreateNoMatchingOverloadError(kEqual));
+      return ErrorValue::From(
+          cel::runtime_internal::CreateNoMatchingOverloadError(kEqual), arena);
     }
     return BoolValue(*result);
   };
@@ -334,8 +334,9 @@ auto ComplexInequality(Op&& op) {
     CEL_ASSIGN_OR_RETURN(absl::optional<bool> result,
                          op(t1, t2, descriptor_pool, message_factory, arena));
     if (!result.has_value()) {
-      return ErrorValue(
-          cel::runtime_internal::CreateNoMatchingOverloadError(kInequal));
+      return ErrorValue::From(
+          cel::runtime_internal::CreateNoMatchingOverloadError(kInequal),
+          arena);
     }
     return BoolValue(!*result);
   };
@@ -498,8 +499,8 @@ absl::StatusOr<Value> EqualOverloadImpl(
   if (result.has_value()) {
     return BoolValue(*result);
   }
-  return ErrorValue(
-      cel::runtime_internal::CreateNoMatchingOverloadError(kEqual));
+  return ErrorValue::From(
+      cel::runtime_internal::CreateNoMatchingOverloadError(kEqual), arena);
 }
 
 absl::StatusOr<Value> InequalOverloadImpl(
@@ -513,8 +514,8 @@ absl::StatusOr<Value> InequalOverloadImpl(
   if (result.has_value()) {
     return BoolValue(!*result);
   }
-  return ErrorValue(
-      cel::runtime_internal::CreateNoMatchingOverloadError(kInequal));
+  return ErrorValue::From(
+      cel::runtime_internal::CreateNoMatchingOverloadError(kInequal), arena);
 }
 
 absl::Status RegisterHeterogeneousEqualityFunctions(

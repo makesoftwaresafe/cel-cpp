@@ -66,8 +66,10 @@ absl::Status LookupIdent(absl::string_view name, ExecutionFrameBase& frame,
     return absl::OkStatus();
   }
 
-  result = cel::ErrorValue(CreateError(
-      absl::StrCat("No value with name \"", name, "\" found in Activation")));
+  result = cel::ErrorValue::From(
+      CreateError(absl::StrCat("No value with name \"", name,
+                               "\" found in Activation")),
+      frame.arena());
 
   return absl::OkStatus();
 }

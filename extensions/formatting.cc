@@ -518,16 +518,17 @@ absl::StatusOr<Value> Format(
     }
     ++i;
     if (i >= format.size()) {
-      return ErrorValue(
-          absl::InvalidArgumentError("unexpected end of format string"));
+      return ErrorValue::From(
+          absl::InvalidArgumentError("unexpected end of format string"), arena);
     }
     if (format[i] == '%') {
       result.push_back('%');
       continue;
     }
     if (arg_index >= args_size) {
-      return ErrorValue(absl::InvalidArgumentError(
-          absl::StrFormat("index %d out of range", arg_index)));
+      return ErrorValue::From(absl::InvalidArgumentError(absl::StrFormat(
+                                  "index %d out of range", arg_index)),
+                              arena);
     }
     CEL_ASSIGN_OR_RETURN(auto value, args.Get(arg_index++, descriptor_pool,
                                               message_factory, arena));
@@ -536,7 +537,7 @@ absl::StatusOr<Value> Format(
                                        descriptor_pool, message_factory, arena,
                                        clause_scratch);
     if (!clause.ok()) {
-      return ErrorValue(std::move(clause).status());
+      return ErrorValue::From(std::move(clause).status(), arena);
     }
     absl::StrAppend(&result, clause->second);
     i += clause->first;
