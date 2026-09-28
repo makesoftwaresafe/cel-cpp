@@ -193,7 +193,7 @@ absl::Status RegisterStringConversionFunctions(FunctionRegistry& registry,
                   absl::InvalidArgumentError("malformed UTF-8 bytes"),
                   context.arena());
             }
-            return StringValue(value.ToString());
+            return StringValue(value);
           },
           registry);
   CEL_RETURN_IF_ERROR(status);
@@ -202,7 +202,7 @@ absl::Status RegisterStringConversionFunctions(FunctionRegistry& registry,
   status = UnaryFunctionAdapter<StringValue, bool>::RegisterGlobalOverload(
       cel::builtin::kString,
       [](bool value) -> StringValue {
-        return StringValue(value ? "true" : "false");
+        return StringValue::WrapUnsafe(value ? "true" : "false");
       },
       registry);
   CEL_RETURN_IF_ERROR(status);
@@ -218,8 +218,8 @@ absl::Status RegisterStringConversionFunctions(FunctionRegistry& registry,
   // int -> string
   status = UnaryFunctionAdapter<StringValue, int64_t>::RegisterGlobalOverload(
       cel::builtin::kString,
-      [](int64_t value) -> StringValue {
-        return StringValue(absl::StrCat(value));
+      [](int64_t value, const Function::InvokeContext& context) -> StringValue {
+        return StringValue::From(absl::StrCat(value), context.arena());
       },
       registry);
   CEL_RETURN_IF_ERROR(status);
@@ -234,8 +234,9 @@ absl::Status RegisterStringConversionFunctions(FunctionRegistry& registry,
   // uint -> string
   status = UnaryFunctionAdapter<StringValue, uint64_t>::RegisterGlobalOverload(
       cel::builtin::kString,
-      [](uint64_t value) -> StringValue {
-        return StringValue(absl::StrCat(value));
+      [](uint64_t value,
+         const Function::InvokeContext& context) -> StringValue {
+        return StringValue::From(absl::StrCat(value), context.arena());
       },
       registry);
   CEL_RETURN_IF_ERROR(status);
@@ -249,7 +250,7 @@ absl::Status RegisterStringConversionFunctions(FunctionRegistry& registry,
         if (!encode.ok()) {
           return ErrorValue::From(encode.status(), context.arena());
         }
-        return StringValue(*encode);
+        return StringValue::From(*encode, context.arena());
       },
       registry);
   CEL_RETURN_IF_ERROR(status);
@@ -262,7 +263,7 @@ absl::Status RegisterStringConversionFunctions(FunctionRegistry& registry,
         if (!encode.ok()) {
           return ErrorValue::From(encode.status(), context.arena());
         }
-        return StringValue(*encode);
+        return StringValue::From(*encode, context.arena());
       },
       registry);
 }
@@ -332,8 +333,7 @@ absl::Status RegisterBytesConversionFunctions(FunctionRegistry& registry,
   return UnaryFunctionAdapter<absl::StatusOr<BytesValue>, const StringValue&>::
       RegisterGlobalOverload(
           cel::builtin::kBytes,
-          [](const StringValue& value) { return BytesValue(value.ToString()); },
-          registry);
+          [](const StringValue& value) { return BytesValue(value); }, registry);
 }
 
 absl::Status RegisterDoubleConversionFunctions(FunctionRegistry& registry,
