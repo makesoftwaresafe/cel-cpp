@@ -121,6 +121,54 @@ TEST(EvaluatorCoreTest, SimpleEvaluatorTest) {
   EXPECT_THAT(value.Int64OrDie(), Eq(2));
 }
 
+TEST(EvaluatorCoreTest, MakeConstant) {
+  cel::runtime_internal::RuntimeTypeProvider type_provider(
+      cel::internal::GetTestingDescriptorPool());
+  google::protobuf::Arena arena;
+  cel::Activation activation;
+  cel::RuntimeOptions options;
+
+  auto evaluate_constant =
+      [&](const cel::Value& value) -> absl::StatusOr<cel::Value> {
+    ExecutionPath path;
+    path.push_back(ExpressionStep::MakeConstant(value));
+    FlatExpression expr(std::move(path), 0, type_provider, options);
+    auto state = expr.MakeEvaluatorState(
+        cel::internal::GetTestingDescriptorPool(),
+        cel::internal::GetTestingMessageFactory(), &arena);
+    return expr.EvaluateWithCallback(activation, nullptr, nullptr, state);
+  };
+
+  ASSERT_OK_AND_ASSIGN(auto bool_val, evaluate_constant(cel::BoolValue(true)));
+  EXPECT_TRUE(bool_val.IsBool());
+  EXPECT_TRUE(bool_val.GetBool().NativeValue());
+
+  ASSERT_OK_AND_ASSIGN(auto int_val, evaluate_constant(cel::IntValue(42)));
+  EXPECT_TRUE(int_val.IsInt());
+  EXPECT_EQ(int_val.GetInt().NativeValue(), 42);
+
+  ASSERT_OK_AND_ASSIGN(auto uint_val, evaluate_constant(cel::UintValue(100)));
+  EXPECT_TRUE(uint_val.IsUint());
+  EXPECT_EQ(uint_val.GetUint().NativeValue(), 100);
+
+  ASSERT_OK_AND_ASSIGN(auto double_val,
+                       evaluate_constant(cel::DoubleValue(3.14)));
+  EXPECT_TRUE(double_val.IsDouble());
+  EXPECT_DOUBLE_EQ(double_val.GetDouble().NativeValue(), 3.14);
+
+  ASSERT_OK_AND_ASSIGN(auto null_val, evaluate_constant(cel::NullValue()));
+  EXPECT_TRUE(null_val.IsNull());
+
+  ASSERT_OK_AND_ASSIGN(auto str_val,
+                       evaluate_constant(cel::StringValue::Literal("hello")));
+  EXPECT_TRUE(str_val.IsString());
+  EXPECT_EQ(str_val.GetString().ToString(), "hello");
+
+  auto step_with_id = ExpressionStep::MakeConstant(cel::IntValue(1), 123);
+  EXPECT_EQ(step_with_id.id(), 123);
+  EXPECT_TRUE(step_with_id.comes_from_ast());
+}
+
 class MockTraceCallback {
  public:
   MOCK_METHOD(void, Call,

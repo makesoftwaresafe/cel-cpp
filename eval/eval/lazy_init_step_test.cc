@@ -19,7 +19,6 @@
 
 #include "base/type_provider.h"
 #include "common/value.h"
-#include "eval/eval/const_value_step.h"
 #include "eval/eval/evaluator_core.h"
 #include "internal/testing.h"
 #include "internal/testing_descriptor_pool.h"
@@ -65,8 +64,7 @@ TEST_F(LazyInitStepTest, CreateCheckInitStepDoesInit) {
   path.push_back(ExpressionStep::MakeGenericStep(CreateLazyInitStep(
       /*slot_index=*/0, /*subexpression_index=*/1)));
 
-  subpath.push_back(
-      ExpressionStep::MakeGenericStep(CreateConstValueStep(cel::IntValue(42))));
+  subpath.push_back(ExpressionStep::MakeConstant(cel::IntValue(42)));
 
   std::vector<ExecutionPathView> expression_table{path, subpath};
 
@@ -87,8 +85,7 @@ TEST_F(LazyInitStepTest, CreateCheckInitStepSkipInit) {
   path.push_back(ExpressionStep::MakeGenericStep(CreateLazyInitStep(
       /*slot_index=*/0, /*subexpression_index=*/-1)));
 
-  subpath.push_back(
-      ExpressionStep::MakeGenericStep(CreateConstValueStep(cel::IntValue(42))));
+  subpath.push_back(ExpressionStep::MakeConstant(cel::IntValue(42)));
 
   std::vector<ExecutionPathView> expression_table{path, subpath};
 

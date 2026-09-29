@@ -80,8 +80,8 @@ absl::StatusOr<CelValue> RunExpression(
   for (auto value : values) {
     auto& expr0 = create_list.mutable_elements().emplace_back().mutable_expr();
     expr0.mutable_const_expr().set_int64_value(value);
-    path.push_back(ExpressionStep::MakeGenericStep(
-        CreateConstValueStep(cel::interop_internal::CreateIntValue(value))));
+    path.push_back(ExpressionStep::MakeConstant(
+        cel::interop_internal::CreateIntValue(value)));
   }
 
   CEL_ASSIGN_OR_RETURN(auto step, CreateCreateListStep(create_list));

@@ -730,8 +730,8 @@ class FlatExprVisitor : public cel::AstVisitor {
       return;
     }
 
-    AddStep(CreateConstValueStep(std::move(converted_value).value()),
-            expr.id());
+    AddStep(ExpressionStep::MakeConstant(std::move(converted_value).value(),
+                                         expr.id()));
   }
 
   struct SlotLookupResult {

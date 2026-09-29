@@ -28,10 +28,4 @@ absl::Status DirectCompilerConstantStep::Evaluate(
   return absl::OkStatus();
 }
 
-absl::Status CompilerConstantStep::Evaluate(ExecutionFrame* frame) const {
-  frame->value_stack().Push(value_);
-
-  return absl::OkStatus();
-}
-
 }  // namespace google::api::expr::runtime

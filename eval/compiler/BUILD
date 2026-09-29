@@ -360,7 +360,6 @@ cc_test(
         "//base:ast",
         "//common:expr",
         "//common:value",
-        "//eval/eval:const_value_step",
         "//eval/eval:create_list_step",
         "//eval/eval:create_map_step",
         "//eval/eval:evaluator_core",

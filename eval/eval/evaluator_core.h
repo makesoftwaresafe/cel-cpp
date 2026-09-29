@@ -62,6 +62,13 @@ class ExpressionStepLogic;
 enum class ExpressionStepKind : uint16_t {
   kMovedFrom = 0,
   kGenericLogic = 1,
+  kIntConstant = 2,
+  kBoolConstant = 3,
+  kDoubleConstant = 4,
+  kNullConstant = 5,
+  kUintConstant = 6,
+  // Any constant that can't be inlined.
+  kOtherConstant = 7,
 };
 
 class ExpressionStep {
@@ -71,6 +78,8 @@ class ExpressionStep {
   ExpressionStep& operator=(const ExpressionStep&) = delete;
   ExpressionStep(ExpressionStep&&);
   ExpressionStep& operator=(ExpressionStep&&);
+
+  ~ExpressionStep();
 
   // Returns corresponding expression object ID.
   // Requires that the input expression has IDs assigned to sub-expressions,
@@ -85,12 +94,7 @@ class ExpressionStep {
   // Returns if the execution step comes from AST.
   bool comes_from_ast() const { return header_.id >= 0; }
 
-  absl::Status Evaluate(ExecutionFrame* context) const;
-
-  template <typename T>
-  T Get() const;
-  template <typename T>
-  bool Is() const;
+  void Evaluate(ExecutionFrame* context) const;
 
   const ExpressionStepLogic* GetGenericStep() const;
   bool IsGenericStep() const;
@@ -104,6 +108,8 @@ class ExpressionStep {
                           std::move(logic));
   }
 
+  static ExpressionStep MakeConstant(const cel::Value& value, int64_t id = -1);
+
  private:
   struct Header {
     ExpressionStepKind kind;
@@ -111,17 +117,50 @@ class ExpressionStep {
     int32_t id;
   };
 
-  friend void swap(ExpressionStep& lhs, ExpressionStep& rhs);
-
-  ExpressionStep() = default;
-
+  ExpressionStep() : header_{ExpressionStepKind::kMovedFrom, 0, -1} {}
+  ExpressionStep(ExpressionStepKind kind, int32_t id) : header_{kind, 0, id} {
+    header_ = {kind, 0, id};
+  }
   ExpressionStep(ExpressionStepKind kind, int32_t id,
                  std::unique_ptr<ExpressionStepLogic> logic)
-      : header_{kind, 0, id}, logic_(std::move(logic)) {}
+      : ExpressionStep(kind, id) {
+    u_.logic = logic.release();
+  }
+
+  friend void swap(ExpressionStep& lhs, ExpressionStep& rhs) {
+    using std::swap;
+    swap(lhs.header_, rhs.header_);
+    swap(lhs.u_, rhs.u_);
+  }
+
+  friend bool GetIfConstant(const ExpressionStep& step, cel::Value& out);
+  friend bool IsConstant(const ExpressionStep& step);
 
   Header header_;
-  std::unique_ptr<const ExpressionStepLogic> logic_;
+  // Note: ptr members are 'owned' by the step.
+  // ~ExpressionStep() is responsible for freeing.
+  union Data {
+    std::nullptr_t empty;
+    ExpressionStepLogic* logic;
+    int64_t int_val;
+    uint64_t uint_val;
+    double double_val;
+    bool bool_val;
+    cel::Value* other_val;
+
+    Data() : empty(nullptr) {}
+    ~Data() {}
+  } u_;
 };
+
+#ifndef _MSC_VER
+// Keep the core instruction size small to get better memory locality for the
+// main program.
+//
+// MSVC does not support some of the bit-field packing used here so it will be
+// larger.
+static_assert(sizeof(ExpressionStep) == 16);
+#endif
 
 // Class Expression represents single execution step.
 class ExpressionStepLogic {
@@ -346,6 +385,8 @@ class ExecutionFrameBase {
     return absl::OkStatus();
   }
 
+  absl::Status& abort_status() { return abort_status_; }
+
  protected:
   const cel::ActivationInterface* absl_nonnull activation_;
   EvaluationListener callback_;
@@ -359,6 +400,7 @@ class ExecutionFrameBase {
   ComprehensionSlots* absl_nonnull slots_;
   const int max_iterations_;
   int iterations_;
+  absl::Status abort_status_;
   const bool attribute_tracking_enabled_;
   const bool missing_attribute_errors_enabled_;
   const bool unknown_processing_enabled_;
@@ -387,7 +429,7 @@ class ExecutionFrame : public ExecutionFrameBase {
         execution_path_(flat),
         value_stack_(&state.value_stack()),
         iterator_stack_(&state.iterator_stack()),
-        subexpressions_() {}
+        subexpressions_(&execution_path_, 1) {}
 
   ExecutionFrame(
       absl::Span<const ExecutionPathView> subexpressions,
@@ -487,6 +529,15 @@ class ExecutionFrame : public ExecutionFrameBase {
     return *activation_;
   }
 
+  void Abort(absl::Status status) {
+    ABSL_DCHECK(!subexpressions_.empty());
+    ABSL_DCHECK(!status.ok());
+    abort_status_.Update(std::move(status));
+    call_stack_.clear();
+    execution_path_ = subexpressions_[0];
+    pc_ = execution_path_.size();
+  }
+
  private:
   struct SubFrame {
     size_t return_pc;
@@ -580,36 +631,43 @@ class FlatExpression {
   absl_nullable std::shared_ptr<google::protobuf::Arena> arena_;
 };
 
+// Helper functions for checking ExpressionStep kinds. Used for program
+// optimization.
+
+// Checks if the step is a constant and if so, writes the value into `out`.
+// Returns true if the step is a constant, false otherwise.
+bool GetIfConstant(const ExpressionStep& step, cel::Value& out);
+
+// Checks if the step is a constant.
+bool IsConstant(const ExpressionStep& step);
+
 // Implementation details.
 
-inline absl::Status ExpressionStep::Evaluate(ExecutionFrame* context) const {
-  ABSL_DCHECK_EQ(header_.kind, ExpressionStepKind::kGenericLogic);
-  return logic_->Evaluate(context);
-}
-
-template <typename T>
-inline T ExpressionStep::Get() const {
-  if constexpr (std::is_same_v<T, const ExpressionStepLogic*>) {
-    return GetGenericStep();
-  } else {
-    static_assert(sizeof(T) == 0, "unsupported type");
+inline ExpressionStep::~ExpressionStep() {
+  switch (header_.kind) {
+    case ExpressionStepKind::kGenericLogic:
+      delete u_.logic;
+      break;
+    case ExpressionStepKind::kOtherConstant:
+      delete u_.other_val;
+      break;
+    case ExpressionStepKind::kMovedFrom:
+    case ExpressionStepKind::kIntConstant:
+    case ExpressionStepKind::kBoolConstant:
+    case ExpressionStepKind::kDoubleConstant:
+    case ExpressionStepKind::kNullConstant:
+    case ExpressionStepKind::kUintConstant:
+      break;
+    default:
+      ABSL_UNREACHABLE();
   }
-  ABSL_UNREACHABLE();
+  header_.kind = ExpressionStepKind::kMovedFrom;
+  u_.empty = nullptr;
 }
 
 inline const ExpressionStepLogic* ExpressionStep::GetGenericStep() const {
   ABSL_DCHECK_EQ(header_.kind, ExpressionStepKind::kGenericLogic);
-  return logic_.get();
-}
-
-template <typename T>
-inline bool ExpressionStep::Is() const {
-  if constexpr (std::is_same_v<T, const ExpressionStepLogic*>) {
-    return header_.kind == ExpressionStepKind::kGenericLogic;
-  } else {
-    static_assert(sizeof(T) == 0, "unsupported type");
-  }
-  ABSL_UNREACHABLE();
+  return u_.logic;
 }
 
 inline bool ExpressionStep::IsGenericStep() const {
@@ -619,20 +677,15 @@ inline bool ExpressionStep::IsGenericStep() const {
 inline ExpressionStep::ExpressionStep(ExpressionStep&& other)
     : ExpressionStep() {
   using std::swap;
-  swap(*this, other);
+  swap(other, *this);
 }
 
 inline ExpressionStep& ExpressionStep::operator=(ExpressionStep&& other) {
   using std::swap;
-  swap(*this, other);
+  ExpressionStep tmp;
+  swap(*this, tmp);
+  swap(other, *this);
   return *this;
-}
-
-inline void swap(ExpressionStep& lhs, ExpressionStep& rhs) {
-  using std::swap;
-
-  swap(lhs.header_, rhs.header_);
-  swap(lhs.logic_, rhs.logic_);
 }
 
 }  // namespace google::api::expr::runtime

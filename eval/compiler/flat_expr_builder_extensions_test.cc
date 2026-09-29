@@ -55,6 +55,17 @@ using ::testing::ElementsAre;
 using ::testing::IsEmpty;
 using ::testing::Optional;
 
+class TestStepLogic : public ExpressionStepLogic {
+ public:
+  absl::Status Evaluate(ExecutionFrame* frame) const override {
+    return absl::OkStatus();
+  }
+};
+
+std::unique_ptr<ExpressionStepLogic> MakeTestStepLogic() {
+  return std::make_unique<TestStepLogic>();
+}
+
 using Subexpression = ProgramBuilder::Subexpression;
 
 class PlannerContextTest : public testing::Test {
@@ -94,9 +105,9 @@ struct SimpleTreeSteps {
 absl::StatusOr<SimpleTreeSteps> InitSimpleTree(
     const Expr& a, const Expr& b, const Expr& c,
     ProgramBuilder& program_builder) {
-  auto a_step = CreateConstValueStep(cel::NullValue());
-  auto b_step = CreateConstValueStep(cel::NullValue());
-  auto c_step = CreateConstValueStep(cel::NullValue());
+  auto a_step = MakeTestStepLogic();
+  auto b_step = MakeTestStepLogic();
+  auto c_step = MakeTestStepLogic();
 
   SimpleTreeSteps result{a_step.get(), b_step.get(), c_step.get()};
 
@@ -163,7 +174,7 @@ TEST_F(PlannerContextTest, ReplacePlan) {
 
   ExecutionPath new_a;
 
-  auto new_a_step = CreateConstValueStep(cel::NullValue());
+  auto new_a_step = MakeTestStepLogic();
   const ExpressionStepLogic* new_a_step_ptr = new_a_step.get();
   new_a.push_back(ExpressionStep::MakeGenericStep(std::move(new_a_step), -1));
 
@@ -253,10 +264,10 @@ TEST_F(PlannerContextTest, ReplacePlanUpdatesSibling) {
 
   ExecutionPath new_b;
 
-  auto b1_step = CreateConstValueStep(cel::NullValue());
+  auto b1_step = MakeTestStepLogic();
   const ExpressionStepLogic* b1_step_ptr = b1_step.get();
   new_b.push_back(ExpressionStep::MakeGenericStep(std::move(b1_step), -1));
-  auto b2_step = CreateConstValueStep(cel::NullValue());
+  auto b2_step = MakeTestStepLogic();
   const ExpressionStepLogic* b2_step_ptr = b2_step.get();
   new_b.push_back(ExpressionStep::MakeGenericStep(std::move(b2_step), -1));
 
@@ -302,7 +313,7 @@ TEST_F(PlannerContextTest, AddSubplanStep) {
   ASSERT_OK_AND_ASSIGN(auto plan_steps,
                        InitSimpleTree(a, b, c, program_builder));
 
-  auto b2_step = CreateConstValueStep(cel::NullValue());
+  auto b2_step = MakeTestStepLogic();
 
   const ExpressionStepLogic* b2_step_ptr = b2_step.get();
 
@@ -331,7 +342,7 @@ TEST_F(PlannerContextTest, AddSubplanStepFailsOnUnknownNode) {
 
   ASSERT_THAT(InitSimpleTree(a, b, c, program_builder).status(), IsOk());
 
-  auto b2_step = CreateConstValueStep(cel::NullValue());
+  auto b2_step = MakeTestStepLogic();
 
   std::shared_ptr<google::protobuf::Arena> arena;
   PlannerContext context(env_, resolver_, options_,
@@ -478,7 +489,7 @@ TEST_F(ProgramBuilderTest, ExtractWorks) {
   program_builder.EnterSubexpression(&b);
   program_builder.ExitSubexpression(&b);
 
-  auto a_step = CreateConstValueStep(cel::NullValue());
+  auto a_step = MakeTestStepLogic();
   program_builder.AddStep(
       ExpressionStep::MakeGenericStep(std::move(a_step), -1));
   program_builder.EnterSubexpression(&c);

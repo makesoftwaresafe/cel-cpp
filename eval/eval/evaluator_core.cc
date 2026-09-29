@@ -15,6 +15,9 @@
 #include "eval/eval/evaluator_core.h"
 
 #include <cstddef>
+#include <cstdint>
+#include <limits>
+#include <memory>
 #include <utility>
 
 #include "absl/base/nullability.h"
@@ -25,6 +28,7 @@
 #include "absl/status/statusor.h"
 #include "absl/strings/str_cat.h"
 #include "common/value.h"
+#include "common/value_kind.h"
 #include "runtime/activation_interface.h"
 #include "google/protobuf/arena.h"
 #include "google/protobuf/descriptor.h"
@@ -102,6 +106,41 @@ class EvaluationStatus final {
 
 }  // namespace
 
+void ExpressionStep::Evaluate(ExecutionFrame* context) const {
+  switch (header_.kind) {
+    case ExpressionStepKind::kGenericLogic: {
+      EvaluationStatus s(u_.logic->Evaluate(context));
+      if (!s.ok()) {
+        context->Abort(std::move(s).Consume());
+      }
+      break;
+    }
+    case ExpressionStepKind::kIntConstant:
+      context->value_stack().Push(cel::IntValue(u_.int_val));
+      break;
+    case ExpressionStepKind::kBoolConstant:
+      context->value_stack().Push(cel::BoolValue(u_.bool_val));
+      break;
+    case ExpressionStepKind::kDoubleConstant:
+      context->value_stack().Push(cel::DoubleValue(u_.double_val));
+      break;
+    case ExpressionStepKind::kNullConstant:
+      context->value_stack().Push(cel::NullValue());
+      break;
+    case ExpressionStepKind::kUintConstant:
+      context->value_stack().Push(cel::UintValue(u_.uint_val));
+      break;
+    case ExpressionStepKind::kOtherConstant:
+      context->value_stack().Push(*u_.other_val);
+      break;
+    case ExpressionStepKind::kMovedFrom:
+    default:
+      context->Abort(
+          absl::InternalError("ExpressionStep::Evaluate called on moved-from "
+                              "object"));
+  }
+}
+
 absl::StatusOr<cel::Value> ExecutionFrame::Evaluate(
     EvaluationListener& listener) {
   const size_t initial_stack_size = value_stack().size();
@@ -109,18 +148,13 @@ absl::StatusOr<cel::Value> ExecutionFrame::Evaluate(
   if (!listener) {
     for (const ExpressionStep* expr = Next();
          ABSL_PREDICT_TRUE(expr != nullptr); expr = Next()) {
-      if (EvaluationStatus status(expr->Evaluate(this)); !status.ok()) {
-        return std::move(status).Consume();
-      }
+      expr->Evaluate(this);
     }
   } else {
     for (const ExpressionStep* expr = Next();
          ABSL_PREDICT_TRUE(expr != nullptr); expr = Next()) {
-      if (EvaluationStatus status(expr->Evaluate(this)); !status.ok()) {
-        return std::move(status).Consume();
-      }
-
-      if (pc_ == 0 || !expr->comes_from_ast()) {
+      expr->Evaluate(this);
+      if (pc_ == 0 || !expr->comes_from_ast() || !abort_status().ok()) {
         // Skip if we just started a Call or if the step doesn't map to an
         // AST id.
         continue;
@@ -138,6 +172,10 @@ absl::StatusOr<cel::Value> ExecutionFrame::Evaluate(
         return std::move(status).Consume();
       }
     }
+  }
+
+  if (!abort_status().ok()) {
+    return std::move(abort_status());
   }
 
   const size_t final_stack_size = value_stack().size();
@@ -172,6 +210,82 @@ absl::StatusOr<cel::Value> FlatExpression::EvaluateWithCallback(
                        std::move(listener), embedder_context);
 
   return frame.Evaluate(frame.callback());
+}
+
+ExpressionStep ExpressionStep::MakeConstant(const cel::Value& value,
+                                            int64_t id) {
+  if (id < 0 || id > std::numeric_limits<int32_t>::max()) {
+    id = -1;
+  }
+  int32_t id32 = static_cast<int32_t>(id);
+  switch (value.kind()) {
+    case cel::ValueKind::kBool: {
+      ExpressionStep step(ExpressionStepKind::kBoolConstant, id32);
+      step.u_.bool_val = value.GetBool().NativeValue();
+      return step;
+    }
+    case cel::ValueKind::kInt: {
+      ExpressionStep step(ExpressionStepKind::kIntConstant, id32);
+      step.u_.int_val = value.GetInt().NativeValue();
+      return step;
+    }
+    case cel::ValueKind::kUint: {
+      ExpressionStep step(ExpressionStepKind::kUintConstant, id32);
+      step.u_.uint_val = value.GetUint().NativeValue();
+      return step;
+    }
+    case cel::ValueKind::kDouble: {
+      ExpressionStep step(ExpressionStepKind::kDoubleConstant, id32);
+      step.u_.double_val = value.GetDouble().NativeValue();
+      return step;
+    }
+    case cel::ValueKind::kNull:
+      return ExpressionStep(ExpressionStepKind::kNullConstant, id32);
+    default: {
+      ExpressionStep step(ExpressionStepKind::kOtherConstant, id32);
+      step.u_.other_val = new cel::Value(value);
+      return step;
+    }
+  }
+}
+
+bool GetIfConstant(const ExpressionStep& step, cel::Value& out) {
+  switch (step.header_.kind) {
+    case ExpressionStepKind::kIntConstant:
+      out = cel::IntValue(step.u_.int_val);
+      return true;
+    case ExpressionStepKind::kBoolConstant:
+      out = cel::BoolValue(step.u_.bool_val);
+      return true;
+    case ExpressionStepKind::kDoubleConstant:
+      out = cel::DoubleValue(step.u_.double_val);
+      return true;
+    case ExpressionStepKind::kNullConstant:
+      out = cel::NullValue();
+      return true;
+    case ExpressionStepKind::kUintConstant:
+      out = cel::UintValue(step.u_.uint_val);
+      return true;
+    case ExpressionStepKind::kOtherConstant:
+      out = *step.u_.other_val;
+      return true;
+    default:
+      return false;
+  }
+}
+
+bool IsConstant(const ExpressionStep& step) {
+  switch (step.header_.kind) {
+    case ExpressionStepKind::kIntConstant:
+    case ExpressionStepKind::kBoolConstant:
+    case ExpressionStepKind::kDoubleConstant:
+    case ExpressionStepKind::kNullConstant:
+    case ExpressionStepKind::kUintConstant:
+    case ExpressionStepKind::kOtherConstant:
+      return true;
+    default:
+      return false;
+  }
 }
 
 }  // namespace google::api::expr::runtime

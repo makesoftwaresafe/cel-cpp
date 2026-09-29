@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "absl/status/status.h"
+#include "absl/status/status_macros.h"
 #include "absl/status/status_matchers.h"
 #include "absl/status/statusor.h"
 #include "absl/strings/string_view.h"
@@ -233,13 +234,13 @@ absl::StatusOr<ExpressionStep> MakeTestFunctionStep(
       call.function(), call.has_target(), argument_matcher);
   int id = GetExprId();
   if (!lazy_overloads.empty()) {
-    CEL_ASSIGN_OR_RETURN(auto logic,
-                         CreateFunctionStep(call, id, lazy_overloads));
+    ABSL_ASSIGN_OR_RETURN(auto logic,
+                          CreateFunctionStep(call, id, lazy_overloads));
     return ExpressionStep::MakeGenericStep(std::move(logic), id);
   }
   auto overloads = registry.FindStaticOverloads(
       call.function(), call.has_target(), argument_matcher);
-  CEL_ASSIGN_OR_RETURN(auto logic, CreateFunctionStep(call, id, overloads));
+  ABSL_ASSIGN_OR_RETURN(auto logic, CreateFunctionStep(call, id, overloads));
   return ExpressionStep::MakeGenericStep(std::move(logic), id);
 }
 
@@ -540,11 +541,11 @@ TEST_P(FunctionStepTest, LazyFunctionOverloadingTest) {
   lt_call.mutable_args().emplace_back();
   lt_call.set_function("_<_");
 
-  auto step0 = ExpressionStep::MakeGenericStep(
-      CreateConstValueStep(cel::interop_internal::CreateIntValue(20)));
+  auto step0 =
+      ExpressionStep::MakeConstant(cel::interop_internal::CreateIntValue(20));
   ASSERT_OK_AND_ASSIGN(auto step1, MakeTestFunctionStep(call1, registry));
-  auto step2 = ExpressionStep::MakeGenericStep(
-      CreateConstValueStep(cel::interop_internal::CreateDoubleValue(21.9)));
+  auto step2 = ExpressionStep::MakeConstant(
+      cel::interop_internal::CreateDoubleValue(21.9));
   ASSERT_OK_AND_ASSIGN(auto step3, MakeTestFunctionStep(call2, registry));
   ASSERT_OK_AND_ASSIGN(auto step4, MakeTestFunctionStep(lt_call, registry));
 
