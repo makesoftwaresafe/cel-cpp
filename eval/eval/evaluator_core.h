@@ -321,8 +321,13 @@ class ExecutionFrameBase {
         message_factory_(message_factory),
         arena_(arena),
         embedder_context_(nullptr),
-        attribute_utility_(activation.GetUnknownAttributes(),
-                           activation.GetMissingAttributes()),
+        attribute_utility_(options.unknown_processing !=
+                                   cel::UnknownProcessingOptions::kDisabled
+                               ? activation.GetUnknownAttributes()
+                               : absl::Span<const cel::AttributePattern>(),
+                           options.enable_missing_attribute_errors
+                               ? activation.GetMissingAttributes()
+                               : absl::Span<const cel::AttributePattern>()),
         slots_(&ComprehensionSlots::GetEmptyInstance()),
         max_iterations_(options.comprehension_max_iterations),
         iterations_(0),
@@ -363,8 +368,13 @@ class ExecutionFrameBase {
         message_factory_(message_factory),
         arena_(arena),
         embedder_context_(embedder_context),
-        attribute_utility_(activation.GetUnknownAttributes(),
-                           activation.GetMissingAttributes()),
+        attribute_utility_(options.unknown_processing !=
+                                   cel::UnknownProcessingOptions::kDisabled
+                               ? activation.GetUnknownAttributes()
+                               : absl::Span<const cel::AttributePattern>(),
+                           options.enable_missing_attribute_errors
+                               ? activation.GetMissingAttributes()
+                               : absl::Span<const cel::AttributePattern>()),
         slots_(&slots),
         max_iterations_(options.comprehension_max_iterations),
         iterations_(0),
