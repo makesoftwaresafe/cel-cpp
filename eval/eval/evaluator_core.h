@@ -19,7 +19,6 @@
 #include <cstdint>
 #include <limits>
 #include <memory>
-#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -36,8 +35,10 @@
 #include "common/value.h"
 #include "eval/eval/attribute_utility.h"
 #include "eval/eval/comprehension_slots.h"
+#include "eval/eval/direct_expression_step.h"
 #include "eval/eval/evaluator_stack.h"
 #include "eval/eval/iterator_stack.h"
+#include "eval/eval/lazy_init_step.h"
 #include "runtime/activation_interface.h"
 #include "runtime/internal/activation_attribute_matcher_access.h"
 #include "runtime/runtime.h"
@@ -69,6 +70,9 @@ enum class ExpressionStepKind : uint16_t {
   kUintConstant = 6,
   // Any constant that can't be inlined.
   kOtherConstant = 7,
+  kLazyInit = 8,
+  kAssignSlotAndPop = 9,
+  kClearSlots = 10,
 };
 
 class ExpressionStep {
@@ -101,14 +105,43 @@ class ExpressionStep {
 
   static ExpressionStep MakeGenericStep(
       std::unique_ptr<ExpressionStepLogic> logic, int64_t id = -1) {
-    if (id < 0 || id > std::numeric_limits<int32_t>::max()) {
-      id = -1;
-    }
-    return ExpressionStep(ExpressionStepKind::kGenericLogic, id,
-                          std::move(logic));
+    ExpressionStep step(ExpressionStepKind::kGenericLogic, id);
+    step.u_.logic = logic.release();
+    return step;
   }
 
   static ExpressionStep MakeConstant(const cel::Value& value, int64_t id = -1);
+
+  static ExpressionStep MakeLazyInitStep(size_t slot_index,
+                                         size_t subexpression_index,
+                                         int64_t id = -1) {
+    ExpressionStep step(ExpressionStepKind::kLazyInit, id);
+    ABSL_DCHECK_LE(slot_index, std::numeric_limits<uint32_t>::max());
+    ABSL_DCHECK_LE(subexpression_index, std::numeric_limits<uint32_t>::max());
+    step.u_.lazy_init = LazyInitStepInfo{slot_index, subexpression_index};
+    return step;
+  }
+
+  static ExpressionStep MakeAssignSlotAndPopStep(size_t slot_index,
+                                                 int64_t id = -1) {
+    ExpressionStep step(ExpressionStepKind::kAssignSlotAndPop, id);
+    ABSL_DCHECK_LE(slot_index, std::numeric_limits<uint32_t>::max());
+    step.u_.slot_index = slot_index;
+    return step;
+  }
+
+  static ExpressionStep MakeClearSlotStep(size_t slot_index, int64_t id = -1) {
+    return MakeClearSlotsStep(slot_index, 1, id);
+  }
+
+  static ExpressionStep MakeClearSlotsStep(size_t slot_index, size_t slot_count,
+                                           int64_t id = -1) {
+    ExpressionStep step(ExpressionStepKind::kClearSlots, id);
+    ABSL_DCHECK_LE(slot_index, std::numeric_limits<uint32_t>::max());
+    ABSL_DCHECK_LE(slot_count, std::numeric_limits<uint32_t>::max());
+    step.u_.clear_slots = ClearSlotStepInfo{slot_index, slot_count};
+    return step;
+  }
 
  private:
   struct Header {
@@ -120,6 +153,12 @@ class ExpressionStep {
   ExpressionStep() : header_{ExpressionStepKind::kMovedFrom, 0, -1} {}
   ExpressionStep(ExpressionStepKind kind, int32_t id) : header_{kind, 0, id} {
     header_ = {kind, 0, id};
+  }
+  ExpressionStep(ExpressionStepKind kind, int64_t id) : ExpressionStep() {
+    if (id < 0 || id > std::numeric_limits<int32_t>::max()) {
+      id = -1;
+    }
+    header_ = {kind, 0, static_cast<int32_t>(id)};
   }
   ExpressionStep(ExpressionStepKind kind, int32_t id,
                  std::unique_ptr<ExpressionStepLogic> logic)
@@ -147,6 +186,9 @@ class ExpressionStep {
     double double_val;
     bool bool_val;
     cel::Value* other_val;
+    LazyInitStepInfo lazy_init;
+    size_t slot_index;
+    ClearSlotStepInfo clear_slots;
 
     Data() : empty(nullptr) {}
     ~Data() {}
@@ -182,6 +224,25 @@ class ExpressionStepLogic {
   virtual cel::NativeTypeId GetNativeTypeId() const {
     return cel::NativeTypeId();
   }
+};
+
+// Wrapper for direct steps to work with the stack machine impl.
+class WrappedDirectStep : public ExpressionStepLogic {
+ public:
+  explicit WrappedDirectStep(std::unique_ptr<DirectExpressionStep> impl,
+                             int64_t expr_id = -1)
+      : impl_(std::move(impl)) {}
+
+  absl::Status Evaluate(ExecutionFrame* frame) const override;
+
+  cel::NativeTypeId GetNativeTypeId() const override {
+    return cel::NativeTypeId::For<WrappedDirectStep>();
+  }
+
+  const DirectExpressionStep* wrapped() const { return impl_.get(); }
+
+ private:
+  std::unique_ptr<DirectExpressionStep> impl_;
 };
 
 using ExecutionPath = std::vector<ExpressionStep>;
@@ -657,6 +718,9 @@ inline ExpressionStep::~ExpressionStep() {
     case ExpressionStepKind::kDoubleConstant:
     case ExpressionStepKind::kNullConstant:
     case ExpressionStepKind::kUintConstant:
+    case ExpressionStepKind::kLazyInit:
+    case ExpressionStepKind::kAssignSlotAndPop:
+    case ExpressionStepKind::kClearSlots:
       break;
     default:
       ABSL_UNREACHABLE();

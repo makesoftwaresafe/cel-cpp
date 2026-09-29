@@ -29,6 +29,9 @@
 #include "absl/strings/str_cat.h"
 #include "common/value.h"
 #include "common/value_kind.h"
+#include "eval/eval/attribute_trail.h"
+#include "eval/eval/lazy_init_step.h"
+#include "internal/status_macros.h"
 #include "runtime/activation_interface.h"
 #include "google/protobuf/arena.h"
 #include "google/protobuf/descriptor.h"
@@ -132,6 +135,15 @@ void ExpressionStep::Evaluate(ExecutionFrame* context) const {
       break;
     case ExpressionStepKind::kOtherConstant:
       context->value_stack().Push(*u_.other_val);
+      break;
+    case ExpressionStepKind::kLazyInit:
+      EvaluateLazyInitStep(u_.lazy_init, *context);
+      break;
+    case ExpressionStepKind::kAssignSlotAndPop:
+      EvaluateAssignSlotAndPop(u_.slot_index, *context);
+      break;
+    case ExpressionStepKind::kClearSlots:
+      EvaluateClearSlotStep(u_.clear_slots, *context);
       break;
     case ExpressionStepKind::kMovedFrom:
     default:
@@ -286,6 +298,14 @@ bool IsConstant(const ExpressionStep& step) {
     default:
       return false;
   }
+}
+
+absl::Status WrappedDirectStep::Evaluate(ExecutionFrame* frame) const {
+  cel::Value result;
+  AttributeTrail attribute_trail;
+  CEL_RETURN_IF_ERROR(impl_->Evaluate(*frame, result, attribute_trail));
+  frame->value_stack().Push(std::move(result), std::move(attribute_trail));
+  return absl::OkStatus();
 }
 
 }  // namespace google::api::expr::runtime

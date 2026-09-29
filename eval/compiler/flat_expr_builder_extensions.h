@@ -233,6 +233,11 @@ class ProgramBuilder {
   // programs table to starting state.
   std::vector<ExecutionPath> FlattenSubexpressions();
 
+  // Return the current number of subexpressions in the program builder.
+  size_t ExtractedSubexpressionCount() const {
+    return extracted_subexpressions_.size();
+  }
+
   // Returns the current subexpression where steps and new subexpressions are
   // added.
   //

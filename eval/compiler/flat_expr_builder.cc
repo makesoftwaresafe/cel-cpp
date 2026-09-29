@@ -855,8 +855,8 @@ class FlatExprVisitor : public cel::AstVisitor {
             program.depth + 1);
       } else {
         // Off by one since mainline expression will be index 0.
-        AddStep(CreateLazyInitStep(slot.slot, slot.subexpression + 1),
-                expr.id());
+        AddStep(ExpressionStep::MakeLazyInitStep(
+            slot.slot, slot.subexpression + 1, expr.id()));
       }
       return;
     } else if (slot.slot >= 0) {
@@ -2134,7 +2134,8 @@ FlatExprVisitor::CallHandlerResult FlatExprVisitor::HandleBlock(
 
   // Otherwise, iterative plan.
   if (block.slot_count > 0) {
-    AddStep(CreateClearSlotsStep(block.index, block.slot_count), expr.id());
+    AddStep(ExpressionStep::MakeClearSlotsStep(block.index, block.slot_count,
+                                               expr.id()));
   }
 
   return CallHandlerResult::kIntercepted;
@@ -2518,7 +2519,7 @@ void ComprehensionVisitor::PostVisitArgTrivial(cel::ComprehensionArg arg_num,
     }
     case cel::ACCU_INIT: {
       if (!accu_init_extracted_) {
-        visitor_->AddStep(CreateAssignSlotAndPopStep(accu_slot_));
+        visitor_->AddStep(ExpressionStep::MakeAssignSlotAndPopStep(accu_slot_));
       }
       break;
     }
@@ -2529,7 +2530,8 @@ void ComprehensionVisitor::PostVisitArgTrivial(cel::ComprehensionArg arg_num,
       break;
     }
     case cel::RESULT: {
-      visitor_->AddStep(CreateClearSlotStep(accu_slot_), expr->id());
+      visitor_->AddStep(
+          ExpressionStep::MakeClearSlotStep(accu_slot_, expr->id()));
       break;
     }
   }
@@ -2655,6 +2657,15 @@ absl::StatusOr<FlatExpression> FlatExprBuilder::CreateExpressionImpl(
 
   if (!visitor.progress_status().ok()) {
     return visitor.progress_status();
+  }
+
+  if (visitor.slot_count() > std::numeric_limits<uint32_t>::max() ||
+      program_builder.ExtractedSubexpressionCount() >
+          std::numeric_limits<uint32_t>::max()) {
+    // Impractical to trigger (we'd run out of memory first), but assuming this
+    // allows us to pack references to slots and subexpressions.
+    return absl::InternalError(
+        "Expression too large to be executed, exceeds uint32_t limits.");
   }
 
   if (issues != nullptr) {
